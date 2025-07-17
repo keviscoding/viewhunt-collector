@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ViewHunt - Channel Review</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1 class="logo">ViewHunt</h1>
+                <div class="stats" id="stats">
+                    <span class="stat">
+                        <span class="stat-number" id="pending-count">0</span>
+                        <span class="stat-label">Pending</span>
+                    </span>
+                    <span class="stat">
+                        <span class="stat-number" id="approved-count">0</span>
+                        <span class="stat-label">Approved</span>
+                    </span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main">
+            <div class="container">
+                <!-- Loading State -->
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>Loading channels...</p>
+                </div>
+
+                <!-- Empty State -->
+                <div class="empty-state" id="empty-state" style="display: none;">
+                    <div class="empty-icon">🎯</div>
+                    <h2>No Channels to Review</h2>
+                    <p>All caught up! Check back later for new channels to review.</p>
+                </div>
+
+                <!-- Filters -->
+                <div class="filters" id="filters">
+                    <div class="filter-group">
+                        <label for="sort-select">Sort by:</label>
+                        <select id="sort-select" class="filter-select">
+                            <option value="ratio-desc">🔥 Best Ratio (High to Low)</option>
+                            <option value="ratio-asc">Worst Ratio (Low to High)</option>
+                            <option value="views-desc">👀 Most Views</option>
+                            <option value="views-asc">Least Views</option>
+                            <option value="subs-desc">📈 Most Subscribers</option>
+                            <option value="subs-asc">Least Subscribers</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="min-ratio">Min Ratio:</label>
+                        <input type="number" id="min-ratio" class="filter-input" placeholder="0.0" step="0.1" min="0">
+                    </div>
+                    <div class="filter-group">
+                        <label for="min-views">Min Views:</label>
+                        <input type="number" id="min-views" class="filter-input" placeholder="1000" step="1000" min="0">
+                    </div>
+                </div>
+
+                <!-- Channel Cards -->
+                <div class="channel-grid" id="channel-grid">
+                    <!-- Channel cards will be inserted here -->
+                </div>
+            </div>
+        </main>
+
+        <!-- Navigation -->
+        <nav class="bottom-nav">
+            <button class="nav-btn active" data-view="pending">
+                <span class="nav-icon">⏳</span>
+                <span class="nav-label">Review</span>
+            </button>
+            <button class="nav-btn" data-view="approved">
+                <span class="nav-icon">✅</span>
+                <span class="nav-label">Approved</span>
+            </button>
+        </nav>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -12,11 +12,11 @@ app.use(cors());
 app.use(express.json());
 
 // Serve mobile app static files
-app.use('/mobile', express.static(path.join(__dirname, '../mobile')));
+app.use('/mobile', express.static(path.join(__dirname, 'mobile')));
 
 // Serve mobile app at root for convenience
 app.get('/', (req, res) => {
-    const mobilePath = path.join(__dirname, '../mobile/index.html');
+    const mobilePath = path.join(__dirname, 'mobile/index.html');
     console.log('Trying to serve mobile app from:', mobilePath);
     
     // Check if file exists
