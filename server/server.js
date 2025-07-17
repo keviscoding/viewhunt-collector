@@ -13,6 +13,7 @@ app.use(express.json());
 
 // Serve mobile app static files
 app.use('/mobile', express.static(path.join(__dirname, 'mobile')));
+app.use(express.static(path.join(__dirname, 'mobile')));
 
 // Serve mobile app at root for convenience
 app.get('/', (req, res) => {
