@@ -235,12 +235,19 @@
                                      video.querySelector('.yt-simple-endpoint[href*="/channel/"]') ||
                                      video.querySelector('.yt-simple-endpoint[href*="/@"]');
 
-                // Try to get channel avatar
+                // Try to get channel avatar with more debugging
                 const avatarElement = video.querySelector('img[src*="yt3.ggpht.com"]') ||
                                     video.querySelector('img[src*="ytimg.com"]') ||
                                     video.querySelector('ytd-channel-name img') ||
                                     video.querySelector('.yt-img-shadow img') ||
-                                    video.querySelector('img[alt*="channel"]');
+                                    video.querySelector('img[alt*="channel"]') ||
+                                    video.querySelector('img[loading="lazy"]') ||
+                                    video.querySelector('img');
+                
+                // Debug avatar finding
+                if (index < 3) { // Only log first 3 for debugging
+                    console.log(`ViewHunt Debug: Video ${index} avatar element:`, avatarElement?.src || 'No avatar found');
+                }
 
                 const viewsElement = video.querySelector('#metadata-line span.inline-metadata-item') ||
                                    video.querySelector('.inline-metadata-item') ||
