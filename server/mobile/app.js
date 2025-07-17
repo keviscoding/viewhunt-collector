@@ -823,7 +823,12 @@ class ViewHuntApp {
         }
 
         document.getElementById('create-collection-overlay').style.display = 'flex';
-        document.getElementById('create-collection-form').reset();
+        
+        // Clear form fields safely
+        const nameInput = document.getElementById('collection-name');
+        const descInput = document.getElementById('collection-description');
+        if (nameInput) nameInput.value = '';
+        if (descInput) descInput.value = '';
     }
 
     closeCreateCollection() {
@@ -831,9 +836,17 @@ class ViewHuntApp {
     }
 
     async handleCreateCollection() {
-        const name = document.getElementById('collection-name').value.trim();
-        const description = document.getElementById('collection-description').value.trim();
+        const nameInput = document.getElementById('collection-name');
+        const descInput = document.getElementById('collection-description');
         const submitBtn = document.querySelector('#create-collection-form button[type="submit"]');
+
+        if (!nameInput || !descInput) {
+            this.showToast('Form elements not found ❌');
+            return;
+        }
+
+        const name = nameInput.value ? nameInput.value.trim() : '';
+        const description = descInput.value ? descInput.value.trim() : '';
 
         if (!name) {
             this.showToast('Please enter a collection name ❌');
