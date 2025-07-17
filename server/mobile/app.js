@@ -1428,8 +1428,7 @@ let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new ViewHuntApp();
     window.app = app; // Make it globally available
-});   
- // Collection Sharing Methods
+    // Collection Sharing Methods
     async shareCollection(collectionId, collectionName) {
         const shareUrl = `${window.location.origin}/shared/${collectionId}`;
         
@@ -1489,4 +1488,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Close the modal
         document.getElementById('share-modal-overlay').remove();
-    }
+    }}
+
+//
+ Initialize app
+let app;
+document.addEventListener('DOMContentLoaded', () => {
+    app = new ViewHuntApp();
+    window.app = app; // Make it globally available
+});
