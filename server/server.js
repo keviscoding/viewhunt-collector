@@ -454,6 +454,48 @@ app.get('/api/channels/approved', async (req, res) => {
     }
 });
 
+// Get trending channels (approved in last 24 hours)
+app.get('/api/channels/trending', async (req, res) => {
+    try {
+        // Calculate 24 hours ago
+        const yesterday = new Date();
+        yesterday.setHours(yesterday.getHours() - 24);
+        
+        // Get channels approved in the last 24 hours
+        const trendingChannels = await db.collection('channels')
+            .find({ 
+                status: 'approved',
+                updated_at: { $gte: yesterday }
+            })
+            .sort({ updated_at: -1 })
+            .limit(20)
+            .toArray();
+        
+        // If we have less than 5 trending channels, supplement with recent approved channels
+        if (trendingChannels.length < 5) {
+            const additionalChannels = await db.collection('channels')
+                .find({ status: 'approved' })
+                .sort({ updated_at: -1 })
+                .limit(10)
+                .toArray();
+            
+            // Merge and deduplicate
+            const channelIds = new Set(trendingChannels.map(c => c._id.toString()));
+            const supplemented = trendingChannels.concat(
+                additionalChannels.filter(c => !channelIds.has(c._id.toString()))
+            ).slice(0, 8);
+            
+            res.json(supplemented);
+        } else {
+            res.json(trendingChannels.slice(0, 8));
+        }
+        
+    } catch (error) {
+        console.error('Error fetching trending channels:', error);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
 // Get stats
 app.get('/api/stats', async (req, res) => {
     try {

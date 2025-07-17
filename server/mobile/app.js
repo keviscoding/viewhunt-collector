@@ -1087,10 +1087,10 @@ class ViewHuntApp {
     }
 
     checkKevisAdmin() {
-        // Check if current user is Kevis (you can change this email)
+        // Check if current user is Kevis
         const isKevis = this.user && (
-            this.user.email === 'kevis@viewhunt.com' || 
-            this.user.email === 'your-email@example.com' // Replace with your actual email
+            this.user.email === 'nwalikelv@gmail.com' || 
+            this.user.email === 'kevis@viewhunt.com'
         );
         
         const adminControls = document.getElementById('kevis-admin-controls');
@@ -1200,7 +1200,7 @@ class ViewHuntApp {
 
     // Kevis Admin Methods
     showKevisManager() {
-        if (!this.user || (this.user.email !== 'kevis@viewhunt.com' && this.user.email !== 'your-email@example.com')) {
+        if (!this.user || (this.user.email !== 'nwalikelv@gmail.com' && this.user.email !== 'kevis@viewhunt.com')) {
             this.showToast('Access denied - Admin only 🔐');
             return;
         }
