@@ -435,8 +435,9 @@ body {
         gap: 0.75rem;
         padding: 0.75rem;
     }
-}/
-* Authentication Styles */
+}
+
+/* Authentication Styles */
 .auth-overlay {
     position: fixed;
     top: 0;
@@ -448,7 +449,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 9999;
     padding: 1rem;
 }
 
