@@ -1,0 +1,5 @@
+{
+  "name": "ViewHunt Collector Prototype",
+  "description": "An AI-powered tool to discover promising YouTube Shorts niches by analyzing channel data for specific keywords and exporting the results to a CSV file.",
+  "requestFramePermissions": []
+}

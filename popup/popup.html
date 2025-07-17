@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ViewHunt Collector</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>ViewHunt Collector</h1>
+        </div>
+        
+        <div class="api-section">
+            <p class="api-title">YOUTUBE API KEY</p>
+            <div class="api-input-container">
+                <input type="password" id="api-key" placeholder="Enter YouTube Data API v3 key" class="api-input">
+                <button id="save-api-key" class="button button-save">Save</button>
+            </div>
+            <p id="api-status" class="api-status"></p>
+        </div>
+        
+        <div class="keywords-section">
+            <p class="keywords-title">SEARCH KEYWORDS</p>
+            <textarea id="keywords-input" placeholder="Enter keywords separated by commas (e.g. go, why, how, she, did, her, make, get, can, will, new, best, top, easy, quick, simple)" class="keywords-textarea"></textarea>
+            <div class="keywords-options">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="add-asterisk" checked>
+                    <span class="checkmark"></span>
+                    Add asterisk (*keyword*) for broader results
+                </label>
+            </div>
+            <button id="save-keywords" class="button button-save">Save Keywords</button>
+            <p id="keywords-status" class="keywords-status"></p>
+        </div>
+        
+        <div class="status-container">
+            <p class="status-title">STATUS</p>
+            <p id="status-display">Idle</p>
+        </div>
+        <div class="results-info">
+            <p class="results-title">RESULTS</p>
+            <p id="results-count">0 videos collected</p>
+        </div>
+        <div class="controls">
+            <button id="start-button" class="button button-start">Start Scraping</button>
+            <button id="stop-button" class="button button-stop" disabled>Stop Scraping</button>
+        </div>
+        <div class="download-section">
+            <button id="download-button" class="button button-download" disabled>Download CSV</button>
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>

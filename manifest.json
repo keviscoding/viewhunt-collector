@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "ViewHunt Collector Prototype",
+  "version": "1.0",
+  "description": "Automates discovering YouTube Shorts niches by scraping search results for a list of keywords.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "downloads"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

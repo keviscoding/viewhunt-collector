@@ -1,0 +1,32 @@
+name: viewhunt-app
+services:
+- name: viewhunt-backend
+  source_dir: /server
+  github:
+    repo: your-username/viewhunt-collector
+    branch: main
+  run_command: npm start
+  environment_slug: node-js
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  envs:
+  - key: NODE_ENV
+    value: production
+  - key: PORT
+    value: "8080"
+- name: viewhunt-frontend
+  source_dir: /mobile
+  github:
+    repo: your-username/viewhunt-collector
+    branch: main
+  environment_slug: static-site
+  routes:
+  - path: /
+static_sites:
+- name: viewhunt-mobile
+  source_dir: /mobile
+  github:
+    repo: your-username/viewhunt-collector
+    branch: main
+  routes:
+  - path: /
