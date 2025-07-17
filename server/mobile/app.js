@@ -268,9 +268,18 @@ class ViewHuntApp {
     }
 
     async approveChannel(channelId) {
+        if (!this.token) {
+            this.showLogin();
+            this.showToast('Please sign in to approve channels 🔐');
+            return;
+        }
+
         try {
             const response = await fetch(`${this.apiBase}/channels/${channelId}/approve`, {
-                method: 'PUT'
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${this.token}`
+                }
             });
 
             if (response.ok) {
@@ -284,9 +293,15 @@ class ViewHuntApp {
 
                 // Update stats
                 await this.loadStats();
+                await this.checkAuthStatus(); // Update user stats
 
                 // Show success feedback
                 this.showToast('Channel approved! ✅');
+            } else if (response.status === 401) {
+                this.showLogin();
+                this.showToast('Please sign in to approve channels 🔐');
+            } else {
+                this.showToast('Error approving channel ❌');
             }
         } catch (error) {
             console.error('Error approving channel:', error);
@@ -295,9 +310,18 @@ class ViewHuntApp {
     }
 
     async rejectChannel(channelId) {
+        if (!this.token) {
+            this.showLogin();
+            this.showToast('Please sign in to reject channels 🔐');
+            return;
+        }
+
         try {
             const response = await fetch(`${this.apiBase}/channels/${channelId}/reject`, {
-                method: 'PUT'
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${this.token}`
+                }
             });
 
             if (response.ok) {
@@ -311,9 +335,15 @@ class ViewHuntApp {
 
                 // Update stats
                 await this.loadStats();
+                await this.checkAuthStatus(); // Update user stats
 
                 // Show success feedback
                 this.showToast('Channel rejected ❌');
+            } else if (response.status === 401) {
+                this.showLogin();
+                this.showToast('Please sign in to reject channels 🔐');
+            } else {
+                this.showToast('Error rejecting channel ❌');
             }
         } catch (error) {
             console.error('Error rejecting channel:', error);
