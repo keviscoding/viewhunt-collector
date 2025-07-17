@@ -66,6 +66,7 @@ db.serialize(() => {
         view_count INTEGER,
         subscriber_count INTEGER,
         view_to_sub_ratio REAL,
+        avatar_url TEXT,
         status TEXT DEFAULT 'pending',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -106,8 +107,8 @@ app.post('/api/channels/bulk', (req, res) => {
 
     const stmt = db.prepare(`
         INSERT OR REPLACE INTO channels 
-        (channel_name, channel_url, video_title, view_count, subscriber_count, view_to_sub_ratio, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        (channel_name, channel_url, video_title, view_count, subscriber_count, view_to_sub_ratio, avatar_url, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `);
 
     let insertedCount = 0;
@@ -120,7 +121,8 @@ app.post('/api/channels/bulk', (req, res) => {
             channel.videoTitle,
             channel.viewCount,
             channel.subscriberCount || 0,
-            channel.viewToSubRatio || 0
+            channel.viewToSubRatio || 0,
+            channel.avatarUrl || null
         ], function(err) {
             if (err) {
                 console.error('Error inserting channel:', err);

@@ -61,10 +61,10 @@ const loadApiKey = async () => {
     }
 };
 
-// Load saved keywords
+// Load saved keywords and settings
 const loadKeywords = async () => {
     try {
-        const result = await chrome.storage.local.get(['keywords', 'addAsterisk']);
+        const result = await chrome.storage.local.get(['keywords', 'addAsterisk', 'maxChannels']);
         if (result.keywords) {
             keywordsInput.value = result.keywords;
             keywordsStatus.textContent = `${result.keywords.split(',').length} keywords loaded`;
@@ -81,6 +81,11 @@ const loadKeywords = async () => {
             addAsteriskCheckbox.checked = result.addAsterisk;
         } else {
             addAsteriskCheckbox.checked = true; // Default to true
+        }
+        
+        // Load max channels limit
+        if (result.maxChannels) {
+            document.getElementById('max-channels').value = result.maxChannels;
         }
     } catch (error) {
         console.error('Error loading keywords:', error);
@@ -133,18 +138,21 @@ const saveKeywords = () => {
     
     const cleanKeywords = keywords.join(', ');
     const addAsterisk = addAsteriskCheckbox.checked;
+    const maxChannels = parseInt(document.getElementById('max-channels').value) || null;
     
     chrome.runtime.sendMessage({ 
         command: 'save-keywords', 
         keywords: keywords, // Send array, not string
-        addAsterisk: addAsterisk
+        addAsterisk: addAsterisk,
+        maxChannels: maxChannels
     }, (response) => {
         if (chrome.runtime.lastError) {
             console.error('Error saving keywords:', chrome.runtime.lastError.message);
             keywordsStatus.textContent = 'Error saving keywords';
             keywordsStatus.className = 'keywords-status error';
         } else if (response && response.success) {
-            keywordsStatus.textContent = `${keywords.length} keywords saved successfully`;
+            const limitText = maxChannels ? ` (limit: ${maxChannels})` : '';
+            keywordsStatus.textContent = `${keywords.length} keywords saved successfully${limitText}`;
             keywordsStatus.className = 'keywords-status success';
         } else {
             keywordsStatus.textContent = 'Failed to save keywords';

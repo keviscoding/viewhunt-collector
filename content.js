@@ -200,12 +200,28 @@
 
         const results = [];
         
+        // Get max channels limit from storage
+        const { maxChannels } = await chrome.storage.local.get('maxChannels');
+        const channelLimit = maxChannels || null;
+        
+        if (channelLimit) {
+            console.log(`ViewHunt: Using channel limit: ${channelLimit} channels per keyword`);
+        }
+        
         // Extract both regular videos and shorts
         const videoItems = document.querySelectorAll('ytd-video-renderer, ytd-reel-item-renderer');
         console.log(`ViewHunt: Found ${videoItems.length} video items (including Shorts).`);
 
+        const processedChannels = new Set(); // Track unique channels
+        
         videoItems.forEach((video, index) => {
             try {
+                // Check if we've hit the channel limit
+                if (channelLimit && results.length >= channelLimit) {
+                    console.log(`ViewHunt: Reached channel limit of ${channelLimit} for this keyword`);
+                    return;
+                }
+                
                 // Selectors for both regular videos and Shorts
                 const titleElement = video.querySelector('a#video-title') ||
                                    video.querySelector('a[title]') ||
@@ -219,6 +235,13 @@
                                      video.querySelector('.yt-simple-endpoint[href*="/channel/"]') ||
                                      video.querySelector('.yt-simple-endpoint[href*="/@"]');
 
+                // Try to get channel avatar
+                const avatarElement = video.querySelector('img[src*="yt3.ggpht.com"]') ||
+                                    video.querySelector('img[src*="ytimg.com"]') ||
+                                    video.querySelector('ytd-channel-name img') ||
+                                    video.querySelector('.yt-img-shadow img') ||
+                                    video.querySelector('img[alt*="channel"]');
+
                 const viewsElement = video.querySelector('#metadata-line span.inline-metadata-item') ||
                                    video.querySelector('.inline-metadata-item') ||
                                    video.querySelector('span[aria-label*="view"]') ||
@@ -229,14 +252,20 @@
                 const channelUrl = channelElement?.href || 'N/A';
                 const viewCountText = viewsElement?.textContent || '0 views';
                 const viewCount = parseViews(viewCountText);
+                const avatarUrl = avatarElement?.src || null;
 
                 if (channelName !== 'N/A' && channelUrl !== 'N/A' && viewCount >= 0) {
-                     results.push({
-                        channelName,
-                        channelUrl,
-                        viewCount,
-                        videoTitle,
-                    });
+                    // Only add unique channels to avoid duplicates
+                    if (!processedChannels.has(channelUrl)) {
+                        processedChannels.add(channelUrl);
+                        results.push({
+                            channelName,
+                            channelUrl,
+                            viewCount,
+                            videoTitle,
+                            avatarUrl,
+                        });
+                    }
                 }
             } catch (itemError) {
                 console.warn(`ViewHunt: Error processing video item ${index}:`, itemError);

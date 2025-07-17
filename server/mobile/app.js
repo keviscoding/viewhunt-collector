@@ -165,7 +165,7 @@ class ViewHuntApp {
         card.className = 'channel-card';
         card.dataset.channelId = channel.id;
 
-        // Get first letter for avatar
+        // Get first letter for avatar fallback
         const avatarLetter = channel.channel_name.charAt(0).toUpperCase();
         
         // Format numbers
@@ -179,9 +179,14 @@ class ViewHuntApp {
         const subCount = formatNumber(channel.subscriber_count || 0);
         const ratio = channel.view_to_sub_ratio ? channel.view_to_sub_ratio.toFixed(2) : 'N/A';
 
+        // Create avatar HTML - use real avatar if available, fallback to letter
+        const avatarHtml = channel.avatar_url ? 
+            `<img src="${channel.avatar_url}" alt="${this.escapeHtml(channel.channel_name)}" class="channel-avatar-img">` :
+            `<div class="channel-avatar-letter">${avatarLetter}</div>`;
+
         card.innerHTML = `
             <div class="channel-header">
-                <div class="channel-avatar">${avatarLetter}</div>
+                <div class="channel-avatar">${avatarHtml}</div>
                 <div class="channel-info">
                     <h3>${this.escapeHtml(channel.channel_name)}</h3>
                     <p>${this.escapeHtml(channel.video_title || 'No video title')}</p>

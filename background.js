@@ -5,6 +5,8 @@ const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 // Default keywords
 const DEFAULT_KEYWORDS = ['go', 'why', 'how', 'she', 'did', 'her', 'make', 'get', 'can', 'will', 'new', 'best', 'top', 'easy', 'quick', 'simple'];
 
+// Remove this - we'll use the dynamic limit from popup instead
+
 // State management
 let state = {
     isProcessing: false,
@@ -67,9 +69,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } else if (message.command === 'save-keywords') {
         state.keywords = message.keywords; // Array of keywords
         state.addAsterisk = message.addAsterisk;
+        state.maxChannels = message.maxChannels; // Add max channels limit
         chrome.storage.local.set({ 
             keywords: message.keywords.join(', '), // Store as string for popup compatibility
-            addAsterisk: message.addAsterisk 
+            addAsterisk: message.addAsterisk,
+            maxChannels: message.maxChannels
         });
         sendResponse({ success: true });
     } else if (message.type === 'scraping-complete') {
