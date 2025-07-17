@@ -128,46 +128,30 @@
 
                     <div class="social-grid">
                         <!-- Kevis's Picks Section -->
-                        <div class="social-card">
+                        <div class="social-card kevis-picks-card">
                             <div class="social-card-header">
                                 <h3>⭐ Kevis's Picks</h3>
                                 <p>Personally curated by the founder</p>
+                                <div class="kevis-admin-controls" id="kevis-admin-controls" style="display: none;">
+                                    <button class="btn btn-small" onclick="window.app.showKevisManager()">Manage Picks</button>
+                                </div>
                             </div>
                             <div class="social-card-content" id="kevis-picks-content">
                                 <div class="social-loading">Loading Kevis's picks...</div>
                             </div>
                         </div>
 
-                        <!-- Top Channels Today -->
-                        <div class="social-card">
+                        <!-- Trending Today -->
+                        <div class="social-card trending-card">
                             <div class="social-card-header">
                                 <h3>🔥 Trending Today</h3>
                                 <p>Most liked channels in the last 24 hours</p>
+                                <div class="trending-info">
+                                    <small id="trending-last-updated">Updated: Loading...</small>
+                                </div>
                             </div>
                             <div class="social-card-content" id="trending-content">
                                 <div class="social-loading">Loading trending channels...</div>
-                            </div>
-                        </div>
-
-                        <!-- User Leaderboard -->
-                        <div class="social-card">
-                            <div class="social-card-header">
-                                <h3>🏆 Top Discoverers</h3>
-                                <p>Users with the best channel picks</p>
-                            </div>
-                            <div class="social-card-content" id="leaderboard-content">
-                                <div class="social-loading">Loading leaderboard...</div>
-                            </div>
-                        </div>
-
-                        <!-- Top Niches -->
-                        <div class="social-card">
-                            <div class="social-card-header">
-                                <h3>📈 Popular Niches</h3>
-                                <p>Most active content categories</p>
-                            </div>
-                            <div class="social-card-content" id="niches-content">
-                                <div class="social-loading">Loading popular niches...</div>
                             </div>
                         </div>
                     </div>

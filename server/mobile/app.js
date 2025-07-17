@@ -1076,13 +1076,27 @@ class ViewHuntApp {
     async loadSocialData() {
         console.log('Loading social data...');
         
-        // Load all social sections
+        // Check if user is Kevis (admin) to show management controls
+        this.checkKevisAdmin();
+        
+        // Load social sections
         await Promise.all([
             this.loadKevisPicks(),
-            this.loadTrendingChannels(),
-            this.loadUserLeaderboard(),
-            this.loadPopularNiches()
+            this.loadTrendingChannels()
         ]);
+    }
+
+    checkKevisAdmin() {
+        // Check if current user is Kevis (you can change this email)
+        const isKevis = this.user && (
+            this.user.email === 'kevis@viewhunt.com' || 
+            this.user.email === 'your-email@example.com' // Replace with your actual email
+        );
+        
+        const adminControls = document.getElementById('kevis-admin-controls');
+        if (adminControls) {
+            adminControls.style.display = isKevis ? 'block' : 'none';
+        }
     }
 
     async loadKevisPicks() {
@@ -1126,24 +1140,42 @@ class ViewHuntApp {
 
     async loadTrendingChannels() {
         const content = document.getElementById('trending-content');
+        const lastUpdated = document.getElementById('trending-last-updated');
         content.innerHTML = '<div class="social-loading">Loading trending channels...</div>';
         
         try {
-            // For now, show recently approved channels (we'll add proper trending logic later)
-            const response = await fetch(`${this.apiBase}/channels/approved`);
-            const channels = await response.json();
+            // Get channels approved in the last 24 hours
+            const response = await fetch(`${this.apiBase}/channels/trending`);
+            let channels;
             
-            // Sort by most recent and take top 5
-            const recentChannels = channels
-                .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
-                .slice(0, 5);
+            if (response.ok) {
+                channels = await response.json();
+            } else {
+                // Fallback to recent approved channels if trending endpoint doesn't exist yet
+                const fallbackResponse = await fetch(`${this.apiBase}/channels/approved`);
+                const allChannels = await fallbackResponse.json();
+                
+                // Filter channels approved in last 24 hours
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                
+                channels = allChannels
+                    .filter(channel => new Date(channel.updated_at) > yesterday)
+                    .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+                    .slice(0, 8);
+            }
             
-            if (recentChannels.length === 0) {
-                content.innerHTML = '<div class="social-empty">No trending channels yet! 🔥</div>';
+            // Update last updated time
+            if (lastUpdated) {
+                lastUpdated.textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+            }
+            
+            if (channels.length === 0) {
+                content.innerHTML = '<div class="social-empty">No trending channels in the last 24 hours! 🔥</div>';
                 return;
             }
             
-            content.innerHTML = recentChannels.map(channel => `
+            content.innerHTML = channels.map(channel => `
                 <div class="social-channel-item">
                     <div class="social-channel-avatar">
                         ${channel.avatar_url ? 
@@ -1153,7 +1185,8 @@ class ViewHuntApp {
                     </div>
                     <div class="social-channel-info">
                         <h4>${this.escapeHtml(channel.channel_name)}</h4>
-                        <p>Views: ${this.formatNumber(channel.view_count || 0)}</p>
+                        <p>Ratio: ${channel.view_to_sub_ratio ? channel.view_to_sub_ratio.toFixed(2) : 'N/A'}</p>
+                        <small>Approved ${this.getTimeAgo(new Date(channel.updated_at))}</small>
                     </div>
                     <a href="${channel.channel_url}" target="_blank" class="social-channel-link">View</a>
                 </div>
@@ -1165,76 +1198,211 @@ class ViewHuntApp {
         }
     }
 
-    async loadUserLeaderboard() {
-        const content = document.getElementById('leaderboard-content');
-        content.innerHTML = '<div class="social-loading">Loading leaderboard...</div>';
+    // Kevis Admin Methods
+    showKevisManager() {
+        if (!this.user || (this.user.email !== 'kevis@viewhunt.com' && this.user.email !== 'your-email@example.com')) {
+            this.showToast('Access denied - Admin only 🔐');
+            return;
+        }
+
+        // Create Kevis manager modal
+        const overlay = document.createElement('div');
+        overlay.className = 'auth-overlay';
+        overlay.style.display = 'flex';
+        overlay.id = 'kevis-manager-overlay';
+
+        overlay.innerHTML = `
+            <div class="auth-modal kevis-manager-modal">
+                <div class="auth-form">
+                    <h2>⭐ Manage Kevis's Picks</h2>
+                    <p class="auth-subtitle">Add or remove channels from your curated list</p>
+                    
+                    <div class="kevis-manager-content">
+                        <div class="kevis-current-picks" id="kevis-current-picks">
+                            <h3>Current Picks</h3>
+                            <div class="social-loading">Loading current picks...</div>
+                        </div>
+                        
+                        <div class="kevis-add-section">
+                            <h3>Add New Pick</h3>
+                            <p>Search from approved channels:</p>
+                            <input type="text" id="kevis-search" placeholder="Search channel name..." class="filter-input">
+                            <div class="kevis-search-results" id="kevis-search-results">
+                                <div class="social-note">Type to search approved channels</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                        <button class="auth-btn" onclick="this.closest('.auth-overlay').remove()" style="background: #6b7280;">Close</button>
+                    </div>
+                </div>
+                <button class="auth-close" onclick="this.closest('.auth-overlay').remove()">×</button>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
         
-        // For now, show placeholder data (we'll implement real leaderboard later)
-        setTimeout(() => {
-            content.innerHTML = `
-                <div class="leaderboard-item">
-                    <div class="leaderboard-rank">🥇</div>
-                    <div class="leaderboard-info">
-                        <h4>ChannelHunter</h4>
-                        <p>127 great picks</p>
-                    </div>
-                    <div class="leaderboard-score">95%</div>
-                </div>
-                <div class="leaderboard-item">
-                    <div class="leaderboard-rank">🥈</div>
-                    <div class="leaderboard-info">
-                        <h4>TrendSpotter</h4>
-                        <p>89 great picks</p>
-                    </div>
-                    <div class="leaderboard-score">92%</div>
-                </div>
-                <div class="leaderboard-item">
-                    <div class="leaderboard-rank">🥉</div>
-                    <div class="leaderboard-info">
-                        <h4>VideoFinder</h4>
-                        <p>76 great picks</p>
-                    </div>
-                    <div class="leaderboard-score">88%</div>
-                </div>
-                <div class="social-note">🚀 Real leaderboard coming soon!</div>
-            `;
-        }, 1000);
+        // Load current picks and setup search
+        this.loadKevisManagerData();
+        this.setupKevisSearch();
     }
 
-    async loadPopularNiches() {
-        const content = document.getElementById('niches-content');
-        content.innerHTML = '<div class="social-loading">Loading popular niches...</div>';
+    async loadKevisManagerData() {
+        // This will load the current Kevis picks for management
+        // For now, we'll use a simple approach - later we can add a dedicated API endpoint
+        try {
+            const response = await fetch(`${this.apiBase}/collections`, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+            
+            if (response.ok) {
+                const collections = await response.json();
+                const kevisCollection = collections.find(c => c.name === "Kevis's Picks");
+                
+                if (kevisCollection) {
+                    // Load channels in Kevis's collection
+                    const channelsResponse = await fetch(`${this.apiBase}/collections/${kevisCollection._id}/channels`, {
+                        headers: { 'Authorization': `Bearer ${this.token}` }
+                    });
+                    
+                    if (channelsResponse.ok) {
+                        const data = await channelsResponse.json();
+                        this.renderKevisCurrentPicks(data.channels);
+                    }
+                } else {
+                    // Create Kevis's Picks collection if it doesn't exist
+                    await this.createKevisCollection();
+                }
+            }
+        } catch (error) {
+            console.error('Error loading Kevis manager data:', error);
+        }
+    }
+
+    async createKevisCollection() {
+        try {
+            const response = await fetch(`${this.apiBase}/collections`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.token}`
+                },
+                body: JSON.stringify({
+                    name: "Kevis's Picks",
+                    description: "Personally curated channels by Kevis"
+                })
+            });
+            
+            if (response.ok) {
+                console.log("Kevis's Picks collection created");
+                document.getElementById('kevis-current-picks').innerHTML = `
+                    <h3>Current Picks</h3>
+                    <div class="social-empty">No picks yet - start adding channels! ⭐</div>
+                `;
+            }
+        } catch (error) {
+            console.error('Error creating Kevis collection:', error);
+        }
+    }
+
+    renderKevisCurrentPicks(channels) {
+        const container = document.getElementById('kevis-current-picks');
+        if (!container) return;
         
-        // For now, show placeholder data (we'll implement real niche analysis later)
-        setTimeout(() => {
-            content.innerHTML = `
-                <div class="niche-item">
-                    <div class="niche-icon">🎮</div>
-                    <div class="niche-info">
-                        <h4>Gaming</h4>
-                        <p>234 channels</p>
-                    </div>
-                    <div class="niche-trend">📈 +12%</div>
-                </div>
-                <div class="niche-item">
-                    <div class="niche-icon">🍳</div>
-                    <div class="niche-info">
-                        <h4>Cooking</h4>
-                        <p>189 channels</p>
-                    </div>
-                    <div class="niche-trend">📈 +8%</div>
-                </div>
-                <div class="niche-item">
-                    <div class="niche-icon">💡</div>
-                    <div class="niche-info">
-                        <h4>Life Hacks</h4>
-                        <p>156 channels</p>
-                    </div>
-                    <div class="niche-trend">📈 +15%</div>
-                </div>
-                <div class="social-note">📊 Real niche data coming soon!</div>
+        if (channels.length === 0) {
+            container.innerHTML = `
+                <h3>Current Picks</h3>
+                <div class="social-empty">No picks yet - start adding channels! ⭐</div>
             `;
-        }, 1200);
+            return;
+        }
+        
+        container.innerHTML = `
+            <h3>Current Picks (${channels.length})</h3>
+            ${channels.map(channel => `
+                <div class="kevis-pick-item">
+                    <div class="social-channel-avatar">
+                        ${channel.avatar_url ? 
+                            `<img src="${channel.avatar_url}" alt="${this.escapeHtml(channel.channel_name)}">` :
+                            `<div class="avatar-letter">${channel.channel_name.charAt(0).toUpperCase()}</div>`
+                        }
+                    </div>
+                    <div class="social-channel-info">
+                        <h4>${this.escapeHtml(channel.channel_name)}</h4>
+                        <p>Ratio: ${channel.view_to_sub_ratio ? channel.view_to_sub_ratio.toFixed(2) : 'N/A'}</p>
+                    </div>
+                    <button class="btn btn-small btn-danger" onclick="window.app.removeFromKevisPicks('${channel._id}')">Remove</button>
+                </div>
+            `).join('')}
+        `;
+    }
+
+    setupKevisSearch() {
+        const searchInput = document.getElementById('kevis-search');
+        if (!searchInput) return;
+        
+        searchInput.addEventListener('input', this.debounce(async (e) => {
+            const query = e.target.value.trim();
+            if (query.length < 2) {
+                document.getElementById('kevis-search-results').innerHTML = 
+                    '<div class="social-note">Type to search approved channels</div>';
+                return;
+            }
+            
+            await this.searchApprovedChannels(query);
+        }, 300));
+    }
+
+    async searchApprovedChannels(query) {
+        const resultsContainer = document.getElementById('kevis-search-results');
+        resultsContainer.innerHTML = '<div class="social-loading">Searching...</div>';
+        
+        try {
+            const response = await fetch(`${this.apiBase}/channels/approved`);
+            const channels = await response.json();
+            
+            const filtered = channels.filter(channel => 
+                channel.channel_name.toLowerCase().includes(query.toLowerCase())
+            ).slice(0, 5);
+            
+            if (filtered.length === 0) {
+                resultsContainer.innerHTML = '<div class="social-empty">No channels found</div>';
+                return;
+            }
+            
+            resultsContainer.innerHTML = filtered.map(channel => `
+                <div class="kevis-search-item">
+                    <div class="social-channel-avatar">
+                        ${channel.avatar_url ? 
+                            `<img src="${channel.avatar_url}" alt="${this.escapeHtml(channel.channel_name)}">` :
+                            `<div class="avatar-letter">${channel.channel_name.charAt(0).toUpperCase()}</div>`
+                        }
+                    </div>
+                    <div class="social-channel-info">
+                        <h4>${this.escapeHtml(channel.channel_name)}</h4>
+                        <p>Ratio: ${channel.view_to_sub_ratio ? channel.view_to_sub_ratio.toFixed(2) : 'N/A'}</p>
+                    </div>
+                    <button class="btn btn-small btn-primary" onclick="window.app.addToKevisPicks('${channel._id}')">Add</button>
+                </div>
+            `).join('');
+            
+        } catch (error) {
+            console.error('Error searching channels:', error);
+            resultsContainer.innerHTML = '<div class="social-error">Search error</div>';
+        }
+    }
+
+    async addToKevisPicks(channelId) {
+        // Implementation for adding to Kevis's picks collection
+        this.showToast('Adding to Kevis\'s Picks... ⭐');
+        // This would use the existing collection system
+    }
+
+    async removeFromKevisPicks(channelId) {
+        // Implementation for removing from Kevis's picks collection
+        this.showToast('Removing from Kevis\'s Picks... 🗑️');
+        // This would use the existing collection system
     }
 
     formatNumber(num) {
