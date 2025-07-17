@@ -671,7 +671,6 @@ class ViewHuntApp {
     createCollectionCard(collection) {
         const card = document.createElement('div');
         card.className = 'collection-card';
-        card.onclick = () => this.viewCollection(collection._id);
 
         const timeAgo = this.getTimeAgo(new Date(collection.updated_at));
         const channelCount = collection.channel_count || 0;
@@ -683,12 +682,24 @@ class ViewHuntApp {
                     <h3>${this.escapeHtml(collection.name)}</h3>
                     <p>${this.escapeHtml(collection.description || 'No description')}</p>
                 </div>
+                <div class="collection-actions">
+                    <button class="collection-share-btn" onclick="event.stopPropagation(); window.app.shareCollection('${collection._id}', '${this.escapeHtml(collection.name)}')" title="Share Collection">
+                        🔗
+                    </button>
+                </div>
             </div>
             <div class="collection-stats">
                 <span class="collection-count">${channelCount} channel${channelCount !== 1 ? 's' : ''}</span>
                 <span class="collection-updated">${timeAgo}</span>
             </div>
         `;
+
+        // Add click handler for the main card (excluding the share button)
+        card.addEventListener('click', (e) => {
+            if (!e.target.classList.contains('collection-share-btn')) {
+                this.viewCollection(collection._id);
+            }
+        });
 
         return card;
     }
@@ -1417,4 +1428,65 @@ let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new ViewHuntApp();
     window.app = app; // Make it globally available
-});
+});   
+ // Collection Sharing Methods
+    async shareCollection(collectionId, collectionName) {
+        const shareUrl = `${window.location.origin}/shared/${collectionId}`;
+        
+        try {
+            // Copy to clipboard
+            await navigator.clipboard.writeText(shareUrl);
+            this.showToast(`Collection link copied! 🔗✅`);
+        } catch (error) {
+            // Fallback for older browsers
+            this.showShareModal(shareUrl, collectionName);
+        }
+    }
+
+    showShareModal(shareUrl, collectionName) {
+        const overlay = document.createElement('div');
+        overlay.className = 'auth-overlay';
+        overlay.style.display = 'flex';
+        overlay.id = 'share-modal-overlay';
+
+        overlay.innerHTML = `
+            <div class="auth-modal">
+                <div class="auth-form">
+                    <h2>🔗 Share Collection</h2>
+                    <p class="auth-subtitle">Share "${this.escapeHtml(collectionName)}" with others</p>
+                    
+                    <div class="share-url-container">
+                        <input type="text" id="share-url-input" value="${shareUrl}" readonly class="filter-input">
+                        <button class="btn btn-primary" onclick="window.app.copyShareUrl()">Copy Link</button>
+                    </div>
+                    
+                    <div class="share-info">
+                        <p>📱 Anyone with this link can view your collection</p>
+                        <p>🔓 No account required to view</p>
+                    </div>
+                    
+                    <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                        <button class="auth-btn" onclick="this.closest('.auth-overlay').remove()" style="background: #6b7280;">Close</button>
+                    </div>
+                </div>
+                <button class="auth-close" onclick="this.closest('.auth-overlay').remove()">×</button>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        // Auto-select the URL for easy copying
+        const urlInput = document.getElementById('share-url-input');
+        urlInput.select();
+        urlInput.focus();
+    }
+
+    copyShareUrl() {
+        const urlInput = document.getElementById('share-url-input');
+        urlInput.select();
+        document.execCommand('copy');
+        this.showToast('Link copied to clipboard! 🔗✅');
+        
+        // Close the modal
+        document.getElementById('share-modal-overlay').remove();
+    }

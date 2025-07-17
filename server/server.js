@@ -79,6 +79,169 @@ async function connectToMongoDB() {
 // Initialize MongoDB connection
 connectToMongoDB();
 
+// Helper function to generate public collection HTML
+function generatePublicCollectionHTML(collection, channels, owner) {
+    const formatNumber = (num) => {
+        if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+        if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+        return num.toString();
+    };
+
+    const escapeHtml = (text) => {
+        const div = { textContent: text };
+        return div.textContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    };
+
+    const getTimeAgo = (date) => {
+        const now = new Date();
+        const diffInSeconds = Math.floor((now - date) / 1000);
+        
+        if (diffInSeconds < 60) return 'Just now';
+        if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+        if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+        if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)}d ago`;
+        return `${Math.floor(diffInSeconds / 2592000)}mo ago`;
+    };
+
+    return `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>${escapeHtml(collection.name)} - ViewHunt Collection</title>
+            <meta name="description" content="Discover amazing YouTube Shorts channels curated by ${escapeHtml(owner?.display_name || 'ViewHunt user')}">
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { 
+                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; 
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    min-height: 100vh; 
+                    color: #333; 
+                }
+                .container { max-width: 1200px; margin: 0 auto; padding: 2rem 1rem; }
+                .header { text-align: center; margin-bottom: 3rem; color: white; }
+                .header h1 { font-size: 2.5rem; margin-bottom: 0.5rem; }
+                .header .subtitle { font-size: 1.2rem; opacity: 0.9; margin-bottom: 1rem; }
+                .header .meta { font-size: 1rem; opacity: 0.8; }
+                .channels-grid { 
+                    display: grid; 
+                    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); 
+                    gap: 1.5rem; 
+                    margin-bottom: 3rem; 
+                }
+                .channel-card { 
+                    background: rgba(255, 255, 255, 0.95); 
+                    border-radius: 16px; 
+                    padding: 1.5rem; 
+                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); 
+                    backdrop-filter: blur(10px); 
+                    border: 1px solid rgba(255, 255, 255, 0.2); 
+                    transition: transform 0.2s ease;
+                }
+                .channel-card:hover { transform: translateY(-4px); }
+                .channel-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+                .channel-avatar { width: 50px; height: 50px; border-radius: 50%; overflow: hidden; flex-shrink: 0; }
+                .channel-avatar img { width: 100%; height: 100%; object-fit: cover; }
+                .avatar-letter { 
+                    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; 
+                    background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-weight: 600; font-size: 1.2rem; 
+                }
+                .channel-info h3 { font-size: 1.1rem; margin-bottom: 0.25rem; }
+                .channel-info p { color: #666; font-size: 0.9rem; }
+                .channel-stats { display: flex; gap: 1rem; margin-bottom: 1rem; }
+                .stat-item { text-align: center; }
+                .stat-value { display: block; font-weight: 600; font-size: 1.1rem; color: #333; }
+                .stat-label { font-size: 0.8rem; color: #666; }
+                .ratio-highlight { color: #e74c3c; }
+                .channel-link { 
+                    display: inline-block; background: linear-gradient(135deg, #667eea, #764ba2); 
+                    color: white; padding: 0.75rem 1.5rem; border-radius: 8px; text-decoration: none; 
+                    font-weight: 500; transition: transform 0.2s ease; 
+                }
+                .channel-link:hover { transform: translateY(-1px); }
+                .footer { text-align: center; color: white; opacity: 0.8; }
+                .footer a { color: white; text-decoration: none; font-weight: 600; }
+                .footer a:hover { text-decoration: underline; }
+                .empty-state { text-align: center; color: white; padding: 3rem; }
+                .empty-state h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+                @media (max-width: 768px) {
+                    .container { padding: 1rem; }
+                    .header h1 { font-size: 2rem; }
+                    .channels-grid { grid-template-columns: 1fr; gap: 1rem; }
+                    .channel-card { padding: 1rem; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>📚 ${escapeHtml(collection.name)}</h1>
+                    <p class="subtitle">${escapeHtml(collection.description || 'A curated collection of amazing YouTube Shorts channels')}</p>
+                    <p class="meta">
+                        Curated by <strong>${escapeHtml(owner?.display_name || 'ViewHunt user')}</strong> • 
+                        ${channels.length} channel${channels.length !== 1 ? 's' : ''} • 
+                        Updated ${getTimeAgo(new Date(collection.updated_at))}
+                    </p>
+                </div>
+
+                ${channels.length === 0 ? `
+                    <div class="empty-state">
+                        <h2>📺 No Channels Yet</h2>
+                        <p>This collection is empty, but check back soon for amazing channel discoveries!</p>
+                    </div>
+                ` : `
+                    <div class="channels-grid">
+                        ${channels.map(channel => `
+                            <div class="channel-card">
+                                <div class="channel-header">
+                                    <div class="channel-avatar">
+                                        ${channel.avatar_url ? 
+                                            `<img src="${channel.avatar_url}" alt="${escapeHtml(channel.channel_name)}">` :
+                                            `<div class="avatar-letter">${channel.channel_name.charAt(0).toUpperCase()}</div>`
+                                        }
+                                    </div>
+                                    <div class="channel-info">
+                                        <h3>${escapeHtml(channel.channel_name)}</h3>
+                                        <p>${escapeHtml(channel.video_title || 'YouTube Shorts Channel')}</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="channel-stats">
+                                    <div class="stat-item">
+                                        <span class="stat-value">${formatNumber(channel.view_count || 0)}</span>
+                                        <span class="stat-label">Views</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-value">${formatNumber(channel.subscriber_count || 0)}</span>
+                                        <span class="stat-label">Subs</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-value ratio-highlight">${channel.view_to_sub_ratio ? channel.view_to_sub_ratio.toFixed(2) : 'N/A'}</span>
+                                        <span class="stat-label">Ratio</span>
+                                    </div>
+                                </div>
+                                
+                                <a href="${channel.channel_url}" target="_blank" class="channel-link">
+                                    🔗 View Channel
+                                </a>
+                            </div>
+                        `).join('')}
+                    </div>
+                `}
+
+                <div class="footer">
+                    <p>Powered by <a href="https://viewhunt-backend-4fur6.ondigitalocean.app/">ViewHunt</a> - Discover Amazing YouTube Shorts Channels</p>
+                </div>
+            </div>
+        </body>
+        </html>
+    `;
+}
+
 // Rate limiting for auth endpoints
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -517,6 +680,80 @@ app.get('/api/stats', async (req, res) => {
 });
 
 // Collections Routes
+
+// Public collection sharing route (no authentication required)
+app.get('/shared/:collectionId', async (req, res) => {
+    try {
+        const collectionId = req.params.collectionId;
+        
+        // Get collection details
+        const collection = await db.collection('collections').findOne({
+            _id: new ObjectId(collectionId)
+        });
+        
+        if (!collection) {
+            return res.status(404).send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Collection Not Found - ViewHunt</title>
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <style>
+                        body { font-family: Inter, sans-serif; text-align: center; padding: 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; color: white; }
+                        .container { max-width: 500px; margin: 0 auto; }
+                        h1 { font-size: 2rem; margin-bottom: 1rem; }
+                        p { font-size: 1.1rem; margin-bottom: 2rem; }
+                        .btn { background: white; color: #333; padding: 1rem 2rem; border-radius: 8px; text-decoration: none; font-weight: 600; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>📚 Collection Not Found</h1>
+                        <p>This collection doesn't exist or has been removed.</p>
+                        <a href="https://viewhunt-backend-4fur6.ondigitalocean.app/" class="btn">Discover Channels on ViewHunt</a>
+                    </div>
+                </body>
+                </html>
+            `);
+        }
+        
+        // Get channels in the collection
+        const collectionItems = await db.collection('collection_items')
+            .aggregate([
+                { $match: { collection_id: new ObjectId(collectionId) } },
+                {
+                    $lookup: {
+                        from: 'channels',
+                        localField: 'channel_id',
+                        foreignField: '_id',
+                        as: 'channel'
+                    }
+                },
+                { $unwind: '$channel' },
+                { $sort: { added_at: -1 } }
+            ])
+            .toArray();
+        
+        const channels = collectionItems.map(item => ({
+            ...item.channel,
+            added_at: item.added_at
+        }));
+        
+        // Get collection owner info (without sensitive data)
+        const owner = await db.collection('users').findOne(
+            { _id: collection.user_id },
+            { projection: { display_name: 1 } }
+        );
+        
+        // Render public collection page
+        const html = generatePublicCollectionHTML(collection, channels, owner);
+        res.send(html);
+        
+    } catch (error) {
+        console.error('Error fetching public collection:', error);
+        res.status(500).send('Error loading collection');
+    }
+});
 
 // Get user's collections
 app.get('/api/collections', authenticateToken, async (req, res) => {
