@@ -1421,13 +1421,7 @@ class ViewHuntApp {
         if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
         return num.toString();
     }
-}
 
-// Initialize app
-let app;
-document.addEventListener('DOMContentLoaded', () => {
-    app = new ViewHuntApp();
-    window.app = app; // Make it globally available
     // Collection Sharing Methods
     async shareCollection(collectionId, collectionName) {
         const shareUrl = `${window.location.origin}/shared/${collectionId}`;
@@ -1488,10 +1482,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Close the modal
         document.getElementById('share-modal-overlay').remove();
-    }}
+    }
+}
 
-//
- Initialize app
+// Initialize app
 let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new ViewHuntApp();
