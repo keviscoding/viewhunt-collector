@@ -1072,15 +1072,7 @@ class ViewHuntApp {
             }
         });
     }
-}
-
-// Initialize app
-let app;
-document.addEventListener('DOMContentLoaded', () => {
-    app = new ViewHuntApp();
-    window.app = app; // Make it globally available
-});    // S
-ocial Methods
+    // Social Methods
     async loadSocialData() {
         console.log('Loading social data...');
         
@@ -1249,4 +1241,12 @@ ocial Methods
         if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
         if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
         return num.toString();
-    }
+    }}
+
+
+// Initialize app
+let app;
+document.addEventListener('DOMContentLoaded', () => {
+    app = new ViewHuntApp();
+    window.app = app; // Make it globally available
+});
