@@ -16,7 +16,23 @@ app.use('/mobile', express.static(path.join(__dirname, '../mobile')));
 
 // Serve mobile app at root for convenience
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '../mobile/index.html'));
+    const mobilePath = path.join(__dirname, '../mobile/index.html');
+    console.log('Trying to serve mobile app from:', mobilePath);
+    
+    // Check if file exists
+    if (require('fs').existsSync(mobilePath)) {
+        res.sendFile(mobilePath);
+    } else {
+        console.error('Mobile app not found at:', mobilePath);
+        res.status(404).send(`
+            <h1>ViewHunt Backend is Running!</h1>
+            <p>Server is working on port 8080</p>
+            <p>Database: ${process.env.DATABASE_PATH || 'viewhunt.db'}</p>
+            <p>Looking for mobile app at: ${mobilePath}</p>
+            <p>File exists: ${require('fs').existsSync(mobilePath)}</p>
+            <p><a href="/api/health">Test API Health</a></p>
+        `);
+    }
 });
 
 // Database setup

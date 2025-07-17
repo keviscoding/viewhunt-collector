@@ -307,7 +307,7 @@ async function sendToBackend(results) {
     try {
         console.log(`ViewHunt Background: Sending ${results.length} channels to backend...`);
         
-        const response = await fetch('http://localhost:3002/api/channels/bulk', {
+        const response = await fetch('https://viewhunt-backend-4fur6.ondigitalocean.app/api/channels/bulk', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
