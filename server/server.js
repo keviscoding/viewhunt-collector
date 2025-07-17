@@ -64,6 +64,11 @@ async function connectToMongoDB() {
         await db.collection('channels').createIndex({ view_to_sub_ratio: -1 });
         await db.collection('channels').createIndex({ channel_url: 1 }, { unique: true });
         
+        // Collections indexes
+        await db.collection('collections').createIndex({ user_id: 1 });
+        await db.collection('collection_items').createIndex({ collection_id: 1 });
+        await db.collection('collection_items').createIndex({ user_id: 1, channel_id: 1 }, { unique: true });
+        
         console.log('Connected to MongoDB successfully');
     } catch (error) {
         console.error('MongoDB connection error:', error);
@@ -465,6 +470,264 @@ app.get('/api/stats', async (req, res) => {
         });
     } catch (error) {
         console.error('Error getting stats:', error);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Collections Routes
+
+// Get user's collections
+app.get('/api/collections', authenticateToken, async (req, res) => {
+    try {
+        const collections = await db.collection('collections')
+            .find({ user_id: new ObjectId(req.user.userId) })
+            .sort({ updated_at: -1 })
+            .toArray();
+        
+        // Get channel count for each collection
+        for (let collection of collections) {
+            const itemCount = await db.collection('collection_items')
+                .countDocuments({ collection_id: collection._id });
+            collection.channel_count = itemCount;
+        }
+        
+        res.json(collections);
+    } catch (error) {
+        console.error('Error fetching collections:', error);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Create new collection
+app.post('/api/collections', authenticateToken, async (req, res) => {
+    try {
+        const { name, description } = req.body;
+        
+        if (!name || name.trim().length === 0) {
+            return res.status(400).json({ error: 'Collection name is required' });
+        }
+        
+        if (name.length > 50) {
+            return res.status(400).json({ error: 'Collection name must be 50 characters or less' });
+        }
+        
+        // Check if user already has a collection with this name
+        const existingCollection = await db.collection('collections').findOne({
+            user_id: new ObjectId(req.user.userId),
+            name: name.trim()
+        });
+        
+        if (existingCollection) {
+            return res.status(400).json({ error: 'You already have a collection with this name' });
+        }
+        
+        const newCollection = {
+            user_id: new ObjectId(req.user.userId),
+            name: name.trim(),
+            description: description?.trim() || '',
+            created_at: new Date(),
+            updated_at: new Date()
+        };
+        
+        const result = await db.collection('collections').insertOne(newCollection);
+        
+        res.status(201).json({
+            message: 'Collection created successfully',
+            collection: {
+                ...newCollection,
+                _id: result.insertedId,
+                channel_count: 0
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error creating collection:', error);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Get channels in a specific collection
+app.get('/api/collections/:id/channels', authenticateToken, async (req, res) => {
+    try {
+        const collectionId = req.params.id;
+        
+        // Verify collection belongs to user
+        const collection = await db.collection('collections').findOne({
+            _id: new ObjectId(collectionId),
+            user_id: new ObjectId(req.user.userId)
+        });
+        
+        if (!collection) {
+            return res.status(404).json({ error: 'Collection not found' });
+        }
+        
+        // Get channels in collection with full channel data
+        const collectionItems = await db.collection('collection_items')
+            .aggregate([
+                { $match: { collection_id: new ObjectId(collectionId) } },
+                {
+                    $lookup: {
+                        from: 'channels',
+                        localField: 'channel_id',
+                        foreignField: '_id',
+                        as: 'channel'
+                    }
+                },
+                { $unwind: '$channel' },
+                { $sort: { added_at: -1 } }
+            ])
+            .toArray();
+        
+        const channels = collectionItems.map(item => ({
+            ...item.channel,
+            added_at: item.added_at,
+            notes: item.notes
+        }));
+        
+        res.json({
+            collection,
+            channels
+        });
+        
+    } catch (error) {
+        console.error('Error fetching collection channels:', error);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Add channel to collection
+app.post('/api/collections/:id/channels', authenticateToken, async (req, res) => {
+    try {
+        const collectionId = req.params.id;
+        const { channel_id, notes } = req.body;
+        
+        if (!channel_id) {
+            return res.status(400).json({ error: 'Channel ID is required' });
+        }
+        
+        // Verify collection belongs to user
+        const collection = await db.collection('collections').findOne({
+            _id: new ObjectId(collectionId),
+            user_id: new ObjectId(req.user.userId)
+        });
+        
+        if (!collection) {
+            return res.status(404).json({ error: 'Collection not found' });
+        }
+        
+        // Verify channel exists
+        const channel = await db.collection('channels').findOne({
+            _id: new ObjectId(channel_id)
+        });
+        
+        if (!channel) {
+            return res.status(404).json({ error: 'Channel not found' });
+        }
+        
+        // Check if channel is already in collection
+        const existingItem = await db.collection('collection_items').findOne({
+            collection_id: new ObjectId(collectionId),
+            channel_id: new ObjectId(channel_id)
+        });
+        
+        if (existingItem) {
+            return res.status(400).json({ error: 'Channel is already in this collection' });
+        }
+        
+        // Add channel to collection
+        const collectionItem = {
+            collection_id: new ObjectId(collectionId),
+            channel_id: new ObjectId(channel_id),
+            user_id: new ObjectId(req.user.userId),
+            notes: notes?.trim() || '',
+            added_at: new Date()
+        };
+        
+        await db.collection('collection_items').insertOne(collectionItem);
+        
+        // Update collection's updated_at timestamp
+        await db.collection('collections').updateOne(
+            { _id: new ObjectId(collectionId) },
+            { $set: { updated_at: new Date() } }
+        );
+        
+        res.json({ message: 'Channel added to collection successfully' });
+        
+    } catch (error) {
+        console.error('Error adding channel to collection:', error);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Remove channel from collection
+app.delete('/api/collections/:id/channels/:channelId', authenticateToken, async (req, res) => {
+    try {
+        const collectionId = req.params.id;
+        const channelId = req.params.channelId;
+        
+        // Verify collection belongs to user
+        const collection = await db.collection('collections').findOne({
+            _id: new ObjectId(collectionId),
+            user_id: new ObjectId(req.user.userId)
+        });
+        
+        if (!collection) {
+            return res.status(404).json({ error: 'Collection not found' });
+        }
+        
+        // Remove channel from collection
+        const result = await db.collection('collection_items').deleteOne({
+            collection_id: new ObjectId(collectionId),
+            channel_id: new ObjectId(channelId)
+        });
+        
+        if (result.deletedCount === 0) {
+            return res.status(404).json({ error: 'Channel not found in collection' });
+        }
+        
+        // Update collection's updated_at timestamp
+        await db.collection('collections').updateOne(
+            { _id: new ObjectId(collectionId) },
+            { $set: { updated_at: new Date() } }
+        );
+        
+        res.json({ message: 'Channel removed from collection successfully' });
+        
+    } catch (error) {
+        console.error('Error removing channel from collection:', error);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Delete collection
+app.delete('/api/collections/:id', authenticateToken, async (req, res) => {
+    try {
+        const collectionId = req.params.id;
+        
+        // Verify collection belongs to user
+        const collection = await db.collection('collections').findOne({
+            _id: new ObjectId(collectionId),
+            user_id: new ObjectId(req.user.userId)
+        });
+        
+        if (!collection) {
+            return res.status(404).json({ error: 'Collection not found' });
+        }
+        
+        // Delete all items in the collection
+        await db.collection('collection_items').deleteMany({
+            collection_id: new ObjectId(collectionId)
+        });
+        
+        // Delete the collection
+        await db.collection('collections').deleteOne({
+            _id: new ObjectId(collectionId)
+        });
+        
+        res.json({ message: 'Collection deleted successfully' });
+        
+    } catch (error) {
+        console.error('Error deleting collection:', error);
         res.status(500).json({ error: 'Database error' });
     }
 });

@@ -4,6 +4,8 @@ class ViewHuntApp {
         this.apiBase = this.getApiBase();
         this.currentView = 'pending';
         this.channels = [];
+        this.collections = [];
+        this.currentCollection = null;
         this.user = null;
         this.token = localStorage.getItem('viewhunt_token');
         
@@ -54,6 +56,19 @@ class ViewHuntApp {
         document.getElementById('auth-overlay').addEventListener('click', (e) => {
             if (e.target === e.currentTarget) {
                 this.closeAuth();
+            }
+        });
+
+        // Create collection form
+        document.getElementById('create-collection-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleCreateCollection();
+        });
+
+        // Close create collection modal when clicking overlay
+        document.getElementById('create-collection-overlay').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) {
+                this.closeCreateCollection();
             }
         });
     }
@@ -234,11 +249,16 @@ class ViewHuntApp {
                     🔗 View Channel
                 </a>
                 ${this.currentView === 'pending' ? `
-                    <button class="btn btn-approve" onclick="app.approveChannel('${channel._id}')">
+                    <button class="btn btn-approve" onclick="window.app.approveChannel('${channel._id}')">
                         ✅ Approve
                     </button>
-                    <button class="btn btn-reject" onclick="app.rejectChannel('${channel._id}')">
+                    <button class="btn btn-reject" onclick="window.app.rejectChannel('${channel._id}')">
                         ❌ Reject
+                    </button>
+                ` : ''}
+                ${this.currentView === 'approved' && this.token ? `
+                    <button class="save-to-collection-btn" onclick="window.app.showSaveToCollection('${channel._id}')">
+                        📚 Save
                     </button>
                 ` : ''}
             </div>
@@ -307,16 +327,37 @@ class ViewHuntApp {
             btn.classList.toggle('active', btn.dataset.view === view);
         });
 
-        // Show/hide filters based on view
+        // Show/hide different views
         const filters = document.getElementById('filters');
-        if (view === 'pending') {
-            filters.style.display = 'grid';
-        } else {
-            filters.style.display = 'none';
-        }
+        const channelGrid = document.getElementById('channel-grid');
+        const collectionsView = document.getElementById('collections-view');
+        const emptyState = document.getElementById('empty-state');
+        const loading = document.getElementById('loading');
 
-        this.currentView = view;
-        this.loadChannels();
+        if (view === 'collections') {
+            // Show collections view
+            filters.style.display = 'none';
+            channelGrid.style.display = 'none';
+            emptyState.style.display = 'none';
+            loading.style.display = 'none';
+            collectionsView.style.display = 'block';
+            
+            this.currentView = view;
+            this.loadCollections();
+        } else {
+            // Show channels view
+            collectionsView.style.display = 'none';
+            channelGrid.style.display = 'grid';
+            
+            if (view === 'pending') {
+                filters.style.display = 'grid';
+            } else {
+                filters.style.display = 'none';
+            }
+
+            this.currentView = view;
+            this.loadChannels();
+        }
     }
 
     showToast(message) {
@@ -652,6 +693,330 @@ class ViewHuntApp {
         }
     }
 
+    // Collections Methods
+    async loadCollections() {
+        if (!this.token) {
+            this.showCollectionsLoginPrompt();
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBase}/collections`, {
+                headers: {
+                    'Authorization': `Bearer ${this.token}`
+                }
+            });
+
+            if (response.ok) {
+                this.collections = await response.json();
+                this.renderCollections();
+            } else if (response.status === 401) {
+                this.showCollectionsLoginPrompt();
+            } else {
+                this.showCollectionsError();
+            }
+        } catch (error) {
+            console.error('Error loading collections:', error);
+            this.showCollectionsError();
+        }
+    }
+
+    renderCollections() {
+        const collectionsGrid = document.getElementById('collections-grid');
+        const collectionDetails = document.getElementById('collection-details');
+        
+        // Show collections list, hide details
+        collectionsGrid.style.display = 'grid';
+        collectionDetails.style.display = 'none';
+        
+        collectionsGrid.innerHTML = '';
+
+        if (this.collections.length === 0) {
+            collectionsGrid.innerHTML = `
+                <div class="collection-empty">
+                    <div class="collection-empty-icon">📚</div>
+                    <h3>No Collections Yet</h3>
+                    <p>Create your first collection to organize your favorite channels!</p>
+                </div>
+            `;
+            return;
+        }
+
+        this.collections.forEach(collection => {
+            const card = this.createCollectionCard(collection);
+            collectionsGrid.appendChild(card);
+        });
+    }
+
+    createCollectionCard(collection) {
+        const card = document.createElement('div');
+        card.className = 'collection-card';
+        card.onclick = () => this.viewCollection(collection._id);
+
+        const timeAgo = this.getTimeAgo(new Date(collection.updated_at));
+        const channelCount = collection.channel_count || 0;
+
+        card.innerHTML = `
+            <div class="collection-card-header">
+                <div class="collection-icon">📚</div>
+                <div class="collection-info">
+                    <h3>${this.escapeHtml(collection.name)}</h3>
+                    <p>${this.escapeHtml(collection.description || 'No description')}</p>
+                </div>
+            </div>
+            <div class="collection-stats">
+                <span class="collection-count">${channelCount} channel${channelCount !== 1 ? 's' : ''}</span>
+                <span class="collection-updated">${timeAgo}</span>
+            </div>
+        `;
+
+        return card;
+    }
+
+    async viewCollection(collectionId) {
+        if (!this.token) {
+            this.showLogin();
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBase}/collections/${collectionId}/channels`, {
+                headers: {
+                    'Authorization': `Bearer ${this.token}`
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.currentCollection = data.collection;
+                this.renderCollectionDetails(data.collection, data.channels);
+            } else {
+                this.showToast('Error loading collection ❌');
+            }
+        } catch (error) {
+            console.error('Error loading collection:', error);
+            this.showToast('Error loading collection ❌');
+        }
+    }
+
+    renderCollectionDetails(collection, channels) {
+        const collectionsGrid = document.getElementById('collections-grid');
+        const collectionDetails = document.getElementById('collection-details');
+        const collectionTitle = document.getElementById('collection-title');
+        const collectionDescription = document.getElementById('collection-description');
+        const collectionChannels = document.getElementById('collection-channels');
+
+        // Hide collections list, show details
+        collectionsGrid.style.display = 'none';
+        collectionDetails.style.display = 'block';
+
+        // Update collection info
+        collectionTitle.textContent = collection.name;
+        collectionDescription.textContent = collection.description || 'No description';
+
+        // Render channels
+        collectionChannels.innerHTML = '';
+
+        if (channels.length === 0) {
+            collectionChannels.innerHTML = `
+                <div class="collection-empty">
+                    <div class="collection-empty-icon">📺</div>
+                    <h3>No Channels Yet</h3>
+                    <p>Start adding channels to this collection from the Review tab!</p>
+                </div>
+            `;
+            return;
+        }
+
+        channels.forEach(channel => {
+            const card = this.createCollectionChannelCard(channel);
+            collectionChannels.appendChild(card);
+        });
+    }
+
+    createCollectionChannelCard(channel) {
+        const card = document.createElement('div');
+        card.className = 'channel-card';
+
+        // Get first letter for avatar fallback
+        const avatarLetter = channel.channel_name.charAt(0).toUpperCase();
+        
+        // Format numbers
+        const formatNumber = (num) => {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toString();
+        };
+
+        const viewCount = formatNumber(channel.view_count || 0);
+        const subCount = formatNumber(channel.subscriber_count || 0);
+        const ratio = channel.view_to_sub_ratio ? channel.view_to_sub_ratio.toFixed(2) : 'N/A';
+        const addedDate = this.getTimeAgo(new Date(channel.added_at));
+
+        // Create avatar HTML
+        const avatarHtml = channel.avatar_url ? 
+            `<img src="${channel.avatar_url}" alt="${this.escapeHtml(channel.channel_name)}" class="channel-avatar-img">` :
+            `<div class="channel-avatar-letter">${avatarLetter}</div>`;
+
+        card.innerHTML = `
+            <div class="channel-header">
+                <div class="channel-avatar">${avatarHtml}</div>
+                <div class="channel-info">
+                    <h3>${this.escapeHtml(channel.channel_name)}</h3>
+                    <p>${this.escapeHtml(channel.video_title || 'No video title')}</p>
+                    <small style="color: #9ca3af;">Added ${addedDate}</small>
+                </div>
+            </div>
+            
+            <div class="channel-stats">
+                <div class="stat-item">
+                    <span class="stat-value">${viewCount}</span>
+                    <span class="stat-label">Views</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">${subCount}</span>
+                    <span class="stat-label">Subs</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value ratio-highlight">${ratio}</span>
+                    <span class="stat-label">Ratio</span>
+                </div>
+            </div>
+            
+            <div class="channel-actions">
+                <a href="${channel.channel_url}" target="_blank" class="btn btn-primary">
+                    🔗 View Channel
+                </a>
+                <button class="btn btn-reject" onclick="window.app.removeFromCollection('${this.currentCollection._id}', '${channel._id}')">
+                    🗑️ Remove
+                </button>
+            </div>
+        `;
+
+        return card;
+    }
+
+    showCollectionsList() {
+        this.renderCollections();
+    }
+
+    showCreateCollection() {
+        if (!this.token) {
+            this.showLogin();
+            this.showToast('Please sign in to create collections 🔐');
+            return;
+        }
+
+        document.getElementById('create-collection-overlay').style.display = 'flex';
+        document.getElementById('create-collection-form').reset();
+    }
+
+    closeCreateCollection() {
+        document.getElementById('create-collection-overlay').style.display = 'none';
+    }
+
+    async handleCreateCollection() {
+        const name = document.getElementById('collection-name').value.trim();
+        const description = document.getElementById('collection-description').value.trim();
+        const submitBtn = document.querySelector('#create-collection-form button[type="submit"]');
+
+        if (!name) {
+            this.showToast('Please enter a collection name ❌');
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Creating...';
+
+        try {
+            const response = await fetch(`${this.apiBase}/collections`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.token}`
+                },
+                body: JSON.stringify({ name, description })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.closeCreateCollection();
+                this.showToast(`Collection "${name}" created! 🎉`);
+                await this.loadCollections();
+            } else {
+                this.showToast(data.error || 'Error creating collection ❌');
+            }
+        } catch (error) {
+            console.error('Error creating collection:', error);
+            this.showToast('Network error. Please try again ❌');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Create Collection';
+        }
+    }
+
+    async removeFromCollection(collectionId, channelId) {
+        if (!confirm('Remove this channel from the collection?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBase}/collections/${collectionId}/channels/${channelId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${this.token}`
+                }
+            });
+
+            if (response.ok) {
+                this.showToast('Channel removed from collection ✅');
+                // Reload collection details
+                await this.viewCollection(collectionId);
+            } else {
+                this.showToast('Error removing channel ❌');
+            }
+        } catch (error) {
+            console.error('Error removing channel:', error);
+            this.showToast('Error removing channel ❌');
+        }
+    }
+
+    showCollectionsLoginPrompt() {
+        const collectionsGrid = document.getElementById('collections-grid');
+        collectionsGrid.innerHTML = `
+            <div class="collection-empty">
+                <div class="collection-empty-icon">🔐</div>
+                <h3>Sign In Required</h3>
+                <p>Please sign in to view and create your personal collections.</p>
+                <button class="btn btn-primary" onclick="window.app.showLogin()" style="margin-top: 1rem;">Sign In</button>
+            </div>
+        `;
+    }
+
+    showCollectionsError() {
+        const collectionsGrid = document.getElementById('collections-grid');
+        collectionsGrid.innerHTML = `
+            <div class="collection-empty">
+                <div class="collection-empty-icon">❌</div>
+                <h3>Error Loading Collections</h3>
+                <p>Please try again later.</p>
+                <button class="btn btn-primary" onclick="window.app.loadCollections()" style="margin-top: 1rem;">Retry</button>
+            </div>
+        `;
+    }
+
+    getTimeAgo(date) {
+        const now = new Date();
+        const diffInSeconds = Math.floor((now - date) / 1000);
+        
+        if (diffInSeconds < 60) return 'Just now';
+        if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+        if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+        if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)}d ago`;
+        return `${Math.floor(diffInSeconds / 2592000)}mo ago`;
+    }
+
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
@@ -664,4 +1029,121 @@ let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new ViewHuntApp();
     window.app = app; // Make it globally available
-});
+});    
+// Save to Collection functionality
+    async showSaveToCollection(channelId) {
+        if (!this.token) {
+            this.showLogin();
+            this.showToast('Please sign in to save channels 🔐');
+            return;
+        }
+
+        // Load collections if not already loaded
+        if (this.collections.length === 0) {
+            await this.loadCollections();
+        }
+
+        if (this.collections.length === 0) {
+            this.showToast('Create a collection first! 📚');
+            this.showCreateCollection();
+            return;
+        }
+
+        // Show collection selector modal
+        this.showCollectionSelector(channelId);
+    }
+
+    showCollectionSelector(channelId) {
+        // Create collection selector modal
+        const overlay = document.createElement('div');
+        overlay.className = 'auth-overlay';
+        overlay.style.display = 'flex';
+        overlay.id = 'collection-selector-overlay';
+
+        overlay.innerHTML = `
+            <div class="auth-modal">
+                <div class="auth-form">
+                    <h2>Save to Collection</h2>
+                    <p class="auth-subtitle">Choose a collection for this channel</p>
+                    
+                    <div class="collection-selector">
+                        ${this.collections.map(collection => `
+                            <div class="collection-option" data-collection-id="${collection._id}">
+                                <div class="collection-option-icon">📚</div>
+                                <div class="collection-option-info">
+                                    <h4>${this.escapeHtml(collection.name)}</h4>
+                                    <p>${collection.channel_count || 0} channels</p>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                        <button class="auth-btn" onclick="this.closest('.auth-overlay').remove()" style="background: #6b7280;">Cancel</button>
+                        <button class="auth-btn auth-btn-primary" id="save-to-collection-btn" disabled>Save to Collection</button>
+                    </div>
+                </div>
+                <button class="auth-close" onclick="this.closest('.auth-overlay').remove()">×</button>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        // Add click handlers for collection options
+        let selectedCollectionId = null;
+        const saveBtn = overlay.querySelector('#save-to-collection-btn');
+
+        overlay.querySelectorAll('.collection-option').forEach(option => {
+            option.addEventListener('click', () => {
+                // Remove previous selection
+                overlay.querySelectorAll('.collection-option').forEach(opt => 
+                    opt.classList.remove('selected')
+                );
+                
+                // Select this option
+                option.classList.add('selected');
+                selectedCollectionId = option.dataset.collectionId;
+                saveBtn.disabled = false;
+            });
+        });
+
+        // Save button handler
+        saveBtn.addEventListener('click', async () => {
+            if (!selectedCollectionId) return;
+
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+
+            try {
+                const response = await fetch(`${this.apiBase}/collections/${selectedCollectionId}/channels`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.token}`
+                    },
+                    body: JSON.stringify({ channel_id: channelId })
+                });
+
+                if (response.ok) {
+                    overlay.remove();
+                    this.showToast('Channel saved to collection! 📚✅');
+                } else {
+                    const data = await response.json();
+                    this.showToast(data.error || 'Error saving channel ❌');
+                }
+            } catch (error) {
+                console.error('Error saving to collection:', error);
+                this.showToast('Error saving channel ❌');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save to Collection';
+            }
+        });
+
+        // Close on overlay click
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+            }
+        });
+    }

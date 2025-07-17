@@ -92,6 +92,32 @@
                 <div class="channel-grid" id="channel-grid">
                     <!-- Channel cards will be inserted here -->
                 </div>
+
+                <!-- Collections View -->
+                <div class="collections-view" id="collections-view" style="display: none;">
+                    <!-- Collections Header -->
+                    <div class="collections-header">
+                        <h2>My Collections</h2>
+                        <button class="btn btn-primary" onclick="window.app.showCreateCollection()">+ Create Collection</button>
+                    </div>
+
+                    <!-- Collections Grid -->
+                    <div class="collections-grid" id="collections-grid">
+                        <!-- Collection cards will be inserted here -->
+                    </div>
+
+                    <!-- Collection Details View -->
+                    <div class="collection-details" id="collection-details" style="display: none;">
+                        <div class="collection-header">
+                            <button class="back-btn" onclick="window.app.showCollectionsList()">← Back to Collections</button>
+                            <h3 id="collection-title">Collection Name</h3>
+                            <p id="collection-description">Collection description</p>
+                        </div>
+                        <div class="collection-channels" id="collection-channels">
+                            <!-- Collection channels will be inserted here -->
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
 
@@ -148,6 +174,29 @@
             </div>
         </div>
 
+        <!-- Create Collection Modal -->
+        <div class="auth-overlay" id="create-collection-overlay" style="display: none;">
+            <div class="auth-modal">
+                <div class="auth-form">
+                    <h2>Create New Collection</h2>
+                    <p class="auth-subtitle">Organize your favorite channels</p>
+                    
+                    <form id="create-collection-form">
+                        <div class="form-group">
+                            <input type="text" id="collection-name" placeholder="Collection Name (e.g. Gaming Channels)" required maxlength="50">
+                            <small class="form-help">Up to 50 characters</small>
+                        </div>
+                        <div class="form-group">
+                            <textarea id="collection-description" placeholder="Description (optional)" rows="3" maxlength="200"></textarea>
+                            <small class="form-help">Up to 200 characters</small>
+                        </div>
+                        <button type="submit" class="auth-btn auth-btn-primary">Create Collection</button>
+                    </form>
+                </div>
+                <button class="auth-close" onclick="window.app.closeCreateCollection()">×</button>
+            </div>
+        </div>
+
         <!-- Navigation -->
         <nav class="bottom-nav">
             <button class="nav-btn active" data-view="pending">
@@ -157,6 +206,10 @@
             <button class="nav-btn" data-view="approved">
                 <span class="nav-icon">✅</span>
                 <span class="nav-label">Approved</span>
+            </button>
+            <button class="nav-btn" data-view="collections">
+                <span class="nav-icon">📚</span>
+                <span class="nav-label">Collections</span>
             </button>
         </nav>
     </div>
