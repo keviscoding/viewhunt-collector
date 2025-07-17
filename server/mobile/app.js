@@ -1022,15 +1022,7 @@ class ViewHuntApp {
         div.textContent = text;
         return div.innerHTML;
     }
-}
-
-// Initialize app
-let app;
-document.addEventListener('DOMContentLoaded', () => {
-    app = new ViewHuntApp();
-    window.app = app; // Make it globally available
-});    
-// Save to Collection functionality
+    // Save to Collection functionality
     async showSaveToCollection(channelId) {
         if (!this.token) {
             this.showLogin();
@@ -1147,3 +1139,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+}
+
+// Initialize app
+let app;
+document.addEventListener('DOMContentLoaded', () => {
+    app = new ViewHuntApp();
+    window.app = app; // Make it globally available
+});
