@@ -118,6 +118,60 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Social View -->
+                <div class="social-view" id="social-view" style="display: none;">
+                    <div class="social-header">
+                        <h2>🌟 Social Discovery</h2>
+                        <p>Discover trending channels and top community picks</p>
+                    </div>
+
+                    <div class="social-grid">
+                        <!-- Kevis's Picks Section -->
+                        <div class="social-card">
+                            <div class="social-card-header">
+                                <h3>⭐ Kevis's Picks</h3>
+                                <p>Personally curated by the founder</p>
+                            </div>
+                            <div class="social-card-content" id="kevis-picks-content">
+                                <div class="social-loading">Loading Kevis's picks...</div>
+                            </div>
+                        </div>
+
+                        <!-- Top Channels Today -->
+                        <div class="social-card">
+                            <div class="social-card-header">
+                                <h3>🔥 Trending Today</h3>
+                                <p>Most liked channels in the last 24 hours</p>
+                            </div>
+                            <div class="social-card-content" id="trending-content">
+                                <div class="social-loading">Loading trending channels...</div>
+                            </div>
+                        </div>
+
+                        <!-- User Leaderboard -->
+                        <div class="social-card">
+                            <div class="social-card-header">
+                                <h3>🏆 Top Discoverers</h3>
+                                <p>Users with the best channel picks</p>
+                            </div>
+                            <div class="social-card-content" id="leaderboard-content">
+                                <div class="social-loading">Loading leaderboard...</div>
+                            </div>
+                        </div>
+
+                        <!-- Top Niches -->
+                        <div class="social-card">
+                            <div class="social-card-header">
+                                <h3>📈 Popular Niches</h3>
+                                <p>Most active content categories</p>
+                            </div>
+                            <div class="social-card-content" id="niches-content">
+                                <div class="social-loading">Loading popular niches...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
 
@@ -210,6 +264,10 @@
             <button class="nav-btn" data-view="collections">
                 <span class="nav-icon">📚</span>
                 <span class="nav-label">Collections</span>
+            </button>
+            <button class="nav-btn" data-view="social">
+                <span class="nav-icon">🌟</span>
+                <span class="nav-label">Social</span>
             </button>
         </nav>
     </div>

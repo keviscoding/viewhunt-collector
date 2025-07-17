@@ -331,31 +331,36 @@ class ViewHuntApp {
         const filters = document.getElementById('filters');
         const channelGrid = document.getElementById('channel-grid');
         const collectionsView = document.getElementById('collections-view');
+        const socialView = document.getElementById('social-view');
         const emptyState = document.getElementById('empty-state');
         const loading = document.getElementById('loading');
 
+        // Hide all views first
+        filters.style.display = 'none';
+        channelGrid.style.display = 'none';
+        collectionsView.style.display = 'none';
+        socialView.style.display = 'none';
+        emptyState.style.display = 'none';
+        loading.style.display = 'none';
+
+        this.currentView = view;
+
         if (view === 'collections') {
             // Show collections view
-            filters.style.display = 'none';
-            channelGrid.style.display = 'none';
-            emptyState.style.display = 'none';
-            loading.style.display = 'none';
             collectionsView.style.display = 'block';
-            
-            this.currentView = view;
             this.loadCollections();
+        } else if (view === 'social') {
+            // Show social view
+            socialView.style.display = 'block';
+            this.loadSocialData();
         } else {
-            // Show channels view
-            collectionsView.style.display = 'none';
+            // Show channels view (pending/approved)
             channelGrid.style.display = 'grid';
             
             if (view === 'pending') {
                 filters.style.display = 'grid';
-            } else {
-                filters.style.display = 'none';
             }
 
-            this.currentView = view;
             this.loadChannels();
         }
     }
@@ -1074,4 +1079,174 @@ let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new ViewHuntApp();
     window.app = app; // Make it globally available
-});
+});    // S
+ocial Methods
+    async loadSocialData() {
+        console.log('Loading social data...');
+        
+        // Load all social sections
+        await Promise.all([
+            this.loadKevisPicks(),
+            this.loadTrendingChannels(),
+            this.loadUserLeaderboard(),
+            this.loadPopularNiches()
+        ]);
+    }
+
+    async loadKevisPicks() {
+        const content = document.getElementById('kevis-picks-content');
+        content.innerHTML = '<div class="social-loading">Loading Kevis\'s picks...</div>';
+        
+        try {
+            // For now, we'll show approved channels by Kevis (you can filter by your user ID later)
+            const response = await fetch(`${this.apiBase}/channels/approved`);
+            const channels = await response.json();
+            
+            // Take top 5 channels for now
+            const topChannels = channels.slice(0, 5);
+            
+            if (topChannels.length === 0) {
+                content.innerHTML = '<div class="social-empty">No picks yet! 🎯</div>';
+                return;
+            }
+            
+            content.innerHTML = topChannels.map(channel => `
+                <div class="social-channel-item">
+                    <div class="social-channel-avatar">
+                        ${channel.avatar_url ? 
+                            `<img src="${channel.avatar_url}" alt="${this.escapeHtml(channel.channel_name)}">` :
+                            `<div class="avatar-letter">${channel.channel_name.charAt(0).toUpperCase()}</div>`
+                        }
+                    </div>
+                    <div class="social-channel-info">
+                        <h4>${this.escapeHtml(channel.channel_name)}</h4>
+                        <p>Ratio: ${channel.view_to_sub_ratio ? channel.view_to_sub_ratio.toFixed(2) : 'N/A'}</p>
+                    </div>
+                    <a href="${channel.channel_url}" target="_blank" class="social-channel-link">View</a>
+                </div>
+            `).join('');
+            
+        } catch (error) {
+            console.error('Error loading Kevis picks:', error);
+            content.innerHTML = '<div class="social-error">Error loading picks 😞</div>';
+        }
+    }
+
+    async loadTrendingChannels() {
+        const content = document.getElementById('trending-content');
+        content.innerHTML = '<div class="social-loading">Loading trending channels...</div>';
+        
+        try {
+            // For now, show recently approved channels (we'll add proper trending logic later)
+            const response = await fetch(`${this.apiBase}/channels/approved`);
+            const channels = await response.json();
+            
+            // Sort by most recent and take top 5
+            const recentChannels = channels
+                .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+                .slice(0, 5);
+            
+            if (recentChannels.length === 0) {
+                content.innerHTML = '<div class="social-empty">No trending channels yet! 🔥</div>';
+                return;
+            }
+            
+            content.innerHTML = recentChannels.map(channel => `
+                <div class="social-channel-item">
+                    <div class="social-channel-avatar">
+                        ${channel.avatar_url ? 
+                            `<img src="${channel.avatar_url}" alt="${this.escapeHtml(channel.channel_name)}">` :
+                            `<div class="avatar-letter">${channel.channel_name.charAt(0).toUpperCase()}</div>`
+                        }
+                    </div>
+                    <div class="social-channel-info">
+                        <h4>${this.escapeHtml(channel.channel_name)}</h4>
+                        <p>Views: ${this.formatNumber(channel.view_count || 0)}</p>
+                    </div>
+                    <a href="${channel.channel_url}" target="_blank" class="social-channel-link">View</a>
+                </div>
+            `).join('');
+            
+        } catch (error) {
+            console.error('Error loading trending channels:', error);
+            content.innerHTML = '<div class="social-error">Error loading trending 😞</div>';
+        }
+    }
+
+    async loadUserLeaderboard() {
+        const content = document.getElementById('leaderboard-content');
+        content.innerHTML = '<div class="social-loading">Loading leaderboard...</div>';
+        
+        // For now, show placeholder data (we'll implement real leaderboard later)
+        setTimeout(() => {
+            content.innerHTML = `
+                <div class="leaderboard-item">
+                    <div class="leaderboard-rank">🥇</div>
+                    <div class="leaderboard-info">
+                        <h4>ChannelHunter</h4>
+                        <p>127 great picks</p>
+                    </div>
+                    <div class="leaderboard-score">95%</div>
+                </div>
+                <div class="leaderboard-item">
+                    <div class="leaderboard-rank">🥈</div>
+                    <div class="leaderboard-info">
+                        <h4>TrendSpotter</h4>
+                        <p>89 great picks</p>
+                    </div>
+                    <div class="leaderboard-score">92%</div>
+                </div>
+                <div class="leaderboard-item">
+                    <div class="leaderboard-rank">🥉</div>
+                    <div class="leaderboard-info">
+                        <h4>VideoFinder</h4>
+                        <p>76 great picks</p>
+                    </div>
+                    <div class="leaderboard-score">88%</div>
+                </div>
+                <div class="social-note">🚀 Real leaderboard coming soon!</div>
+            `;
+        }, 1000);
+    }
+
+    async loadPopularNiches() {
+        const content = document.getElementById('niches-content');
+        content.innerHTML = '<div class="social-loading">Loading popular niches...</div>';
+        
+        // For now, show placeholder data (we'll implement real niche analysis later)
+        setTimeout(() => {
+            content.innerHTML = `
+                <div class="niche-item">
+                    <div class="niche-icon">🎮</div>
+                    <div class="niche-info">
+                        <h4>Gaming</h4>
+                        <p>234 channels</p>
+                    </div>
+                    <div class="niche-trend">📈 +12%</div>
+                </div>
+                <div class="niche-item">
+                    <div class="niche-icon">🍳</div>
+                    <div class="niche-info">
+                        <h4>Cooking</h4>
+                        <p>189 channels</p>
+                    </div>
+                    <div class="niche-trend">📈 +8%</div>
+                </div>
+                <div class="niche-item">
+                    <div class="niche-icon">💡</div>
+                    <div class="niche-info">
+                        <h4>Life Hacks</h4>
+                        <p>156 channels</p>
+                    </div>
+                    <div class="niche-trend">📈 +15%</div>
+                </div>
+                <div class="social-note">📊 Real niche data coming soon!</div>
+            `;
+        }, 1200);
+    }
+
+    formatNumber(num) {
+        if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+        if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+        return num.toString();
+    }

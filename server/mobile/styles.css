@@ -985,4 +985,267 @@ textarea.filter-input {
     min-height: 80px;
     font-family: inherit;
     line-height: 1.4;
+}/* Socia
+l View Styles */
+.social-view {
+    padding: 1rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.social-header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.social-header h2 {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.social-header p {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 1.1rem;
+}
+
+.social-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 6rem;
+}
+
+.social-card {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.social-card-header {
+    margin-bottom: 1rem;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    padding-bottom: 1rem;
+}
+
+.social-card-header h3 {
+    font-size: 1.3rem;
+    margin-bottom: 0.5rem;
+    color: #333;
+}
+
+.social-card-header p {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.social-card-content {
+    min-height: 200px;
+}
+
+.social-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 150px;
+    color: #666;
+    font-style: italic;
+}
+
+.social-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 150px;
+    color: #999;
+    font-size: 1.1rem;
+}
+
+.social-error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 150px;
+    color: #e74c3c;
+    font-size: 1.1rem;
+}
+
+.social-note {
+    text-align: center;
+    color: #666;
+    font-size: 0.9rem;
+    font-style: italic;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* Social Channel Items */
+.social-channel-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+    background: rgba(0, 0, 0, 0.02);
+    transition: background 0.2s ease;
+}
+
+.social-channel-item:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.social-channel-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.social-channel-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.avatar-letter {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    font-weight: 600;
+    font-size: 1.2rem;
+}
+
+.social-channel-info {
+    flex: 1;
+}
+
+.social-channel-info h4 {
+    font-size: 0.95rem;
+    margin-bottom: 0.25rem;
+    color: #333;
+}
+
+.social-channel-info p {
+    font-size: 0.8rem;
+    color: #666;
+}
+
+.social-channel-link {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: transform 0.2s ease;
+}
+
+.social-channel-link:hover {
+    transform: translateY(-1px);
+}
+
+/* Leaderboard Items */
+.leaderboard-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.leaderboard-rank {
+    font-size: 1.5rem;
+    width: 40px;
+    text-align: center;
+}
+
+.leaderboard-info {
+    flex: 1;
+}
+
+.leaderboard-info h4 {
+    font-size: 0.95rem;
+    margin-bottom: 0.25rem;
+    color: #333;
+}
+
+.leaderboard-info p {
+    font-size: 0.8rem;
+    color: #666;
+}
+
+.leaderboard-score {
+    font-weight: 600;
+    color: #27ae60;
+    font-size: 1.1rem;
+}
+
+/* Niche Items */
+.niche-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.niche-icon {
+    font-size: 1.5rem;
+    width: 40px;
+    text-align: center;
+}
+
+.niche-info {
+    flex: 1;
+}
+
+.niche-info h4 {
+    font-size: 0.95rem;
+    margin-bottom: 0.25rem;
+    color: #333;
+}
+
+.niche-info p {
+    font-size: 0.8rem;
+    color: #666;
+}
+
+.niche-trend {
+    font-weight: 600;
+    color: #27ae60;
+    font-size: 0.9rem;
+}
+
+/* Responsive adjustments for social view */
+@media (max-width: 768px) {
+    .social-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .social-header h2 {
+        font-size: 1.5rem;
+    }
+    
+    .social-card {
+        padding: 1rem;
+    }
 }
