@@ -30,21 +30,21 @@
                     </div>
                     <div class="user-profile">
                         <span class="user-name" id="user-name">ChannelHunter</span>
-                        <button class="user-menu-btn" onclick="app.toggleUserMenu()">⚙️</button>
+                        <button class="user-menu-btn" onclick="window.app.toggleUserMenu()">⚙️</button>
                         <div class="user-menu" id="user-menu" style="display: none;">
                             <div class="user-stats">
                                 <p><strong id="user-display-name">ChannelHunter</strong></p>
                                 <p><span id="user-approved-count">0</span> approved • <span id="user-rejected-count">0</span> rejected</p>
                             </div>
-                            <button class="user-menu-item" onclick="app.logout()">Sign Out</button>
+                            <button class="user-menu-item" onclick="window.app.logout()">Sign Out</button>
                         </div>
                     </div>
                 </div>
 
                 <!-- Auth Buttons (when not logged in) -->
                 <div class="auth-buttons" id="auth-buttons">
-                    <button class="auth-btn-header" onclick="app.showLogin()">Sign In</button>
-                    <button class="auth-btn-header auth-btn-primary" onclick="app.showRegister()">Sign Up</button>
+                    <button class="auth-btn-header" onclick="window.app.showLogin()">Sign In</button>
+                    <button class="auth-btn-header auth-btn-primary" onclick="window.app.showRegister()">Sign Up</button>
                 </div>
             </div>
         </header>
@@ -115,7 +115,7 @@
                     
                     <p class="auth-switch">
                         Don't have an account? 
-                        <button type="button" class="auth-link" onclick="app.showRegister()">Sign Up</button>
+                        <button type="button" class="auth-link" onclick="window.app.showRegister()">Sign Up</button>
                     </p>
                 </div>
 
@@ -140,11 +140,11 @@
                     
                     <p class="auth-switch">
                         Already have an account? 
-                        <button type="button" class="auth-link" onclick="app.showLogin()">Sign In</button>
+                        <button type="button" class="auth-link" onclick="window.app.showLogin()">Sign In</button>
                     </p>
                 </div>
 
-                <button class="auth-close" onclick="app.closeAuth()">×</button>
+                <button class="auth-close" onclick="window.app.closeAuth()">×</button>
             </div>
         </div>
 

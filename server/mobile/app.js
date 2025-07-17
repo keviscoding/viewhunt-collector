@@ -660,4 +660,8 @@ class ViewHuntApp {
 }
 
 // Initialize app
-const app = new ViewHuntApp();
+let app;
+document.addEventListener('DOMContentLoaded', () => {
+    app = new ViewHuntApp();
+    window.app = app; // Make it globally available
+});
