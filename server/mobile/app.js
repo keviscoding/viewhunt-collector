@@ -163,7 +163,7 @@ class ViewHuntApp {
     createChannelCard(channel) {
         const card = document.createElement('div');
         card.className = 'channel-card';
-        card.dataset.channelId = channel.id;
+        card.dataset.channelId = channel._id;
 
         // Get first letter for avatar fallback
         const avatarLetter = channel.channel_name.charAt(0).toUpperCase();
@@ -213,10 +213,10 @@ class ViewHuntApp {
                     🔗 View Channel
                 </a>
                 ${this.currentView === 'pending' ? `
-                    <button class="btn btn-approve" onclick="app.approveChannel(${channel.id})">
+                    <button class="btn btn-approve" onclick="app.approveChannel('${channel._id}')">
                         ✅ Approve
                     </button>
-                    <button class="btn btn-reject" onclick="app.rejectChannel(${channel.id})">
+                    <button class="btn btn-reject" onclick="app.rejectChannel('${channel._id}')">
                         ❌ Reject
                     </button>
                 ` : ''}
