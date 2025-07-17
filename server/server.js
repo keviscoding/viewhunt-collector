@@ -11,8 +11,23 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Serve mobile app static files
+app.use('/mobile', express.static(path.join(__dirname, '../mobile')));
+
+// Serve mobile app at root for convenience
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '../mobile/index.html'));
+});
+
 // Database setup
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'viewhunt.db');
+
+// Ensure database directory exists
+const dbDir = path.dirname(dbPath);
+if (!require('fs').existsSync(dbDir)) {
+    require('fs').mkdirSync(dbDir, { recursive: true });
+}
+
 const db = new sqlite3.Database(dbPath);
 
 // Initialize database tables

@@ -333,9 +333,8 @@ class ViewHuntApp {
             // Development - use local server
             return 'http://localhost:3002/api';
         } else {
-            // Production - use the same domain but different subdomain or path
-            // This will be updated once we know the DigitalOcean URLs
-            return `https://viewhunt-backend.ondigitalocean.app/api`;
+            // Production - use the same domain (single service)
+            return `${window.location.origin}/api`;
         }
     }
 
