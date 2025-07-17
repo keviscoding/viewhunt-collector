@@ -4,12 +4,15 @@ class ViewHuntApp {
         this.apiBase = this.getApiBase();
         this.currentView = 'pending';
         this.channels = [];
+        this.user = null;
+        this.token = localStorage.getItem('viewhunt_token');
         
         this.init();
     }
 
     async init() {
         this.setupEventListeners();
+        await this.checkAuthStatus();
         await this.loadStats();
         await this.loadChannels();
     }
@@ -34,6 +37,24 @@ class ViewHuntApp {
 
         document.getElementById('min-views').addEventListener('input', () => {
             this.debounce(() => this.applyFilters(), 500)();
+        });
+
+        // Authentication forms
+        document.getElementById('login-form-element').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleLogin();
+        });
+
+        document.getElementById('register-form-element').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleRegister();
+        });
+
+        // Close auth modal when clicking overlay
+        document.getElementById('auth-overlay').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) {
+                this.closeAuth();
+            }
         });
     }
 
@@ -340,6 +361,294 @@ class ViewHuntApp {
         } else {
             // Production - use the same domain (single service)
             return `${window.location.origin}/api`;
+        }
+    }
+
+    // Authentication Methods
+    async checkAuthStatus() {
+        if (this.token) {
+            try {
+                const response = await fetch(`${this.apiBase}/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${this.token}`
+                    }
+                });
+
+                if (response.ok) {
+                    this.user = await response.json();
+                    this.updateUIForLoggedInUser();
+                } else {
+                    // Token is invalid, remove it
+                    localStorage.removeItem('viewhunt_token');
+                    this.token = null;
+                    this.updateUIForLoggedOutUser();
+                }
+            } catch (error) {
+                console.error('Error checking auth status:', error);
+                this.updateUIForLoggedOutUser();
+            }
+        } else {
+            this.updateUIForLoggedOutUser();
+        }
+    }
+
+    updateUIForLoggedInUser() {
+        document.getElementById('auth-buttons').style.display = 'none';
+        document.getElementById('user-info').style.display = 'flex';
+        
+        // Update user info
+        document.getElementById('user-name').textContent = this.user.display_name;
+        document.getElementById('user-display-name').textContent = this.user.display_name;
+        document.getElementById('user-approved-count').textContent = this.user.stats.channels_approved;
+        document.getElementById('user-rejected-count').textContent = this.user.stats.channels_rejected;
+    }
+
+    updateUIForLoggedOutUser() {
+        document.getElementById('auth-buttons').style.display = 'flex';
+        document.getElementById('user-info').style.display = 'none';
+    }
+
+    showLogin() {
+        document.getElementById('login-form').style.display = 'block';
+        document.getElementById('register-form').style.display = 'none';
+        document.getElementById('auth-overlay').style.display = 'flex';
+        
+        // Clear forms
+        document.getElementById('login-form-element').reset();
+    }
+
+    showRegister() {
+        document.getElementById('login-form').style.display = 'none';
+        document.getElementById('register-form').style.display = 'block';
+        document.getElementById('auth-overlay').style.display = 'flex';
+        
+        // Clear forms
+        document.getElementById('register-form-element').reset();
+    }
+
+    closeAuth() {
+        document.getElementById('auth-overlay').style.display = 'none';
+    }
+
+    async handleLogin() {
+        const email = document.getElementById('login-email').value;
+        const password = document.getElementById('login-password').value;
+        const submitBtn = document.querySelector('#login-form button[type="submit"]');
+
+        if (!email || !password) {
+            this.showToast('Please fill in all fields ❌');
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Signing In...';
+
+        try {
+            const response = await fetch(`${this.apiBase}/auth/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.token = data.token;
+                this.user = data.user;
+                localStorage.setItem('viewhunt_token', this.token);
+                
+                this.updateUIForLoggedInUser();
+                this.closeAuth();
+                this.showToast(`Welcome back, ${this.user.display_name}! 🎉`);
+                
+                // Reload channels to show approve/reject buttons
+                await this.loadChannels();
+            } else {
+                this.showToast(data.error || 'Login failed ❌');
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            this.showToast('Network error. Please try again ❌');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Sign In';
+        }
+    }
+
+    async handleRegister() {
+        const displayName = document.getElementById('register-display-name').value;
+        const email = document.getElementById('register-email').value;
+        const password = document.getElementById('register-password').value;
+        const submitBtn = document.querySelector('#register-form button[type="submit"]');
+
+        if (!displayName || !email || !password) {
+            this.showToast('Please fill in all fields ❌');
+            return;
+        }
+
+        if (password.length < 8) {
+            this.showToast('Password must be at least 8 characters ❌');
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Creating Account...';
+
+        try {
+            const response = await fetch(`${this.apiBase}/auth/register`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    display_name: displayName,
+                    email,
+                    password
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.token = data.token;
+                this.user = data.user;
+                localStorage.setItem('viewhunt_token', this.token);
+                
+                this.updateUIForLoggedInUser();
+                this.closeAuth();
+                this.showToast(`Welcome to ViewHunt, ${this.user.display_name}! 🎉`);
+                
+                // Reload channels to show approve/reject buttons
+                await this.loadChannels();
+            } else {
+                this.showToast(data.error || 'Registration failed ❌');
+            }
+        } catch (error) {
+            console.error('Registration error:', error);
+            this.showToast('Network error. Please try again ❌');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Create Account';
+        }
+    }
+
+    toggleUserMenu() {
+        const menu = document.getElementById('user-menu');
+        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+        
+        // Close menu when clicking outside
+        if (menu.style.display === 'block') {
+            setTimeout(() => {
+                document.addEventListener('click', this.closeUserMenuOnClickOutside.bind(this), { once: true });
+            }, 100);
+        }
+    }
+
+    closeUserMenuOnClickOutside(event) {
+        const menu = document.getElementById('user-menu');
+        const menuBtn = document.querySelector('.user-menu-btn');
+        
+        if (!menu.contains(event.target) && !menuBtn.contains(event.target)) {
+            menu.style.display = 'none';
+        }
+    }
+
+    logout() {
+        localStorage.removeItem('viewhunt_token');
+        this.token = null;
+        this.user = null;
+        
+        this.updateUIForLoggedOutUser();
+        this.showToast('Signed out successfully 👋');
+        
+        // Reload channels to hide approve/reject buttons
+        this.loadChannels();
+    }
+
+    // Update approve/reject methods to include authentication
+    async approveChannel(channelId) {
+        if (!this.token) {
+            this.showLogin();
+            this.showToast('Please sign in to approve channels 🔐');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBase}/channels/${channelId}/approve`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${this.token}`
+                }
+            });
+
+            if (response.ok) {
+                // Remove card from UI
+                const card = document.querySelector(`[data-channel-id="${channelId}"]`);
+                if (card) {
+                    card.style.transform = 'translateX(100%)';
+                    card.style.opacity = '0';
+                    setTimeout(() => card.remove(), 300);
+                }
+
+                // Update stats
+                await this.loadStats();
+                await this.checkAuthStatus(); // Update user stats
+
+                // Show success feedback
+                this.showToast('Channel approved! ✅');
+            } else if (response.status === 401) {
+                this.showLogin();
+                this.showToast('Please sign in to approve channels 🔐');
+            } else {
+                this.showToast('Error approving channel ❌');
+            }
+        } catch (error) {
+            console.error('Error approving channel:', error);
+            this.showToast('Error approving channel ❌');
+        }
+    }
+
+    async rejectChannel(channelId) {
+        if (!this.token) {
+            this.showLogin();
+            this.showToast('Please sign in to reject channels 🔐');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.apiBase}/channels/${channelId}/reject`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${this.token}`
+                }
+            });
+
+            if (response.ok) {
+                // Remove card from UI
+                const card = document.querySelector(`[data-channel-id="${channelId}"]`);
+                if (card) {
+                    card.style.transform = 'translateX(-100%)';
+                    card.style.opacity = '0';
+                    setTimeout(() => card.remove(), 300);
+                }
+
+                // Update stats
+                await this.loadStats();
+                await this.checkAuthStatus(); // Update user stats
+
+                // Show success feedback
+                this.showToast('Channel rejected ❌');
+            } else if (response.status === 401) {
+                this.showLogin();
+                this.showToast('Please sign in to reject channels 🔐');
+            } else {
+                this.showToast('Error rejecting channel ❌');
+            }
+        } catch (error) {
+            console.error('Error rejecting channel:', error);
+            this.showToast('Error rejecting channel ❌');
         }
     }
 

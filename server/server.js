@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 require('dotenv').config();
 
@@ -70,6 +73,215 @@ async function connectToMongoDB() {
 
 // Initialize MongoDB connection
 connectToMongoDB();
+
+// Rate limiting for auth endpoints
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // 5 attempts per window
+    message: { error: 'Too many authentication attempts, please try again later.' }
+});
+
+// Authentication middleware
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ error: 'Access token required' });
+    }
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+        if (err) {
+            return res.status(403).json({ error: 'Invalid or expired token' });
+        }
+        req.user = user;
+        next();
+    });
+};
+
+// Helper function to validate display name
+const validateDisplayName = (displayName) => {
+    if (!displayName || displayName.length < 3 || displayName.length > 20) {
+        return 'Display name must be 3-20 characters long';
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(displayName)) {
+        return 'Display name can only contain letters, numbers, and underscores';
+    }
+    return null;
+};
+
+// Helper function to validate email
+const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+};
+
+// Authentication Routes
+
+// Register new user
+app.post('/api/auth/register', authLimiter, async (req, res) => {
+    try {
+        const { email, password, display_name } = req.body;
+
+        // Validation
+        if (!email || !password || !display_name) {
+            return res.status(400).json({ error: 'Email, password, and display name are required' });
+        }
+
+        if (!validateEmail(email)) {
+            return res.status(400).json({ error: 'Invalid email format' });
+        }
+
+        if (password.length < 8) {
+            return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+        }
+
+        const displayNameError = validateDisplayName(display_name);
+        if (displayNameError) {
+            return res.status(400).json({ error: displayNameError });
+        }
+
+        // Check if user already exists
+        const existingUser = await db.collection('users').findOne({
+            $or: [
+                { email: email.toLowerCase() },
+                { display_name: display_name }
+            ]
+        });
+
+        if (existingUser) {
+            if (existingUser.email === email.toLowerCase()) {
+                return res.status(400).json({ error: 'Email already registered' });
+            } else {
+                return res.status(400).json({ error: 'Display name already taken' });
+            }
+        }
+
+        // Hash password
+        const saltRounds = 12;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+        // Create user
+        const newUser = {
+            email: email.toLowerCase(),
+            password: hashedPassword,
+            display_name: display_name,
+            created_at: new Date(),
+            updated_at: new Date(),
+            stats: {
+                channels_approved: 0,
+                channels_rejected: 0,
+                total_reviews: 0
+            }
+        };
+
+        const result = await db.collection('users').insertOne(newUser);
+
+        // Generate JWT token
+        const token = jwt.sign(
+            { 
+                userId: result.insertedId, 
+                email: email.toLowerCase(),
+                display_name: display_name
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        res.status(201).json({
+            message: 'User registered successfully',
+            token,
+            user: {
+                id: result.insertedId,
+                email: email.toLowerCase(),
+                display_name: display_name,
+                stats: newUser.stats
+            }
+        });
+
+    } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Login user
+app.post('/api/auth/login', authLimiter, async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
+        }
+
+        // Find user
+        const user = await db.collection('users').findOne({ 
+            email: email.toLowerCase() 
+        });
+
+        if (!user) {
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
+
+        // Check password
+        const isValidPassword = await bcrypt.compare(password, user.password);
+        if (!isValidPassword) {
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
+
+        // Generate JWT token
+        const token = jwt.sign(
+            { 
+                userId: user._id, 
+                email: user.email,
+                display_name: user.display_name
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        res.json({
+            message: 'Login successful',
+            token,
+            user: {
+                id: user._id,
+                email: user.email,
+                display_name: user.display_name,
+                stats: user.stats || { channels_approved: 0, channels_rejected: 0, total_reviews: 0 }
+            }
+        });
+
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Get current user info
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+    try {
+        const user = await db.collection('users').findOne(
+            { _id: new ObjectId(req.user.userId) },
+            { projection: { password: 0 } } // Exclude password
+        );
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json({
+            id: user._id,
+            email: user.email,
+            display_name: user.display_name,
+            created_at: user.created_at,
+            stats: user.stats || { channels_approved: 0, channels_rejected: 0, total_reviews: 0 }
+        });
+
+    } catch (error) {
+        console.error('Get user error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
 
 // API Routes
 
@@ -141,16 +353,18 @@ app.post('/api/channels/bulk', async (req, res) => {
     }
 });
 
-// Approve a channel
-app.put('/api/channels/:id/approve', async (req, res) => {
+// Approve a channel (requires authentication)
+app.put('/api/channels/:id/approve', authenticateToken, async (req, res) => {
     const channelId = req.params.id;
     
     try {
         const result = await db.collection('channels').updateOne(
-            { _id: new require('mongodb').ObjectId(channelId) },
+            { _id: new ObjectId(channelId) },
             { 
                 $set: { 
                     status: 'approved', 
+                    approved_by: new ObjectId(req.user.userId),
+                    approved_by_name: req.user.display_name,
                     updated_at: new Date() 
                 } 
             }
@@ -159,6 +373,18 @@ app.put('/api/channels/:id/approve', async (req, res) => {
         if (result.matchedCount === 0) {
             return res.status(404).json({ error: 'Channel not found' });
         }
+
+        // Update user stats
+        await db.collection('users').updateOne(
+            { _id: new ObjectId(req.user.userId) },
+            { 
+                $inc: { 
+                    'stats.channels_approved': 1,
+                    'stats.total_reviews': 1
+                },
+                $set: { updated_at: new Date() }
+            }
+        );
         
         res.json({ message: 'Channel approved' });
     } catch (error) {
@@ -167,16 +393,18 @@ app.put('/api/channels/:id/approve', async (req, res) => {
     }
 });
 
-// Reject a channel
-app.put('/api/channels/:id/reject', async (req, res) => {
+// Reject a channel (requires authentication)
+app.put('/api/channels/:id/reject', authenticateToken, async (req, res) => {
     const channelId = req.params.id;
     
     try {
         const result = await db.collection('channels').updateOne(
-            { _id: new require('mongodb').ObjectId(channelId) },
+            { _id: new ObjectId(channelId) },
             { 
                 $set: { 
                     status: 'rejected', 
+                    rejected_by: new ObjectId(req.user.userId),
+                    rejected_by_name: req.user.display_name,
                     updated_at: new Date() 
                 } 
             }
@@ -185,6 +413,18 @@ app.put('/api/channels/:id/reject', async (req, res) => {
         if (result.matchedCount === 0) {
             return res.status(404).json({ error: 'Channel not found' });
         }
+
+        // Update user stats
+        await db.collection('users').updateOne(
+            { _id: new ObjectId(req.user.userId) },
+            { 
+                $inc: { 
+                    'stats.channels_rejected': 1,
+                    'stats.total_reviews': 1
+                },
+                $set: { updated_at: new Date() }
+            }
+        );
         
         res.json({ message: 'Channel rejected' });
     } catch (error) {

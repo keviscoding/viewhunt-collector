@@ -15,15 +15,36 @@
         <header class="header">
             <div class="header-content">
                 <h1 class="logo">ViewHunt</h1>
-                <div class="stats" id="stats">
-                    <span class="stat">
-                        <span class="stat-number" id="pending-count">0</span>
-                        <span class="stat-label">Pending</span>
-                    </span>
-                    <span class="stat">
-                        <span class="stat-number" id="approved-count">0</span>
-                        <span class="stat-label">Approved</span>
-                    </span>
+                
+                <!-- User Info (when logged in) -->
+                <div class="user-info" id="user-info" style="display: none;">
+                    <div class="stats" id="stats">
+                        <span class="stat">
+                            <span class="stat-number" id="pending-count">0</span>
+                            <span class="stat-label">Pending</span>
+                        </span>
+                        <span class="stat">
+                            <span class="stat-number" id="approved-count">0</span>
+                            <span class="stat-label">Approved</span>
+                        </span>
+                    </div>
+                    <div class="user-profile">
+                        <span class="user-name" id="user-name">ChannelHunter</span>
+                        <button class="user-menu-btn" onclick="app.toggleUserMenu()">⚙️</button>
+                        <div class="user-menu" id="user-menu" style="display: none;">
+                            <div class="user-stats">
+                                <p><strong id="user-display-name">ChannelHunter</strong></p>
+                                <p><span id="user-approved-count">0</span> approved • <span id="user-rejected-count">0</span> rejected</p>
+                            </div>
+                            <button class="user-menu-item" onclick="app.logout()">Sign Out</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Auth Buttons (when not logged in) -->
+                <div class="auth-buttons" id="auth-buttons">
+                    <button class="auth-btn-header" onclick="app.showLogin()">Sign In</button>
+                    <button class="auth-btn-header auth-btn-primary" onclick="app.showRegister()">Sign Up</button>
                 </div>
             </div>
         </header>
@@ -73,6 +94,59 @@
                 </div>
             </div>
         </main>
+
+        <!-- Authentication Modals -->
+        <div class="auth-overlay" id="auth-overlay" style="display: none;">
+            <div class="auth-modal" id="auth-modal">
+                <!-- Login Form -->
+                <div class="auth-form" id="login-form">
+                    <h2>Welcome Back!</h2>
+                    <p class="auth-subtitle">Sign in to continue reviewing channels</p>
+                    
+                    <form id="login-form-element">
+                        <div class="form-group">
+                            <input type="email" id="login-email" placeholder="Email" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="password" id="login-password" placeholder="Password" required>
+                        </div>
+                        <button type="submit" class="auth-btn auth-btn-primary">Sign In</button>
+                    </form>
+                    
+                    <p class="auth-switch">
+                        Don't have an account? 
+                        <button type="button" class="auth-link" onclick="app.showRegister()">Sign Up</button>
+                    </p>
+                </div>
+
+                <!-- Register Form -->
+                <div class="auth-form" id="register-form" style="display: none;">
+                    <h2>Join ViewHunt!</h2>
+                    <p class="auth-subtitle">Create your account to start discovering channels</p>
+                    
+                    <form id="register-form-element">
+                        <div class="form-group">
+                            <input type="text" id="register-display-name" placeholder="Display Name (e.g. ChannelHunter)" required>
+                            <small class="form-help">3-20 characters, letters/numbers/underscores only</small>
+                        </div>
+                        <div class="form-group">
+                            <input type="email" id="register-email" placeholder="Email" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="password" id="register-password" placeholder="Password (8+ characters)" required>
+                        </div>
+                        <button type="submit" class="auth-btn auth-btn-primary">Create Account</button>
+                    </form>
+                    
+                    <p class="auth-switch">
+                        Already have an account? 
+                        <button type="button" class="auth-link" onclick="app.showLogin()">Sign In</button>
+                    </p>
+                </div>
+
+                <button class="auth-close" onclick="app.closeAuth()">×</button>
+            </div>
+        </div>
 
         <!-- Navigation -->
         <nav class="bottom-nav">
