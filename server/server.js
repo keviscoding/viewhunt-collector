@@ -15,8 +15,16 @@ app.use(express.json());
 app.use('/mobile', express.static(path.join(__dirname, 'mobile')));
 app.use(express.static(path.join(__dirname, 'mobile')));
 
-// Serve mobile app at root for convenience
+// Serve mobile app at root and at the routed path
 app.get('/', (req, res) => {
+    handleMobileApp(req, res);
+});
+
+app.get('/viewhunt-collector-server2', (req, res) => {
+    handleMobileApp(req, res);
+});
+
+function handleMobileApp(req, res) {
     const mobilePath = path.join(__dirname, 'mobile/index.html');
     console.log('Trying to serve mobile app from:', mobilePath);
     
@@ -34,7 +42,7 @@ app.get('/', (req, res) => {
             <p><a href="/api/health">Test API Health</a></p>
         `);
     }
-});
+}
 
 // Database setup
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'viewhunt.db');
