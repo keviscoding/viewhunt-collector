@@ -1178,46 +1178,15 @@ class ViewHuntApp {
         content.innerHTML = '<div class="social-loading">Loading Kevis\'s picks...</div>';
         
         try {
-            // Load Kevis's Picks collection specifically
-            if (!this.token) {
-                content.innerHTML = '<div class="social-empty">Sign in to see Kevis\'s picks! 🔐</div>';
-                return;
-            }
-
-            const response = await fetch(`${this.apiBase}/collections`, {
-                headers: { 'Authorization': `Bearer ${this.token}` }
-            });
+            // Use the new public Kevis's Picks endpoint (no authentication required)
+            const response = await fetch(`${this.apiBase}/kevis-picks`);
             
             if (!response.ok) {
                 content.innerHTML = '<div class="social-empty">No picks yet! 🎯</div>';
                 return;
             }
 
-            const collections = await response.json();
-            
-            // Find Kevis's Picks collection (created by admin)
-            let kevisCollection = null;
-            
-            // First try to find a collection named "Kevis's Picks"
-            kevisCollection = collections.find(c => c.name === "Kevis's Picks");
-            
-            if (!kevisCollection) {
-                content.innerHTML = '<div class="social-empty">No picks yet! 🎯</div>';
-                return;
-            }
-
-            // Load channels in Kevis's Picks collection
-            const channelsResponse = await fetch(`${this.apiBase}/collections/${kevisCollection._id}/channels`, {
-                headers: { 'Authorization': `Bearer ${this.token}` }
-            });
-            
-            if (!channelsResponse.ok) {
-                content.innerHTML = '<div class="social-empty">No picks yet! 🎯</div>';
-                return;
-            }
-
-            const data = await channelsResponse.json();
-            const channels = data.channels || [];
+            const channels = await response.json();
             
             if (channels.length === 0) {
                 content.innerHTML = '<div class="social-empty">No picks yet! 🎯</div>';
@@ -1512,9 +1481,53 @@ class ViewHuntApp {
     }
 
     async removeFromKevisPicks(channelId) {
-        // Implementation for removing from Kevis's picks collection
-        this.showToast('Removing from Kevis\'s Picks... 🗑️');
-        // This would use the existing collection system
+        if (!this.user || (this.user.email !== 'nwalikelv@gmail.com' && this.user.email !== 'kevis@viewhunt.com')) {
+            this.showToast('Access denied - Admin only 🔐');
+            return;
+        }
+
+        try {
+            this.showToast('Removing from Kevis\'s Picks... 🗑️');
+
+            // First, find the Kevis's Picks collection
+            const response = await fetch(`${this.apiBase}/collections`, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+
+            if (!response.ok) {
+                this.showToast('Error accessing collections ❌');
+                return;
+            }
+
+            const collections = await response.json();
+            const kevisCollection = collections.find(c => c.name === "Kevis's Picks");
+
+            if (!kevisCollection) {
+                this.showToast('Kevis\'s Picks collection not found ❌');
+                return;
+            }
+
+            // Remove the channel from the collection
+            const removeResponse = await fetch(`${this.apiBase}/collections/${kevisCollection._id}/channels/${channelId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+
+            if (removeResponse.ok) {
+                this.showToast('Removed from Kevis\'s Picks! 🗑️✅');
+                
+                // Reload the Kevis manager data and social data
+                await this.loadKevisManagerData();
+                await this.loadKevisPicks();
+            } else {
+                const errorData = await removeResponse.json();
+                this.showToast(errorData.error || 'Error removing channel ❌');
+            }
+
+        } catch (error) {
+            console.error('Error removing from Kevis picks:', error);
+            this.showToast('Error removing channel ❌');
+        }
     }
 
     formatNumber(num) {

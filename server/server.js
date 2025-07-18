@@ -887,6 +887,61 @@ app.get('/api/stats', async (req, res) => {
 
 // Collections Routes
 
+// Public Kevis's Picks endpoint (no authentication required)
+app.get('/api/kevis-picks', async (req, res) => {
+    try {
+        // Find Kevis's Picks collection by admin user
+        const adminUser = await db.collection('users').findOne({
+            $or: [
+                { email: 'nwalikelv@gmail.com' },
+                { email: 'kevis@viewhunt.com' }
+            ]
+        });
+
+        if (!adminUser) {
+            return res.json([]);
+        }
+
+        // Find Kevis's Picks collection
+        const kevisCollection = await db.collection('collections').findOne({
+            user_id: adminUser._id,
+            name: "Kevis's Picks"
+        });
+
+        if (!kevisCollection) {
+            return res.json([]);
+        }
+
+        // Get channels in Kevis's Picks collection
+        const collectionItems = await db.collection('collection_items')
+            .aggregate([
+                { $match: { collection_id: kevisCollection._id } },
+                {
+                    $lookup: {
+                        from: 'channels',
+                        localField: 'channel_id',
+                        foreignField: '_id',
+                        as: 'channel'
+                    }
+                },
+                { $unwind: '$channel' },
+                { $sort: { added_at: -1 } },
+                { $limit: 10 }
+            ])
+            .toArray();
+
+        const channels = collectionItems.map(item => ({
+            ...item.channel,
+            added_at: item.added_at
+        }));
+
+        res.json(channels);
+    } catch (error) {
+        console.error('Error fetching Kevis picks:', error);
+        res.json([]);
+    }
+});
+
 // Public collection sharing route (no authentication required)
 app.get('/shared/:collectionId', async (req, res) => {
     try {
