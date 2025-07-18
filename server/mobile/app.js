@@ -1837,10 +1837,10 @@ class ViewHuntApp {
             emptyState.style.display = 'block';
             this.updatePaginationControls();
         }
-    }}
+    }
+}
 
-// Ini
-tialize app
+// Initialize app
 let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new ViewHuntApp();
