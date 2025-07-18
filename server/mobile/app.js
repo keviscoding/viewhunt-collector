@@ -1178,18 +1178,26 @@ class ViewHuntApp {
         content.innerHTML = '<div class="social-loading">Loading Kevis\'s picks...</div>';
         
         try {
-            // Use the new public Kevis's Picks endpoint (no authentication required)
+            // Require authentication to see Kevis's Picks (engagement strategy!)
+            if (!this.token) {
+                content.innerHTML = '<div class="social-empty">Sign in to see Kevis\'s exclusive picks! 🔐✨</div>';
+                return;
+            }
+
+            // Use the public endpoint but with better error handling
             const response = await fetch(`${this.apiBase}/kevis-picks`);
             
             if (!response.ok) {
+                console.error('Kevis picks API error:', response.status);
                 content.innerHTML = '<div class="social-empty">No picks yet! 🎯</div>';
                 return;
             }
 
             const channels = await response.json();
+            console.log('Kevis picks loaded:', channels.length, 'channels');
             
-            if (channels.length === 0) {
-                content.innerHTML = '<div class="social-empty">No picks yet! 🎯</div>';
+            if (!Array.isArray(channels) || channels.length === 0) {
+                content.innerHTML = '<div class="social-empty">No picks yet! 🎯<br><small>Kevis is curating amazing channels...</small></div>';
                 return;
             }
             
@@ -1207,7 +1215,7 @@ class ViewHuntApp {
                     <div class="social-channel-info">
                         <h4>${this.escapeHtml(channel.channel_name)}</h4>
                         <p>Ratio: ${channel.view_to_sub_ratio ? channel.view_to_sub_ratio.toFixed(2) : 'N/A'}</p>
-                        <small>Curated by Kevis</small>
+                        <small>✨ Exclusive Kevis Pick</small>
                     </div>
                     <a href="${channel.channel_url}" target="_blank" class="social-channel-link">View</a>
                 </div>
