@@ -422,6 +422,7 @@ class ViewHuntApp {
         const socialView = document.getElementById('social-view');
         const emptyState = document.getElementById('empty-state');
         const loading = document.getElementById('loading');
+        const paginationControls = document.getElementById('pagination-controls');
 
         // Hide all views first
         filters.style.display = 'none';
@@ -430,6 +431,7 @@ class ViewHuntApp {
         socialView.style.display = 'none';
         emptyState.style.display = 'none';
         loading.style.display = 'none';
+        paginationControls.style.display = 'none';
 
         this.currentView = view;
 
