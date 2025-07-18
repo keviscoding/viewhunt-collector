@@ -129,6 +129,15 @@ class ViewHuntApp {
         };
     }
 
+    // Fisher-Yates shuffle algorithm for randomizing channels
+    shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+    }
+
     applyFilters() {
         if (!this.channels || this.channels.length === 0) return;
 
@@ -254,7 +263,11 @@ class ViewHuntApp {
             if (this.currentView === 'pending' && data.channels) {
                 this.channels = data.channels;
                 this.pagination = data.pagination;
-                console.log(`Loaded ${this.channels.length} channels (Page ${data.pagination.page}/${data.pagination.pages})`);
+                
+                // Randomize pending channels for better discovery experience
+                this.shuffleArray(this.channels);
+                
+                console.log(`Loaded ${this.channels.length} channels (Page ${data.pagination.page}/${data.pagination.pages}) - Randomized for discovery`);
             } else {
                 // Handle direct array response for approved channels
                 this.channels = Array.isArray(data) ? data : [];
@@ -344,8 +357,8 @@ class ViewHuntApp {
             </div>
             
             <div class="channel-actions">
-                <a href="${channel.channel_url}" target="_blank" class="btn btn-primary">
-                    🔗 View Channel
+                <a href="${channel.channel_url}/shorts" target="_blank" class="btn btn-primary">
+                    🔗 View Shorts
                 </a>
                 ${this.currentView === 'pending' ? `
                     <button class="btn btn-approve" onclick="window.app.approveChannel('${channel._id}')">
@@ -1796,100 +1809,7 @@ class ViewHuntApp {
         }
     }
 
-    // Update the existing loadChannels method to include pagination controls
-    async loadChannels() {
-        const loading = document.getElementById('loading');
-        const emptyState = document.getElementById('empty-state');
-        const channelGrid = document.getElementById('channel-grid');
 
-        // Reset pagination state when switching views
-        this.currentPage = 1;
-        this.pagination = null;
-
-        loading.style.display = 'flex';
-        emptyState.style.display = 'none';
-        channelGrid.innerHTML = '';
-
-        try {
-            const endpoint = this.currentView === 'pending' ? '/channels/pending' : '/channels/approved';
-            
-            // Both endpoints now require authentication
-            if (!this.token) {
-                this.channels = [];
-                loading.style.display = 'none';
-                emptyState.style.display = 'block';
-                emptyState.querySelector('h2').textContent = 'Sign In Required';
-                emptyState.querySelector('p').textContent = 'Please sign in to view channels.';
-                this.updatePaginationControls();
-                return;
-            }
-            
-            // Add pagination parameters for pending channels
-            const url = this.currentView === 'pending' ? 
-                `${this.apiBase}${endpoint}?page=1&limit=20` : 
-                `${this.apiBase}${endpoint}`;
-            
-            const response = await fetch(url, {
-                headers: {
-                    'Authorization': `Bearer ${this.token}`
-                }
-            });
-            
-            if (!response.ok) {
-                if (response.status === 401) {
-                    // Token expired or invalid
-                    localStorage.removeItem('viewhunt_token');
-                    this.token = null;
-                    this.updateUIForLoggedOutUser();
-                    this.channels = [];
-                    loading.style.display = 'none';
-                    emptyState.style.display = 'block';
-                    emptyState.querySelector('h2').textContent = 'Sign In Required';
-                    emptyState.querySelector('p').textContent = 'Please sign in to view channels.';
-                    this.updatePaginationControls();
-                    return;
-                }
-                throw new Error(`HTTP ${response.status}`);
-            }
-            
-            const data = await response.json();
-            
-            // Handle paginated response for pending channels
-            if (this.currentView === 'pending' && data.channels) {
-                this.channels = data.channels;
-                this.pagination = data.pagination;
-                console.log(`Loaded ${this.channels.length} channels (Page ${data.pagination.page}/${data.pagination.pages})`);
-            } else {
-                // Handle direct array response for approved channels
-                this.channels = Array.isArray(data) ? data : [];
-            }
-
-            loading.style.display = 'none';
-
-            if (this.channels.length === 0) {
-                emptyState.style.display = 'block';
-                // Reset empty state message based on current view
-                if (this.currentView === 'pending') {
-                    emptyState.querySelector('h2').textContent = 'No Channels to Review';
-                    emptyState.querySelector('p').textContent = 'All caught up! Check back later for new channels to review.';
-                } else {
-                    emptyState.querySelector('h2').textContent = 'No Approved Channels';
-                    emptyState.querySelector('p').textContent = 'Start reviewing channels to build your approved list.';
-                }
-            } else {
-                this.renderChannels();
-            }
-
-            // Update pagination controls
-            this.updatePaginationControls();
-
-        } catch (error) {
-            console.error('Error loading channels:', error);
-            loading.style.display = 'none';
-            emptyState.style.display = 'block';
-            this.updatePaginationControls();
-        }
-    }
 }
 
 // Initialize app
