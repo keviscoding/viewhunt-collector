@@ -216,53 +216,36 @@ class ViewHuntApp {
         if (!this.channels || this.channels.length === 0) return;
 
         const primarySort = document.getElementById('primary-sort').value;
-        const secondarySort = document.getElementById('secondary-sort').value;
-        const minRatio = parseFloat(document.getElementById('min-ratio').value) || 0;
-        const minViews = parseInt(document.getElementById('min-views').value) || 0;
 
-        // Filter channels
-        let filteredChannels = this.channels.filter(channel => {
-            const ratio = channel.view_to_sub_ratio || 0;
-            const views = channel.view_count || 0;
-            
-            return ratio >= minRatio && views >= minViews;
-        });
+        // For approved channels, just sort them (no filtering for now)
+        let filteredChannels = [...this.channels];
 
-        // Helper function for sorting
-        const getSortValue = (channel, sortType) => {
-            switch (sortType) {
-                case 'ratio-desc': return -(channel.view_to_sub_ratio || 0);
-                case 'ratio-asc': return (channel.view_to_sub_ratio || 0);
-                case 'views-desc': return -(channel.view_count || 0);
-                case 'views-asc': return (channel.view_count || 0);
-                case 'subs-desc': return -(channel.subscriber_count || 0);
-                case 'subs-asc': return (channel.subscriber_count || 0);
-                case 'videos-desc': return -(channel.video_count || 0);
-                case 'videos-asc': return (channel.video_count || 0);
-                case 'newest': return -(new Date(channel.created_at || 0).getTime());
-                case 'oldest': return (new Date(channel.created_at || 0).getTime());
-                default: return -(channel.view_to_sub_ratio || 0);
-            }
-        };
-
-        // Sort channels with dual sorting
+        // Simple sorting for approved channels
         filteredChannels.sort((a, b) => {
-            // Primary sort
-            const primaryA = getSortValue(a, primarySort);
-            const primaryB = getSortValue(b, primarySort);
-            
-            if (primaryA !== primaryB) {
-                return primaryA - primaryB;
+            switch (primarySort) {
+                case 'ratio-desc':
+                    return (b.view_to_sub_ratio || 0) - (a.view_to_sub_ratio || 0);
+                case 'ratio-asc':
+                    return (a.view_to_sub_ratio || 0) - (b.view_to_sub_ratio || 0);
+                case 'views-desc':
+                    return (b.view_count || 0) - (a.view_count || 0);
+                case 'views-asc':
+                    return (a.view_count || 0) - (b.view_count || 0);
+                case 'subs-desc':
+                    return (b.subscriber_count || 0) - (a.subscriber_count || 0);
+                case 'subs-asc':
+                    return (a.subscriber_count || 0) - (b.subscriber_count || 0);
+                case 'videos-desc':
+                    return (b.video_count || 0) - (a.video_count || 0);
+                case 'videos-asc':
+                    return (a.video_count || 0) - (b.video_count || 0);
+                case 'newest':
+                    return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+                case 'oldest':
+                    return new Date(a.created_at || 0) - new Date(b.created_at || 0);
+                default:
+                    return (b.view_to_sub_ratio || 0) - (a.view_to_sub_ratio || 0);
             }
-            
-            // Secondary sort (if specified and values are equal)
-            if (secondarySort && secondarySort !== 'none') {
-                const secondaryA = getSortValue(a, secondarySort);
-                const secondaryB = getSortValue(b, secondarySort);
-                return secondaryA - secondaryB;
-            }
-            
-            return 0;
         });
 
         // Update display
