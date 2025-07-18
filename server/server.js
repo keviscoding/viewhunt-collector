@@ -90,6 +90,11 @@ async function connectToMongoDB() {
             video_count: -1, 
             _id: 1 
         });
+        await db.collection('channels').createIndex({ 
+            status: 1, 
+            average_views: -1, 
+            _id: 1 
+        });
         
         // Collections indexes
         await db.collection('collections').createIndex({ user_id: 1 });
@@ -776,11 +781,11 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
             _id: { $nin: reviewedChannelIds }
         };
         
-        // Add view count filters if specified
+        // Add average views filters if specified (more meaningful than single video views)
         if (minViews > 0 || maxViews) {
-            matchQuery.view_count = {};
-            if (minViews > 0) matchQuery.view_count.$gte = minViews;
-            if (maxViews) matchQuery.view_count.$lte = maxViews;
+            matchQuery.average_views = {};
+            if (minViews > 0) matchQuery.average_views.$gte = minViews;
+            if (maxViews) matchQuery.average_views.$lte = maxViews;
         }
         
         // Add subscriber count filters if specified
