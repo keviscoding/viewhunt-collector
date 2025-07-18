@@ -73,17 +73,34 @@
                 <!-- Filters -->
                 <div class="filters" id="filters">
                     <div class="filter-group">
-                        <label for="sort-select">Sort by:</label>
-                        <select id="sort-select" class="filter-select">
-                            <option value="ratio-desc">🔥 Best Ratio (High to Low)</option>
-                            <option value="ratio-asc">Worst Ratio (Low to High)</option>
+                        <label for="primary-sort">Primary Sort:</label>
+                        <select id="primary-sort" class="filter-select">
+                            <option value="ratio-desc">🔥 Best Ratio</option>
+                            <option value="ratio-asc">Worst Ratio</option>
                             <option value="views-desc">👀 Most Views</option>
                             <option value="views-asc">Least Views</option>
                             <option value="subs-desc">📈 Most Subscribers</option>
                             <option value="subs-asc">Least Subscribers</option>
+                            <option value="videos-desc">📹 Most Videos</option>
+                            <option value="videos-asc">📹 Least Videos</option>
                             <option value="newest">🆕 Newest First</option>
                             <option value="oldest">📅 Oldest First</option>
-                            <option value="random">🎲 Random</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="secondary-sort">Secondary Sort:</label>
+                        <select id="secondary-sort" class="filter-select">
+                            <option value="ratio-desc">🔥 Best Ratio</option>
+                            <option value="ratio-asc">Worst Ratio</option>
+                            <option value="views-desc">👀 Most Views</option>
+                            <option value="views-asc">Least Views</option>
+                            <option value="subs-desc">📈 Most Subscribers</option>
+                            <option value="subs-asc">Least Subscribers</option>
+                            <option value="videos-desc">📹 Most Videos</option>
+                            <option value="videos-asc">📹 Least Videos</option>
+                            <option value="newest">🆕 Newest First</option>
+                            <option value="oldest">📅 Oldest First</option>
+                            <option value="none">No Secondary Sort</option>
                         </select>
                     </div>
                     <div class="filter-group">
