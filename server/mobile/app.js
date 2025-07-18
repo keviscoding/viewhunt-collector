@@ -336,27 +336,15 @@ class ViewHuntApp {
                 return;
             }
 
-            // Get current filter values
+            // Get current filter values - SIMPLIFIED
             const primarySort = document.getElementById('primary-sort').value;
-            const secondarySort = document.getElementById('secondary-sort').value;
-            const minViews = parseInt(document.getElementById('min-views').value) || 0;
-            const maxViews = document.getElementById('max-views').value ? parseInt(document.getElementById('max-views').value) : null;
-            const minSubs = parseInt(document.getElementById('min-subs').value) || 0;
-            const maxSubs = document.getElementById('max-subs').value ? parseInt(document.getElementById('max-subs').value) : null;
 
-            // Build query parameters for full database sorting
+            // Build query parameters - SIMPLIFIED
             const params = new URLSearchParams({
                 page: page.toString(),
                 limit: '20',
-                primarySort: primarySort,
-                secondarySort: secondarySort
+                primarySort: primarySort
             });
-            
-            // Only add filter parameters if they have values
-            if (minViews > 0) params.append('minViews', minViews.toString());
-            if (maxViews) params.append('maxViews', maxViews.toString());
-            if (minSubs > 0) params.append('minSubs', minSubs.toString());
-            if (maxSubs) params.append('maxSubs', maxSubs.toString());
 
             const response = await this.fetchWithAuth(`${this.apiBase}/channels/pending?${params}`);
             

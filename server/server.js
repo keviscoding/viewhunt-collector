@@ -743,7 +743,7 @@ app.get('/api/channels/approved', authenticateToken, async (req, res) => {
     }
 });
 
-// Get pending channels for user (excluding already reviewed) - with optimized full database sorting
+// Get pending channels for user (excluding already reviewed) - SIMPLIFIED VERSION
 app.get('/api/channels/pending', authenticateToken, async (req, res) => {
     try {
         const userId = new ObjectId(req.user.userId);
@@ -753,83 +753,59 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
         
-        // Filter parameters
+        // Simple sort parameter
         const primarySort = req.query.primarySort || 'ratio-desc';
-        const secondarySort = req.query.secondarySort || 'none';
-        const minViews = parseInt(req.query.minViews) || 0;
-        const maxViews = req.query.maxViews ? parseInt(req.query.maxViews) : 999999999; // 999M max
-        const minSubs = parseInt(req.query.minSubs) || 0;
-        const maxSubs = req.query.maxSubs ? parseInt(req.query.maxSubs) : 999999999; // 999M max
         
-        // Get channels user has already acted on (cached for performance)
+        // Get channels user has already acted on
         const reviewedChannelIds = await db.collection('user_channel_actions')
             .find({ user_id: userId })
             .project({ channel_id: 1 })
             .toArray()
             .then(actions => actions.map(action => action.channel_id));
         
-        // Build match query with filters
+        // Simple match query
         const matchQuery = {
             status: 'pending',
             _id: { $nin: reviewedChannelIds }
         };
         
-        // Add view count filters if specified
-        if (minViews > 0 || maxViews < 999999999) {
-            matchQuery.view_count = {};
-            if (minViews > 0) matchQuery.view_count.$gte = minViews;
-            if (maxViews < 999999999) matchQuery.view_count.$lte = maxViews;
+        // Simple sort query
+        let sortQuery = { view_to_sub_ratio: -1, _id: 1 }; // Default to best ratio
+        
+        switch (primarySort) {
+            case 'ratio-desc':
+                sortQuery = { view_to_sub_ratio: -1, _id: 1 };
+                break;
+            case 'ratio-asc':
+                sortQuery = { view_to_sub_ratio: 1, _id: 1 };
+                break;
+            case 'views-desc':
+                sortQuery = { view_count: -1, _id: 1 };
+                break;
+            case 'views-asc':
+                sortQuery = { view_count: 1, _id: 1 };
+                break;
+            case 'subs-desc':
+                sortQuery = { subscriber_count: -1, _id: 1 };
+                break;
+            case 'subs-asc':
+                sortQuery = { subscriber_count: 1, _id: 1 };
+                break;
+            case 'videos-desc':
+                sortQuery = { video_count: -1, _id: 1 };
+                break;
+            case 'videos-asc':
+                sortQuery = { video_count: 1, _id: 1 };
+                break;
+            case 'newest':
+                sortQuery = { created_at: -1, _id: 1 };
+                break;
+            case 'oldest':
+                sortQuery = { created_at: 1, _id: 1 };
+                break;
         }
         
-        // Add subscriber count filters if specified
-        if (minSubs > 0 || maxSubs < 999999999) {
-            matchQuery.subscriber_count = {};
-            if (minSubs > 0) matchQuery.subscriber_count.$gte = minSubs;
-            if (maxSubs < 999999999) matchQuery.subscriber_count.$lte = maxSubs;
-        }
-        
-        // Helper function to get sort field and direction
-        const getSortField = (sortType) => {
-            switch (sortType) {
-                case 'ratio-desc': return { view_to_sub_ratio: -1 };
-                case 'ratio-asc': return { view_to_sub_ratio: 1 };
-                case 'views-desc': return { view_count: -1 };
-                case 'views-asc': return { view_count: 1 };
-                case 'subs-desc': return { subscriber_count: -1 };
-                case 'subs-asc': return { subscriber_count: 1 };
-                case 'videos-desc': return { video_count: -1 };
-                case 'videos-asc': return { video_count: 1 };
-                case 'newest': return { created_at: -1 };
-                case 'oldest': return { created_at: 1 };
-                default: return { view_to_sub_ratio: -1 };
-            }
-        };
-
-        // Build dual sort query properly
-        let sortQuery = {};
-        
-        // Add primary sort
-        const primarySortField = getSortField(primarySort);
-        const primaryKey = Object.keys(primarySortField)[0];
-        const primaryValue = primarySortField[primaryKey];
-        sortQuery[primaryKey] = primaryValue;
-        
-        // Add secondary sort if specified and different from primary
-        if (secondarySort && secondarySort !== 'none' && secondarySort !== primarySort) {
-            const secondarySortField = getSortField(secondarySort);
-            const secondaryKey = Object.keys(secondarySortField)[0];
-            const secondaryValue = secondarySortField[secondaryKey];
-            
-            // Only add if it's a different field than primary
-            if (secondaryKey !== primaryKey) {
-                sortQuery[secondaryKey] = secondaryValue;
-            }
-        }
-        
-        // Always add _id for consistent pagination
-        sortQuery._id = 1;
-        
-        // Get total count for pagination (with filters applied)
+        // Get total count
         const totalChannels = await db.collection('channels').countDocuments(matchQuery);
         const totalPages = Math.ceil(totalChannels / limit);
         
@@ -846,7 +822,7 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
             });
         }
         
-        // Get channels with efficient database-level sorting and pagination
+        // Get channels
         const channels = await db.collection('channels')
             .find(matchQuery)
             .sort(sortQuery)
@@ -863,18 +839,12 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
                 hasNext: page < totalPages,
                 hasPrev: page > 1,
                 limit
-            },
-            filters: {
-                sortBy,
-                minRatio,
-                minViews,
-                minSubs
             }
         });
         
     } catch (error) {
         console.error('Error fetching pending channels:', error);
-        res.status(500).json({ error: 'Database error' });
+        res.status(500).json({ error: 'Database error', details: error.message });
     }
 });
 
