@@ -15,16 +15,16 @@ async function migrateChannels() {
         await client.connect();
         const db = client.db('viewhuntv2');
         
-        // Get all channels that don't have average_views field yet
-        const channels = await db.collection('channels').find({
-            $or: [
-                { average_views: { $exists: false } },
-                { video_count: { $exists: false } },
-                { total_views: { $exists: false } }
-            ]
-        }).toArray();
+        // Get ALL channels to force update with correct average views
+        const channels = await db.collection('channels').find({}).toArray();
         
         console.log(`📊 Found ${channels.length} channels to migrate`);
+        
+        // Debug: Show some sample URLs to understand the format
+        console.log('🔍 Sample channel URLs:');
+        channels.slice(0, 10).forEach((ch, i) => {
+            console.log(`  ${i+1}. ${ch.channel_url}`);
+        });
         
         if (channels.length === 0) {
             console.log('✅ All channels already have the new fields!');
@@ -54,19 +54,46 @@ async function migrateChannels() {
             console.log(`📡 Fetching batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(channelsWithIds.length/batchSize)} (${batch.length} channels)...`);
             
             try {
-                const response = await fetch(
-                    `${YOUTUBE_API_BASE}/channels?part=statistics&id=${channelIds.join(',')}&key=${YOUTUBE_API_KEY}`
-                );
+                // For channel handles (@username), we need to use forHandle parameter
+                const handleChannels = batch.filter(ch => ch.realChannelId.startsWith('@') || !ch.realChannelId.startsWith('UC'));
+                const idChannels = batch.filter(ch => ch.realChannelId.startsWith('UC'));
                 
-                if (!response.ok) {
-                    console.error(`❌ API Error for batch: ${response.status}`);
-                    continue;
+                let allChannelData = [];
+                
+                // Process channels with handles
+                for (const channel of handleChannels) {
+                    try {
+                        const handle = channel.realChannelId.replace('@', '');
+                        const handleResponse = await fetch(
+                            `${YOUTUBE_API_BASE}/channels?part=statistics&forHandle=${handle}&key=${YOUTUBE_API_KEY}`
+                        );
+                        if (handleResponse.ok) {
+                            const handleData = await handleResponse.json();
+                            if (handleData.items && handleData.items.length > 0) {
+                                allChannelData.push(...handleData.items);
+                            }
+                        }
+                        await new Promise(resolve => setTimeout(resolve, 50)); // Small delay
+                    } catch (error) {
+                        console.error(`Error fetching handle ${channel.realChannelId}:`, error.message);
+                    }
                 }
                 
-                const data = await response.json();
+                // Process channels with IDs (if any)
+                if (idChannels.length > 0) {
+                    const response = await fetch(
+                        `${YOUTUBE_API_BASE}/channels?part=statistics&id=${idChannels.map(ch => ch.realChannelId).join(',')}&key=${YOUTUBE_API_KEY}`
+                    );
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.items) {
+                            allChannelData.push(...data.items);
+                        }
+                    }
+                }
                 
                 // Update each channel in this batch
-                for (const item of data.items || []) {
+                for (const item of allChannelData || []) {
                     const channel = batch.find(ch => ch.realChannelId === item.id);
                     if (!channel) continue;
                     
@@ -120,7 +147,8 @@ function extractChannelId(url) {
         /youtube\.com\/channel\/([a-zA-Z0-9_-]+)/,
         /youtube\.com\/c\/([a-zA-Z0-9_-]+)/,
         /youtube\.com\/user\/([a-zA-Z0-9_-]+)/,
-        /youtube\.com\/@([a-zA-Z0-9_-]+)/
+        /youtube\.com\/@([a-zA-Z0-9_-]+)/,
+        /youtube\.com\/([a-zA-Z0-9_-]+)$/  // Handle direct channel names
     ];
     
     for (const pattern of patterns) {
@@ -130,6 +158,8 @@ function extractChannelId(url) {
         }
     }
     
+    // Debug: log URLs that don't match
+    console.log(`⚠️  Could not extract channel ID from: ${url}`);
     return null;
 }
 

@@ -716,17 +716,17 @@ app.get('/api/channels/approved', authenticateToken, async (req, res) => {
     }
 });
 
-// Get pending channels for user (excluding already reviewed) - with pagination
+// Get pending channels for user (excluding already reviewed) - with optimized random batching
 app.get('/api/channels/pending', authenticateToken, async (req, res) => {
     try {
         const userId = new ObjectId(req.user.userId);
         
-        // Check if requesting all channels for random batch selection
-        const getAll = req.query.all === 'true';
-        
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 20; // Reduced from 50 for better performance
-        const skip = (page - 1) * limit;
+        // Get batch size from query params (default 200 for server batch, 20 for display)
+        const batchSize = parseInt(req.query.batchSize) || 200;
+        const displayLimit = parseInt(req.query.displayLimit) || 20;
+        const sortBy = req.query.sortBy || 'ratio-desc';
+        const minRatio = parseFloat(req.query.minRatio) || 0;
+        const minViews = parseInt(req.query.minViews) || 0;
         
         // Get channels user has already acted on (more efficient query)
         const reviewedChannelIds = await db.collection('user_channel_actions')
@@ -735,47 +735,88 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
             .toArray()
             .then(actions => actions.map(action => action.channel_id));
         
-        if (getAll) {
-            // Return all pending channels for random batch selection
-            const channels = await db.collection('channels')
-                .find({ 
-                    status: 'pending',
-                    _id: { $nin: reviewedChannelIds }
-                })
-                .sort({ view_to_sub_ratio: -1 })
-                .toArray();
-            
-            res.json(channels);
-        } else {
-            // Get pending channels excluding reviewed ones with pagination
-            const channels = await db.collection('channels')
-                .find({ 
-                    status: 'pending',
-                    _id: { $nin: reviewedChannelIds }
-                })
-                .sort({ view_to_sub_ratio: -1 })
-                .skip(skip)
-                .limit(limit)
-                .toArray();
-            
-            // Get total count for pagination info
-            const totalCount = await db.collection('channels').countDocuments({ 
-                status: 'pending',
-                _id: { $nin: reviewedChannelIds }
-            });
-            
-            res.json({
-                channels,
-                pagination: {
-                    page,
-                    limit,
-                    total: totalCount,
-                    pages: Math.ceil(totalCount / limit),
-                    hasNext: page * limit < totalCount,
-                    hasPrev: page > 1
+        // Get total count of available channels for this user
+        const totalAvailable = await db.collection('channels').countDocuments({ 
+            status: 'pending',
+            _id: { $nin: reviewedChannelIds }
+        });
+        
+        if (totalAvailable === 0) {
+            return res.json({
+                channels: [],
+                hasMore: false,
+                totalAvailable: 0,
+                batchInfo: {
+                    batchSize,
+                    displayLimit,
+                    sortBy,
+                    minRatio,
+                    minViews
                 }
             });
         }
+        
+        // Use MongoDB's $sample to get random batch (more efficient than skip/limit for randomization)
+        const randomBatch = await db.collection('channels')
+            .aggregate([
+                {
+                    $match: { 
+                        status: 'pending',
+                        _id: { $nin: reviewedChannelIds }
+                    }
+                },
+                { $sample: { size: Math.min(batchSize, totalAvailable) } }
+            ])
+            .toArray();
+        
+        // Apply server-side filtering
+        let filteredChannels = randomBatch.filter(channel => {
+            const ratio = channel.view_to_sub_ratio || 0;
+            const views = channel.view_count || 0;
+            return ratio >= minRatio && views >= minViews;
+        });
+        
+        // Apply server-side sorting
+        filteredChannels.sort((a, b) => {
+            switch (sortBy) {
+                case 'ratio-desc':
+                    return (b.view_to_sub_ratio || 0) - (a.view_to_sub_ratio || 0);
+                case 'ratio-asc':
+                    return (a.view_to_sub_ratio || 0) - (b.view_to_sub_ratio || 0);
+                case 'views-desc':
+                    return (b.view_count || 0) - (a.view_count || 0);
+                case 'views-asc':
+                    return (a.view_count || 0) - (b.view_count || 0);
+                case 'subs-desc':
+                    return (b.subscriber_count || 0) - (a.subscriber_count || 0);
+                case 'subs-asc':
+                    return (a.subscriber_count || 0) - (b.subscriber_count || 0);
+                case 'random':
+                    return Math.random() - 0.5;
+                default:
+                    return (b.view_to_sub_ratio || 0) - (a.view_to_sub_ratio || 0);
+            }
+        });
+        
+        // Limit to display amount
+        const displayChannels = filteredChannels.slice(0, displayLimit);
+        
+        res.json({
+            channels: displayChannels,
+            hasMore: totalAvailable > batchSize, // There are more channels available for next batch
+            totalAvailable,
+            batchInfo: {
+                batchSize,
+                displayLimit,
+                sortBy,
+                minRatio,
+                minViews,
+                batchReceived: randomBatch.length,
+                afterFiltering: filteredChannels.length,
+                displayed: displayChannels.length
+            }
+        });
+        
     } catch (error) {
         console.error('Error fetching pending channels:', error);
         res.status(500).json({ error: 'Database error' });

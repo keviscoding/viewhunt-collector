@@ -3,21 +3,12 @@ class ViewHuntApp {
         // Auto-detect API base URL for production vs development
         this.apiBase = this.getApiBase();
         this.currentView = 'pending';
-        this.channels = []; // Currently displayed batch
-        this.allChannels = []; // Full pool of channels
-        this.collections = [];
-        this.currentCollection = null;
+        this.channels = [];
+        this.currentBatch = [];
+        this.hasMoreBatches = true;
+        this.isLoadingBatch = false;
+        this.authToken = localStorage.getItem('viewhunt_token');
         this.user = null;
-        this.token = localStorage.getItem('viewhunt_token');
-        
-        // Random batch state
-        this.batchSize = 20;
-        this.currentBatch = 1;
-        this.totalBatches = 1;
-        this.isLoadingPage = false;
-        
-        // Dark mode state
-        this.isDarkMode = localStorage.getItem('viewhunt_theme') === 'dark';
         
         this.init();
     }
@@ -74,17 +65,33 @@ class ViewHuntApp {
             });
         });
 
-        // Filters
+        // Filters - now trigger new batch loading for pending view
         document.getElementById('sort-select').addEventListener('change', () => {
-            this.applyFilters();
+            if (this.currentView === 'pending') {
+                this.loadNewBatch();
+            } else {
+                this.applyFilters();
+            }
         });
 
         document.getElementById('min-ratio').addEventListener('input', () => {
-            this.debounce(() => this.applyFilters(), 500)();
+            this.debounce(() => {
+                if (this.currentView === 'pending') {
+                    this.loadNewBatch();
+                } else {
+                    this.applyFilters();
+                }
+            }, 500)();
         });
 
         document.getElementById('min-views').addEventListener('input', () => {
-            this.debounce(() => this.applyFilters(), 500)();
+            this.debounce(() => {
+                if (this.currentView === 'pending') {
+                    this.loadNewBatch();
+                } else {
+                    this.applyFilters();
+                }
+            }, 500)();
         });
 
         // Authentication forms
@@ -211,6 +218,19 @@ class ViewHuntApp {
     }
 
     async loadChannels() {
+        if (this.currentView === 'pending') {
+            // Use optimized batch loading for pending channels
+            await this.loadNewBatch();
+        } else {
+            // Use traditional loading for approved channels
+            await this.loadApprovedChannels();
+        }
+    }
+
+    async loadNewBatch() {
+        if (this.isLoadingBatch) return;
+        
+        this.isLoadingBatch = true;
         const loading = document.getElementById('loading');
         const emptyState = document.getElementById('empty-state');
         const channelGrid = document.getElementById('channel-grid');
@@ -220,94 +240,199 @@ class ViewHuntApp {
         channelGrid.innerHTML = '';
 
         try {
-            const endpoint = this.currentView === 'pending' ? '/channels/pending' : '/channels/approved';
-            
-            // Both endpoints now require authentication
-            if (!this.token) {
-                this.channels = [];
-                this.allChannels = [];
+            // Check authentication
+            if (!this.authToken) {
+                this.currentBatch = [];
+                this.hasMoreBatches = false;
                 loading.style.display = 'none';
                 emptyState.style.display = 'block';
                 emptyState.querySelector('h2').textContent = 'Sign In Required';
                 emptyState.querySelector('p').textContent = 'Please sign in to view channels.';
                 return;
             }
-            
-            // For pending channels, load ALL channels (not paginated) for random batch selection
-            const url = this.currentView === 'pending' ? 
-                `${this.apiBase}${endpoint}?all=true` : // Get all pending channels
-                `${this.apiBase}${endpoint}`;
-            
-            const response = await fetch(url, {
-                headers: {
-                    'Authorization': `Bearer ${this.token}`
-                }
+
+            // Get current filter values
+            const sortBy = document.getElementById('sort-select').value;
+            const minRatio = parseFloat(document.getElementById('min-ratio').value) || 0;
+            const minViews = parseInt(document.getElementById('min-views').value) || 0;
+
+            // Build query parameters for optimized batch
+            const params = new URLSearchParams({
+                batchSize: '200',      // Server fetches 200 random channels
+                displayLimit: '20',    // Display up to 20 channels
+                sortBy: sortBy,
+                minRatio: minRatio.toString(),
+                minViews: minViews.toString()
             });
+
+            const response = await this.fetchWithAuth(`${this.apiBase}/channels/pending?${params}`);
             
             if (!response.ok) {
                 if (response.status === 401) {
-                    // Token expired or invalid
                     localStorage.removeItem('viewhunt_token');
-                    this.token = null;
+                    this.authToken = null;
                     this.updateUIForLoggedOutUser();
-                    this.channels = [];
-                    this.allChannels = [];
-                    loading.style.display = 'none';
-                    emptyState.style.display = 'block';
-                    emptyState.querySelector('h2').textContent = 'Sign In Required';
-                    emptyState.querySelector('p').textContent = 'Please sign in to view channels.';
-                    return;
+                    throw new Error('Authentication required');
                 }
                 throw new Error(`HTTP ${response.status}`);
             }
-            
+
             const data = await response.json();
+
+            this.currentBatch = data.channels || [];
+            this.hasMoreBatches = data.hasMore || false;
             
-            if (this.currentView === 'pending') {
-                // Store all channels and sort by best ratio by default
-                this.allChannels = Array.isArray(data) ? data : (data.channels || []);
-                
-                // Sort all channels by best ratio (default sort)
-                this.allChannels.sort((a, b) => (b.view_to_sub_ratio || 0) - (a.view_to_sub_ratio || 0));
-                
-                // Calculate total batches
-                this.totalBatches = Math.ceil(this.allChannels.length / this.batchSize);
-                this.currentBatch = 1;
-                
-                // Get first random batch
-                this.getRandomBatch();
-                
-                console.log(`Loaded ${this.allChannels.length} total channels, showing random batch of ${this.channels.length}`);
+            loading.style.display = 'none';
+
+            if (this.currentBatch.length === 0) {
+                emptyState.style.display = 'block';
+                emptyState.querySelector('h2').textContent = 'No Channels Match Your Filters';
+                emptyState.querySelector('p').textContent = 'Try adjusting your filter criteria or click "Next Batch" for different channels.';
             } else {
-                // Handle approved channels normally
-                this.channels = Array.isArray(data) ? data : [];
-                this.allChannels = this.channels;
+                this.renderBatchChannels();
             }
+
+            // Update batch info display
+            this.updateBatchInfo(data.batchInfo);
+
+        } catch (error) {
+            console.error('Error loading channel batch:', error);
+            loading.style.display = 'none';
+            emptyState.style.display = 'block';
+            emptyState.querySelector('h2').textContent = 'Error Loading Channels';
+            emptyState.querySelector('p').textContent = 'Please try again or check your connection.';
+        } finally {
+            this.isLoadingBatch = false;
+        }
+    }
+
+    async loadApprovedChannels() {
+        const loading = document.getElementById('loading');
+        const emptyState = document.getElementById('empty-state');
+        const channelGrid = document.getElementById('channel-grid');
+
+        loading.style.display = 'flex';
+        emptyState.style.display = 'none';
+        channelGrid.innerHTML = '';
+
+        try {
+            if (!this.authToken) {
+                this.channels = [];
+                loading.style.display = 'none';
+                emptyState.style.display = 'block';
+                emptyState.querySelector('h2').textContent = 'Sign In Required';
+                emptyState.querySelector('p').textContent = 'Please sign in to view approved channels.';
+                return;
+            }
+
+            const response = await this.fetchWithAuth(`${this.apiBase}/channels/approved`);
+            
+            if (!response.ok) {
+                if (response.status === 401) {
+                    localStorage.removeItem('viewhunt_token');
+                    this.authToken = null;
+                    this.updateUIForLoggedOutUser();
+                    throw new Error('Authentication required');
+                }
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            this.channels = await response.json();
 
             loading.style.display = 'none';
 
             if (this.channels.length === 0) {
                 emptyState.style.display = 'block';
-                // Reset empty state message based on current view
-                if (this.currentView === 'pending') {
-                    emptyState.querySelector('h2').textContent = 'No Channels to Review';
-                    emptyState.querySelector('p').textContent = 'All caught up! Check back later for new channels to review.';
-                } else {
-                    emptyState.querySelector('h2').textContent = 'No Approved Channels';
-                    emptyState.querySelector('p').textContent = 'Start reviewing channels to build your approved list.';
-                }
+                emptyState.querySelector('h2').textContent = 'No Approved Channels';
+                emptyState.querySelector('p').textContent = 'Start reviewing channels to build your approved list.';
             } else {
                 this.renderChannels();
             }
-
-            // Update pagination controls
-            this.updatePaginationControls();
-
         } catch (error) {
-            console.error('Error loading channels:', error);
+            console.error('Error loading approved channels:', error);
             loading.style.display = 'none';
             emptyState.style.display = 'block';
-            this.updatePaginationControls();
+        }
+    }
+
+    async fetchWithAuth(url, options = {}) {
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers
+        };
+
+        if (this.authToken) {
+            headers['Authorization'] = `Bearer ${this.authToken}`;
+        }
+
+        return fetch(url, {
+            ...options,
+            headers
+        });
+    }
+
+    renderBatchChannels() {
+        const channelGrid = document.getElementById('channel-grid');
+        const emptyState = document.getElementById('empty-state');
+
+        channelGrid.innerHTML = '';
+        emptyState.style.display = 'none';
+
+        this.currentBatch.forEach(channel => {
+            const card = this.createChannelCard(channel);
+            channelGrid.appendChild(card);
+        });
+
+        // Add "Next Batch" button if there are more batches available
+        if (this.hasMoreBatches) {
+            this.addNextBatchButton();
+        }
+    }
+
+    addNextBatchButton() {
+        const channelGrid = document.getElementById('channel-grid');
+        
+        const nextBatchCard = document.createElement('div');
+        nextBatchCard.className = 'channel-card next-batch-card';
+        nextBatchCard.innerHTML = `
+            <div style="text-align: center; padding: 2rem;">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">🔄</div>
+                <h3 style="margin-bottom: 1rem;">Want to see different channels?</h3>
+                <p style="margin-bottom: 1.5rem; color: #666;">Get a fresh batch of 200 random channels with your current filters applied.</p>
+                <button class="btn btn-primary" onclick="window.app.loadNewBatch()" style="width: 100%;">
+                    🎲 Next Batch
+                </button>
+            </div>
+        `;
+        
+        channelGrid.appendChild(nextBatchCard);
+    }
+
+    updateBatchInfo(batchInfo) {
+        // Create or update batch info display
+        let batchInfoEl = document.getElementById('batch-info');
+        if (!batchInfoEl) {
+            batchInfoEl = document.createElement('div');
+            batchInfoEl.id = 'batch-info';
+            batchInfoEl.style.cssText = `
+                background: rgba(255, 255, 255, 0.1);
+                padding: 0.75rem 1rem;
+                border-radius: 8px;
+                margin-bottom: 1rem;
+                font-size: 0.9rem;
+                color: #ccc;
+            `;
+            
+            const filtersEl = document.getElementById('filters');
+            if (filtersEl && filtersEl.parentNode) {
+                filtersEl.parentNode.insertBefore(batchInfoEl, filtersEl.nextSibling);
+            }
+        }
+
+        if (batchInfo) {
+            batchInfoEl.innerHTML = `
+                📊 Batch: ${batchInfo.batchReceived} fetched → ${batchInfo.afterFiltering} after filters → ${batchInfo.displayed} displayed
+            `;
         }
     }
 
@@ -415,18 +540,15 @@ class ViewHuntApp {
     }
 
     async approveChannel(channelId) {
-        if (!this.token) {
+        if (!this.authToken) {
             this.showLogin();
             this.showToast('Please sign in to approve channels 🔐');
             return;
         }
 
         try {
-            const response = await fetch(`${this.apiBase}/channels/${channelId}/approve`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${this.token}`
-                }
+            const response = await this.fetchWithAuth(`${this.apiBase}/channels/${channelId}/approve`, {
+                method: 'PUT'
             });
 
             if (response.ok) {
@@ -438,8 +560,8 @@ class ViewHuntApp {
                     setTimeout(() => card.remove(), 300);
                 }
 
-                // IMPORTANT: Remove channel from data array to prevent it from reappearing in filters
-                this.channels = this.channels.filter(channel => channel._id !== channelId);
+                // Remove channel from current batch to prevent it from reappearing
+                this.currentBatch = this.currentBatch.filter(channel => channel._id !== channelId);
 
                 // Update stats
                 await this.loadStats();
@@ -451,7 +573,8 @@ class ViewHuntApp {
                 this.showLogin();
                 this.showToast('Please sign in to approve channels 🔐');
             } else {
-                this.showToast('Error approving channel ❌');
+                const error = await response.json();
+                this.showToast(error.error || 'Error approving channel ❌');
             }
         } catch (error) {
             console.error('Error approving channel:', error);
@@ -460,18 +583,15 @@ class ViewHuntApp {
     }
 
     async rejectChannel(channelId) {
-        if (!this.token) {
+        if (!this.authToken) {
             this.showLogin();
             this.showToast('Please sign in to reject channels 🔐');
             return;
         }
 
         try {
-            const response = await fetch(`${this.apiBase}/channels/${channelId}/reject`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${this.token}`
-                }
+            const response = await this.fetchWithAuth(`${this.apiBase}/channels/${channelId}/reject`, {
+                method: 'PUT'
             });
 
             if (response.ok) {
@@ -483,8 +603,8 @@ class ViewHuntApp {
                     setTimeout(() => card.remove(), 300);
                 }
 
-                // IMPORTANT: Remove channel from data array to prevent it from reappearing in filters
-                this.channels = this.channels.filter(channel => channel._id !== channelId);
+                // Remove channel from current batch to prevent it from reappearing
+                this.currentBatch = this.currentBatch.filter(channel => channel._id !== channelId);
 
                 // Update stats
                 await this.loadStats();
@@ -496,7 +616,8 @@ class ViewHuntApp {
                 this.showLogin();
                 this.showToast('Please sign in to reject channels 🔐');
             } else {
-                this.showToast('Error rejecting channel ❌');
+                const error = await response.json();
+                this.showToast(error.error || 'Error rejecting channel ❌');
             }
         } catch (error) {
             console.error('Error rejecting channel:', error);
