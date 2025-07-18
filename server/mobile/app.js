@@ -94,6 +94,25 @@ class ViewHuntApp {
             }
         });
 
+        // Page jump functionality
+        document.getElementById('go-to-page').addEventListener('click', () => {
+            const pageInput = document.getElementById('page-input');
+            const page = parseInt(pageInput.value);
+            if (page && page >= 1 && this.pagination && page <= this.pagination.totalPages) {
+                this.loadPendingChannels(page);
+            } else {
+                this.showToast('Invalid page number ❌');
+                pageInput.value = this.pagination ? this.pagination.currentPage : 1;
+            }
+        });
+
+        // Allow Enter key to jump to page
+        document.getElementById('page-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('go-to-page').click();
+            }
+        });
+
         // Initialize range sliders (without real-time filtering)
         this.initializeRangeSliders();
 
@@ -519,6 +538,8 @@ class ViewHuntApp {
     updatePaginationControls() {
         const paginationControls = document.getElementById('pagination-controls');
         const paginationText = document.getElementById('pagination-text');
+        const pageInput = document.getElementById('page-input');
+        const totalPagesSpan = document.getElementById('total-pages');
         
         if (!this.pagination) {
             paginationControls.style.display = 'none';
@@ -534,6 +555,15 @@ class ViewHuntApp {
             const start = ((this.pagination.currentPage - 1) * this.pagination.limit) + 1;
             const end = Math.min(this.pagination.currentPage * this.pagination.limit, this.pagination.totalChannels);
             paginationText.textContent = `${start}-${end} of ${this.pagination.totalChannels.toLocaleString()} channels`;
+        }
+        
+        // Update page input and total pages
+        if (pageInput) {
+            pageInput.value = this.pagination.currentPage;
+            pageInput.max = this.pagination.totalPages;
+        }
+        if (totalPagesSpan) {
+            totalPagesSpan.textContent = this.pagination.totalPages;
         }
         
         // Update button states

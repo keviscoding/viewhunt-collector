@@ -158,10 +158,16 @@
                     <div class="pagination-info">
                         <span id="pagination-text">Loading...</span>
                     </div>
-                    <div class="pagination-buttons">
+                    <div class="pagination-navigation">
                         <button id="prev-page" class="btn btn-secondary" disabled>
                             ← Previous
                         </button>
+                        <div class="page-jump">
+                            <span>Page</span>
+                            <input type="number" id="page-input" class="page-input" min="1" value="1">
+                            <span>of <span id="total-pages">1</span></span>
+                            <button id="go-to-page" class="btn btn-primary btn-small">Go</button>
+                        </div>
                         <button id="next-page" class="btn btn-secondary" disabled>
                             Next →
                         </button>

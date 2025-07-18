@@ -427,8 +427,14 @@ body {
     gap: 1rem;
     margin: 1rem 0;
     padding: 1rem;
-    background: #f8f9fa;
+    background: rgba(255, 255, 255, 0.8);
     border-radius: 12px;
+    border: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .channel-stats {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .stat-item {
@@ -438,8 +444,9 @@ body {
 .stat-value {
     display: block;
     font-size: 1.1rem;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--text-primary);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .stat-label {
@@ -448,6 +455,16 @@ body {
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-top: 0.25rem;
+    font-weight: 600;
+}
+
+[data-theme="dark"] .stat-value {
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] .stat-label {
+    color: #e0e0e0;
 }
 
 .ratio-highlight {
@@ -1356,10 +1373,20 @@ l View Styles */
     border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
+[data-theme="dark"] .social-card {
+    background: rgba(30, 30, 40, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
 .social-card-header {
     margin-bottom: 1rem;
     border-bottom: 1px solid rgba(0, 0, 0, 0.1);
     padding-bottom: 1rem;
+}
+
+[data-theme="dark"] .social-card-header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .social-card-header h3 {
@@ -1783,6 +1810,53 @@ vis Admin Styles */
 .pagination-buttons {
     display: flex;
     gap: 1rem;
+}
+
+.pagination-navigation {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.page-jump {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    backdrop-filter: blur(10px);
+}
+
+.page-jump span {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.page-input {
+    width: 60px;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.9);
+    text-align: center;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.page-input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.btn-small {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    min-width: auto;
 }
 
 .btn-secondary {
