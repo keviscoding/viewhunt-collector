@@ -460,21 +460,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 
 // API Routes
 
-// Get pending channels (ordered by view-to-sub ratio)
-app.get('/api/channels/pending', async (req, res) => {
-    try {
-        const channels = await db.collection('channels')
-            .find({ status: 'pending' })
-            .sort({ view_to_sub_ratio: -1 })
-            .limit(50)
-            .toArray();
-        
-        res.json(channels);
-    } catch (error) {
-        console.error('Error fetching pending channels:', error);
-        res.status(500).json({ error: 'Database error' });
-    }
-});
+// Old pending endpoint removed - using user-specific endpoint below
 
 // Add new channels from scraper
 app.post('/api/channels/bulk', async (req, res) => {
