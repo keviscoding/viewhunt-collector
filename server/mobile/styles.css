@@ -9,8 +9,8 @@
     --bg-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     --bg-card: rgba(255, 255, 255, 0.95);
     --bg-header: rgba(255, 255, 255, 0.75);
-    --text-primary: #333;
-    --text-secondary: #666;
+    --text-primary: #1a1a1a;
+    --text-secondary: #4a4a4a;
     --border-color: rgba(255, 255, 255, 0.2);
     --shadow-light: rgba(0, 0, 0, 0.08);
     --shadow-medium: rgba(0, 0, 0, 0.15);
@@ -665,13 +665,13 @@ body {
 .auth-form h2 {
     font-size: 1.75rem;
     font-weight: 700;
-    color: #1f2937;
+    color: var(--text-primary);
     margin-bottom: 0.5rem;
     text-align: center;
 }
 
 .auth-subtitle {
-    color: #6b7280;
+    color: var(--text-secondary);
     text-align: center;
     margin-bottom: 2rem;
     font-size: 0.95rem;
@@ -684,11 +684,12 @@ body {
 .form-group input {
     width: 100%;
     padding: 1rem;
-    border: 2px solid #e5e7eb;
+    border: 2px solid var(--border-color);
     border-radius: 12px;
     font-size: 1rem;
     transition: all 0.2s ease;
-    background: #f9fafb;
+    background: var(--bg-card);
+    color: var(--text-primary);
 }
 
 .form-group input:focus {
@@ -700,7 +701,7 @@ body {
 
 .form-help {
     display: block;
-    color: #6b7280;
+    color: var(--text-secondary);
     font-size: 0.8rem;
     margin-top: 0.5rem;
 }
@@ -735,7 +736,7 @@ body {
 
 .auth-switch {
     text-align: center;
-    color: #6b7280;
+    color: var(--text-secondary);
     font-size: 0.9rem;
 }
 
@@ -759,7 +760,7 @@ body {
     background: none;
     border: none;
     font-size: 1.5rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
     cursor: pointer;
     width: 32px;
     height: 32px;
@@ -771,8 +772,8 @@ body {
 }
 
 .auth-close:hover {
-    background: #f3f4f6;
-    color: #374151;
+    background: var(--bg-card);
+    color: var(--text-primary);
 }
 
 /* Header Authentication Styles */
@@ -1241,8 +1242,9 @@ l View Styles */
     align-items: center;
     justify-content: center;
     height: 150px;
-    color: #666;
+    color: var(--text-primary);
     font-style: italic;
+    opacity: 0.7;
 }
 
 .social-empty {
@@ -1250,7 +1252,7 @@ l View Styles */
     align-items: center;
     justify-content: center;
     height: 150px;
-    color: #999;
+    color: var(--text-secondary);
     font-size: 1.1rem;
 }
 
@@ -1322,12 +1324,12 @@ l View Styles */
 .social-channel-info h4 {
     font-size: 0.95rem;
     margin-bottom: 0.25rem;
-    color: #333;
+    color: var(--text-primary);
 }
 
 .social-channel-info p {
     font-size: 0.8rem;
-    color: #666;
+    color: var(--text-secondary);
 }
 
 .social-channel-link {
@@ -1369,12 +1371,12 @@ l View Styles */
 .leaderboard-info h4 {
     font-size: 0.95rem;
     margin-bottom: 0.25rem;
-    color: #333;
+    color: var(--text-primary);
 }
 
 .leaderboard-info p {
     font-size: 0.8rem;
-    color: #666;
+    color: var(--text-secondary);
 }
 
 .leaderboard-score {
@@ -1407,12 +1409,12 @@ l View Styles */
 .niche-info h4 {
     font-size: 0.95rem;
     margin-bottom: 0.25rem;
-    color: #333;
+    color: var(--text-primary);
 }
 
 .niche-info p {
     font-size: 0.8rem;
-    color: #666;
+    color: var(--text-secondary);
 }
 
 .niche-trend {
