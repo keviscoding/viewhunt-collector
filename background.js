@@ -286,7 +286,11 @@ async function processSubscriberData() {
                 viewCount: video.viewCount,
                 subscriberCount: subscriberCount,
                 viewToSubRatio: viewToSubRatio,
-                avatarUrl: channelInfo.avatarUrl || null
+                avatarUrl: channelInfo.avatarUrl || null,
+                // NEW: Add the channel-level statistics
+                totalViews: channelInfo.totalViews || 0,
+                videoCount: channelInfo.videoCount || 0,
+                averageViews: channelInfo.averageViews || 0
             });
         }
     }
@@ -443,6 +447,9 @@ async function processBatch(channels) {
             if (data.items) {
                 data.items.forEach(item => {
                     const subscriberCount = parseInt(item.statistics.subscriberCount || 0);
+                    const totalViews = parseInt(item.statistics.viewCount || 0);
+                    const videoCount = parseInt(item.statistics.videoCount || 0);
+                    const averageViews = videoCount > 0 ? Math.round(totalViews / videoCount) : 0;
                     const avatarUrl = item.snippet?.thumbnails?.default?.url || 
                                      item.snippet?.thumbnails?.medium?.url || 
                                      item.snippet?.thumbnails?.high?.url || null;
@@ -450,8 +457,11 @@ async function processBatch(channels) {
                     const channelInfo = channelsWithIds.find(ch => ch.realChannelId === item.id);
                     if (channelInfo) {
                         channelInfo.subscriberCount = subscriberCount;
+                        channelInfo.totalViews = totalViews;
+                        channelInfo.videoCount = videoCount;
+                        channelInfo.averageViews = averageViews;
                         channelInfo.avatarUrl = avatarUrl;
-                        console.log(`ViewHunt API: ${channelInfo.channelName}: ${subscriberCount.toLocaleString()} subscribers, Avatar: ${avatarUrl ? 'Yes' : 'No'}`);
+                        console.log(`ViewHunt API: ${channelInfo.channelName}: ${subscriberCount.toLocaleString()} subs, ${videoCount} videos, ${averageViews.toLocaleString()} avg views, Avatar: ${avatarUrl ? 'Yes' : 'No'}`);
                     }
                 });
             }

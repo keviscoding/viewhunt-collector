@@ -302,7 +302,9 @@ class ViewHuntApp {
             return num.toString();
         };
 
-        const viewCount = formatNumber(channel.view_count || 0);
+        // Use average views instead of single video views for better niche analysis
+        const averageViews = formatNumber(channel.average_views || channel.view_count || 0);
+        const videoCount = channel.video_count || 0;
         const subCount = formatNumber(channel.subscriber_count || 0);
         const ratio = channel.view_to_sub_ratio ? channel.view_to_sub_ratio.toFixed(2) : 'N/A';
 
@@ -317,13 +319,14 @@ class ViewHuntApp {
                 <div class="channel-info">
                     <h3>${this.escapeHtml(channel.channel_name)}</h3>
                     <p>${this.escapeHtml(channel.video_title || 'No video title')}</p>
+                    <small class="video-count">${videoCount} videos</small>
                 </div>
             </div>
             
             <div class="channel-stats">
                 <div class="stat-item">
-                    <span class="stat-value">${viewCount}</span>
-                    <span class="stat-label">Views</span>
+                    <span class="stat-value">${averageViews}</span>
+                    <span class="stat-label">Avg Views</span>
                 </div>
                 <div class="stat-item">
                     <span class="stat-value">${subCount}</span>
