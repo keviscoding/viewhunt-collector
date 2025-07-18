@@ -424,7 +424,7 @@ class ViewHuntApp {
         const loading = document.getElementById('loading');
         const paginationControls = document.getElementById('pagination-controls');
 
-        // Hide all views first
+        // Hide all views first (including pagination)
         filters.style.display = 'none';
         channelGrid.style.display = 'none';
         collectionsView.style.display = 'none';
