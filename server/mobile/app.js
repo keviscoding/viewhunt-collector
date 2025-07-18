@@ -338,6 +338,9 @@ class ViewHuntApp {
                     setTimeout(() => card.remove(), 300);
                 }
 
+                // IMPORTANT: Remove channel from data array to prevent it from reappearing in filters
+                this.channels = this.channels.filter(channel => channel._id !== channelId);
+
                 // Update stats
                 await this.loadStats();
                 await this.checkAuthStatus(); // Update user stats
@@ -379,6 +382,9 @@ class ViewHuntApp {
                     card.style.opacity = '0';
                     setTimeout(() => card.remove(), 300);
                 }
+
+                // IMPORTANT: Remove channel from data array to prevent it from reappearing in filters
+                this.channels = this.channels.filter(channel => channel._id !== channelId);
 
                 // Update stats
                 await this.loadStats();
