@@ -111,6 +111,20 @@ class ViewHuntApp {
             });
         }
 
+        // Add min-videos filter if it exists
+        const minVideosInput = document.getElementById('min-videos');
+        if (minVideosInput) {
+            minVideosInput.addEventListener('input', () => {
+                this.debounce(() => {
+                    if (this.currentView === 'pending') {
+                        this.loadPendingChannels(1);
+                    } else {
+                        this.applyFilters();
+                    }
+                }, 500)();
+            });
+        }
+
         // Authentication forms
         document.getElementById('login-form-element').addEventListener('submit', (e) => {
             e.preventDefault();
@@ -275,6 +289,7 @@ class ViewHuntApp {
             const minRatio = parseFloat(document.getElementById('min-ratio').value) || 0;
             const minViews = parseInt(document.getElementById('min-views').value) || 0;
             const minSubs = parseInt(document.getElementById('min-subs').value) || 0;
+            const minVideos = parseInt(document.getElementById('min-videos').value) || 0;
 
             // Build query parameters for full database sorting
             const params = new URLSearchParams({
@@ -283,7 +298,8 @@ class ViewHuntApp {
                 sortBy: sortBy,
                 minRatio: minRatio.toString(),
                 minViews: minViews.toString(),
-                minSubs: minSubs.toString()
+                minSubs: minSubs.toString(),
+                minVideos: minVideos.toString()
             });
 
             const response = await this.fetchWithAuth(`${this.apiBase}/channels/pending?${params}`);

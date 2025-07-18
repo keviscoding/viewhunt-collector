@@ -85,6 +85,11 @@ async function connectToMongoDB() {
             created_at: -1, 
             _id: 1 
         });
+        await db.collection('channels').createIndex({ 
+            status: 1, 
+            video_count: -1, 
+            _id: 1 
+        });
         
         // Collections indexes
         await db.collection('collections').createIndex({ user_id: 1 });
@@ -753,6 +758,7 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
         const minRatio = parseFloat(req.query.minRatio) || 0;
         const minViews = parseInt(req.query.minViews) || 0;
         const minSubs = parseInt(req.query.minSubs) || 0;
+        const minVideos = parseInt(req.query.minVideos) || 0;
         
         // Get channels user has already acted on (cached for performance)
         const reviewedChannelIds = await db.collection('user_channel_actions')
@@ -767,7 +773,8 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
             _id: { $nin: reviewedChannelIds },
             view_to_sub_ratio: { $gte: minRatio },
             view_count: { $gte: minViews },
-            subscriber_count: { $gte: minSubs }
+            subscriber_count: { $gte: minSubs },
+            video_count: { $gte: minVideos }
         };
         
         // Build sort query based on sortBy parameter
