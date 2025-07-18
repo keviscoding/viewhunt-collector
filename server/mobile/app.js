@@ -3,15 +3,17 @@ class ViewHuntApp {
         // Auto-detect API base URL for production vs development
         this.apiBase = this.getApiBase();
         this.currentView = 'pending';
-        this.channels = [];
+        this.channels = []; // Currently displayed batch
+        this.allChannels = []; // Full pool of channels
         this.collections = [];
         this.currentCollection = null;
         this.user = null;
         this.token = localStorage.getItem('viewhunt_token');
         
-        // Pagination state
-        this.currentPage = 1;
-        this.pagination = null;
+        // Random batch state
+        this.batchSize = 20;
+        this.currentBatch = 1;
+        this.totalBatches = 1;
         this.isLoadingPage = false;
         
         // Dark mode state
@@ -223,6 +225,7 @@ class ViewHuntApp {
             // Both endpoints now require authentication
             if (!this.token) {
                 this.channels = [];
+                this.allChannels = [];
                 loading.style.display = 'none';
                 emptyState.style.display = 'block';
                 emptyState.querySelector('h2').textContent = 'Sign In Required';
@@ -230,9 +233,9 @@ class ViewHuntApp {
                 return;
             }
             
-            // Add pagination parameters for pending channels
+            // For pending channels, load ALL channels (not paginated) for random batch selection
             const url = this.currentView === 'pending' ? 
-                `${this.apiBase}${endpoint}?page=1&limit=20` : 
+                `${this.apiBase}${endpoint}?all=true` : // Get all pending channels
                 `${this.apiBase}${endpoint}`;
             
             const response = await fetch(url, {
@@ -248,6 +251,7 @@ class ViewHuntApp {
                     this.token = null;
                     this.updateUIForLoggedOutUser();
                     this.channels = [];
+                    this.allChannels = [];
                     loading.style.display = 'none';
                     emptyState.style.display = 'block';
                     emptyState.querySelector('h2').textContent = 'Sign In Required';
@@ -259,18 +263,25 @@ class ViewHuntApp {
             
             const data = await response.json();
             
-            // Handle paginated response for pending channels
-            if (this.currentView === 'pending' && data.channels) {
-                this.channels = data.channels;
-                this.pagination = data.pagination;
+            if (this.currentView === 'pending') {
+                // Store all channels and sort by best ratio by default
+                this.allChannels = Array.isArray(data) ? data : (data.channels || []);
                 
-                // Randomize pending channels for better discovery experience
-                this.shuffleArray(this.channels);
+                // Sort all channels by best ratio (default sort)
+                this.allChannels.sort((a, b) => (b.view_to_sub_ratio || 0) - (a.view_to_sub_ratio || 0));
                 
-                console.log(`Loaded ${this.channels.length} channels (Page ${data.pagination.page}/${data.pagination.pages}) - Randomized for discovery`);
+                // Calculate total batches
+                this.totalBatches = Math.ceil(this.allChannels.length / this.batchSize);
+                this.currentBatch = 1;
+                
+                // Get first random batch
+                this.getRandomBatch();
+                
+                console.log(`Loaded ${this.allChannels.length} total channels, showing random batch of ${this.channels.length}`);
             } else {
-                // Handle direct array response for approved channels
+                // Handle approved channels normally
                 this.channels = Array.isArray(data) ? data : [];
+                this.allChannels = this.channels;
             }
 
             loading.style.display = 'none';
@@ -298,6 +309,25 @@ class ViewHuntApp {
             emptyState.style.display = 'block';
             this.updatePaginationControls();
         }
+    }
+
+    // Get a random batch of channels from the full sorted list
+    getRandomBatch() {
+        if (!this.allChannels || this.allChannels.length === 0) {
+            this.channels = [];
+            return;
+        }
+
+        // Create a copy of all channels to avoid modifying the original
+        const availableChannels = [...this.allChannels];
+        
+        // Shuffle the available channels
+        this.shuffleArray(availableChannels);
+        
+        // Take the first batchSize channels from the shuffled array
+        this.channels = availableChannels.slice(0, this.batchSize);
+        
+        console.log(`Generated random batch: ${this.channels.length} channels from ${this.allChannels.length} total`);
     }
 
     renderChannels() {
@@ -1701,19 +1731,59 @@ class ViewHuntApp {
 
     // Pagination Methods
     async loadNextPage() {
-        if (this.isLoadingPage || !this.pagination || !this.pagination.hasNext) {
+        if (this.isLoadingPage || this.currentBatch >= this.totalBatches) {
             return;
         }
 
-        await this.loadPage(this.currentPage + 1);
+        this.currentBatch++;
+        await this.loadRandomBatch();
     }
 
     async loadPreviousPage() {
-        if (this.isLoadingPage || !this.pagination || !this.pagination.hasPrev) {
+        if (this.isLoadingPage || this.currentBatch <= 1) {
             return;
         }
 
-        await this.loadPage(this.currentPage - 1);
+        this.currentBatch--;
+        await this.loadRandomBatch();
+    }
+
+    async loadRandomBatch() {
+        if (this.isLoadingPage) return;
+
+        this.isLoadingPage = true;
+
+        // Show loading state
+        const channelGrid = document.getElementById('channel-grid');
+        const nextBtn = document.getElementById('next-page-btn');
+        const prevBtn = document.getElementById('prev-page-btn');
+
+        channelGrid.classList.add('loading');
+        nextBtn.disabled = true;
+        prevBtn.disabled = true;
+        nextBtn.innerHTML = '<div class="pagination-loading"><div class="spinner"></div>Loading...</div>';
+
+        try {
+            // Get a new random batch from the full list
+            this.getRandomBatch();
+
+            // Simulate loading delay for better UX
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // Fade in the new content
+            channelGrid.style.opacity = '0';
+            setTimeout(() => {
+                this.renderChannels();
+                this.updatePaginationControls();
+                channelGrid.style.opacity = '1';
+                channelGrid.classList.remove('loading');
+            }, 150);
+
+        } catch (error) {
+            console.error('Error loading random batch:', error);
+        } finally {
+            this.isLoadingPage = false;
+        }
     }
 
     async loadPage(pageNumber) {
@@ -1794,23 +1864,23 @@ class ViewHuntApp {
         const nextBtn = document.getElementById('next-page-btn');
         const prevBtn = document.getElementById('prev-page-btn');
 
-        // Only show pagination for pending channels (which have pagination data)
-        if (this.currentView === 'pending' && this.pagination) {
+        // Show pagination for pending channels with random batch system
+        if (this.currentView === 'pending' && this.allChannels && this.allChannels.length > 0) {
             paginationControls.style.display = 'flex';
             
-            // Update pagination info - show as batches instead of pages
-            paginationText.textContent = `Batch ${this.pagination.page} of ${this.pagination.pages}`;
-            channelsCount.textContent = `${this.channels.length} of ${this.pagination.total} channels (randomized)`;
+            // Update pagination info - show as random batches
+            paginationText.textContent = `Random Batch ${this.currentBatch} of ${this.totalBatches}`;
+            channelsCount.textContent = `${this.channels.length} of ${this.allChannels.length} channels (randomized)`;
             
             // Update button text and states
             prevBtn.innerHTML = '🔀 Previous Batch';
             nextBtn.innerHTML = '🔀 Next Batch';
             
-            prevBtn.disabled = !this.pagination.hasPrev || this.isLoadingPage;
-            nextBtn.disabled = !this.pagination.hasNext || this.isLoadingPage;
+            prevBtn.disabled = this.currentBatch <= 1 || this.isLoadingPage;
+            nextBtn.disabled = this.currentBatch >= this.totalBatches || this.isLoadingPage;
             
             // Add visual feedback for button states
-            if (this.pagination.hasNext) {
+            if (this.currentBatch < this.totalBatches) {
                 nextBtn.classList.remove('btn-secondary');
                 nextBtn.classList.add('btn-primary');
             } else {
