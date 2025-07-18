@@ -93,6 +93,22 @@
                     <!-- Channel cards will be inserted here -->
                 </div>
 
+                <!-- Pagination Controls -->
+                <div class="pagination-controls" id="pagination-controls" style="display: none;">
+                    <div class="pagination-info">
+                        <span id="pagination-text">Page 1 of 1</span>
+                        <span id="channels-count">0 channels</span>
+                    </div>
+                    <div class="pagination-buttons">
+                        <button class="btn btn-secondary" id="prev-page-btn" onclick="window.app.loadPreviousPage()" disabled>
+                            ← Previous
+                        </button>
+                        <button class="btn btn-primary" id="next-page-btn" onclick="window.app.loadNextPage()">
+                            Next →
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Collections View -->
                 <div class="collections-view" id="collections-view" style="display: none;">
                     <!-- Collections Header -->

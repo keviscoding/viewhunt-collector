@@ -9,6 +9,11 @@ class ViewHuntApp {
         this.user = null;
         this.token = localStorage.getItem('viewhunt_token');
         
+        // Pagination state
+        this.currentPage = 1;
+        this.pagination = null;
+        this.isLoadingPage = false;
+        
         this.init();
     }
 
@@ -1632,4 +1637,211 @@ let app;
 document.addEventListener('DOMContentLoaded', () => {
     app = new ViewHuntApp();
     window.app = app; // Make it globally available
-});
+});    // P
+agination Methods
+    async loadNextPage() {
+        if (this.isLoadingPage || !this.pagination || !this.pagination.hasNext) {
+            return;
+        }
+
+        await this.loadPage(this.currentPage + 1);
+    }
+
+    async loadPreviousPage() {
+        if (this.isLoadingPage || !this.pagination || !this.pagination.hasPrev) {
+            return;
+        }
+
+        await this.loadPage(this.currentPage - 1);
+    }
+
+    async loadPage(pageNumber) {
+        if (this.isLoadingPage) return;
+
+        this.isLoadingPage = true;
+        this.currentPage = pageNumber;
+
+        // Show loading state
+        const channelGrid = document.getElementById('channel-grid');
+        const paginationControls = document.getElementById('pagination-controls');
+        const nextBtn = document.getElementById('next-page-btn');
+        const prevBtn = document.getElementById('prev-page-btn');
+
+        channelGrid.classList.add('loading');
+        nextBtn.disabled = true;
+        prevBtn.disabled = true;
+        nextBtn.innerHTML = '<div class="pagination-loading"><div class="spinner"></div>Loading...</div>';
+
+        try {
+            const endpoint = this.currentView === 'pending' ? '/channels/pending' : '/channels/approved';
+            const url = this.currentView === 'pending' ? 
+                `${this.apiBase}${endpoint}?page=${pageNumber}&limit=20` : 
+                `${this.apiBase}${endpoint}`;
+
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${this.token}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            // Handle paginated response for pending channels
+            if (this.currentView === 'pending' && data.channels) {
+                this.channels = data.channels;
+                this.pagination = data.pagination;
+                console.log(`Loaded page ${pageNumber}: ${this.channels.length} channels`);
+            } else {
+                // Handle direct array response for approved channels
+                this.channels = Array.isArray(data) ? data : [];
+            }
+
+            // Smooth page transition
+            channelGrid.style.opacity = '0';
+            setTimeout(() => {
+                this.renderChannels();
+                this.updatePaginationControls();
+                channelGrid.style.opacity = '1';
+                channelGrid.classList.remove('loading');
+            }, 200);
+
+        } catch (error) {
+            console.error('Error loading page:', error);
+            this.showToast('Error loading channels ❌');
+            channelGrid.classList.remove('loading');
+        } finally {
+            this.isLoadingPage = false;
+            nextBtn.innerHTML = 'Next →';
+        }
+    }
+
+    updatePaginationControls() {
+        const paginationControls = document.getElementById('pagination-controls');
+        const paginationText = document.getElementById('pagination-text');
+        const channelsCount = document.getElementById('channels-count');
+        const nextBtn = document.getElementById('next-page-btn');
+        const prevBtn = document.getElementById('prev-page-btn');
+
+        // Only show pagination for pending channels (which have pagination data)
+        if (this.currentView === 'pending' && this.pagination) {
+            paginationControls.style.display = 'flex';
+            
+            // Update pagination info
+            paginationText.textContent = `Page ${this.pagination.page} of ${this.pagination.pages}`;
+            channelsCount.textContent = `${this.channels.length} of ${this.pagination.total} channels`;
+            
+            // Update button states
+            prevBtn.disabled = !this.pagination.hasPrev || this.isLoadingPage;
+            nextBtn.disabled = !this.pagination.hasNext || this.isLoadingPage;
+            
+            // Add visual feedback for button states
+            if (this.pagination.hasNext) {
+                nextBtn.classList.remove('btn-secondary');
+                nextBtn.classList.add('btn-primary');
+            } else {
+                nextBtn.classList.remove('btn-primary');
+                nextBtn.classList.add('btn-secondary');
+            }
+        } else {
+            paginationControls.style.display = 'none';
+        }
+    }
+
+    // Update the existing loadChannels method to include pagination controls
+    async loadChannels() {
+        const loading = document.getElementById('loading');
+        const emptyState = document.getElementById('empty-state');
+        const channelGrid = document.getElementById('channel-grid');
+
+        // Reset pagination state when switching views
+        this.currentPage = 1;
+        this.pagination = null;
+
+        loading.style.display = 'flex';
+        emptyState.style.display = 'none';
+        channelGrid.innerHTML = '';
+
+        try {
+            const endpoint = this.currentView === 'pending' ? '/channels/pending' : '/channels/approved';
+            
+            // Both endpoints now require authentication
+            if (!this.token) {
+                this.channels = [];
+                loading.style.display = 'none';
+                emptyState.style.display = 'block';
+                emptyState.querySelector('h2').textContent = 'Sign In Required';
+                emptyState.querySelector('p').textContent = 'Please sign in to view channels.';
+                this.updatePaginationControls();
+                return;
+            }
+            
+            // Add pagination parameters for pending channels
+            const url = this.currentView === 'pending' ? 
+                `${this.apiBase}${endpoint}?page=1&limit=20` : 
+                `${this.apiBase}${endpoint}`;
+            
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${this.token}`
+                }
+            });
+            
+            if (!response.ok) {
+                if (response.status === 401) {
+                    // Token expired or invalid
+                    localStorage.removeItem('viewhunt_token');
+                    this.token = null;
+                    this.updateUIForLoggedOutUser();
+                    this.channels = [];
+                    loading.style.display = 'none';
+                    emptyState.style.display = 'block';
+                    emptyState.querySelector('h2').textContent = 'Sign In Required';
+                    emptyState.querySelector('p').textContent = 'Please sign in to view channels.';
+                    this.updatePaginationControls();
+                    return;
+                }
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            // Handle paginated response for pending channels
+            if (this.currentView === 'pending' && data.channels) {
+                this.channels = data.channels;
+                this.pagination = data.pagination;
+                console.log(`Loaded ${this.channels.length} channels (Page ${data.pagination.page}/${data.pagination.pages})`);
+            } else {
+                // Handle direct array response for approved channels
+                this.channels = Array.isArray(data) ? data : [];
+            }
+
+            loading.style.display = 'none';
+
+            if (this.channels.length === 0) {
+                emptyState.style.display = 'block';
+                // Reset empty state message based on current view
+                if (this.currentView === 'pending') {
+                    emptyState.querySelector('h2').textContent = 'No Channels to Review';
+                    emptyState.querySelector('p').textContent = 'All caught up! Check back later for new channels to review.';
+                } else {
+                    emptyState.querySelector('h2').textContent = 'No Approved Channels';
+                    emptyState.querySelector('p').textContent = 'Start reviewing channels to build your approved list.';
+                }
+            } else {
+                this.renderChannels();
+            }
+
+            // Update pagination controls
+            this.updatePaginationControls();
+
+        } catch (error) {
+            console.error('Error loading channels:', error);
+            loading.style.display = 'none';
+            emptyState.style.display = 'block';
+            this.updatePaginationControls();
+        }
+    }

@@ -1419,4 +1419,125 @@ vis Admin Styles */
     .share-url-container button {
         width: 100%;
     }
+}/*
+ Pagination Controls */
+.pagination-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2rem 1rem;
+    margin-top: 2rem;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.pagination-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.pagination-info span {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.pagination-info span:first-child {
+    font-weight: 600;
+    color: #333;
+    font-size: 1rem;
+}
+
+.pagination-buttons {
+    display: flex;
+    gap: 1rem;
+}
+
+.btn-secondary {
+    background: #6b7280;
+    color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: #4b5563;
+    transform: translateY(-1px);
+}
+
+.btn-secondary:disabled {
+    background: #d1d5db;
+    color: #9ca3af;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.pagination-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.pagination-loading .spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #e5e7eb;
+    border-top: 2px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+/* Responsive pagination */
+@media (max-width: 768px) {
+    .pagination-controls {
+        flex-direction: column;
+        gap: 1rem;
+        text-align: center;
+    }
+    
+    .pagination-buttons {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .pagination-buttons .btn {
+        flex: 1;
+        max-width: 120px;
+    }
+}
+
+/* Smooth transitions for pagination */
+.channel-grid {
+    transition: opacity 0.3s ease;
+}
+
+.channel-grid.loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+/* Page transition effects */
+.page-transition-enter {
+    opacity: 0;
+    transform: translateY(20px);
+}
+
+.page-transition-enter-active {
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.page-transition-exit {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.page-transition-exit-active {
+    opacity: 0;
+    transform: translateY(-20px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
 }
