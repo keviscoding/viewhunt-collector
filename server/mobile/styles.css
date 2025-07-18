@@ -1890,16 +1890,20 @@ vis Admin Styles */
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    width: 100%;
 }
 
 .range-input {
     flex: 1;
-    padding: 0.5rem;
+    padding: 0.4rem 0.5rem;
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.9);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     text-align: center;
+    min-width: 0; /* Prevents flex items from overflowing */
+    max-width: 80px; /* Limit input width */
+    box-sizing: border-box;
 }
 
 .range-separator {
@@ -1968,15 +1972,20 @@ vis Admin Styles */
 /* Mobile responsive for range filters */
 @media (max-width: 768px) {
     .range-inputs {
-        flex-direction: column;
-        gap: 0.5rem;
+        flex-direction: row; /* Keep horizontal on mobile */
+        gap: 0.3rem;
+        justify-content: space-between;
     }
     
     .range-separator {
-        align-self: center;
+        font-size: 0.8rem;
+        flex-shrink: 0;
     }
     
     .range-input {
-        width: 100%;
+        max-width: 70px; /* Smaller on mobile */
+        font-size: 0.75rem;
+        padding: 0.3rem 0.4rem;
     }
+}
 }

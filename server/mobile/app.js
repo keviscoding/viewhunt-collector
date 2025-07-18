@@ -150,6 +150,13 @@ class ViewHuntApp {
     }
 
     initializeRangeSliders() {
+        // Helper function to format numbers for display
+        const formatNumber = (num) => {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(0) + 'K';
+            return num.toString();
+        };
+
         // Views range slider
         const viewsSliderMin = document.getElementById('views-slider-min');
         const viewsSliderMax = document.getElementById('views-slider-max');
@@ -157,22 +164,40 @@ class ViewHuntApp {
         const maxViewsInput = document.getElementById('max-views');
 
         if (viewsSliderMin && viewsSliderMax && minViewsInput && maxViewsInput) {
+            // Update input when slider changes
             viewsSliderMin.addEventListener('input', () => {
-                minViewsInput.value = parseInt(viewsSliderMin.value).toLocaleString();
+                const value = parseInt(viewsSliderMin.value);
+                minViewsInput.value = formatNumber(value);
                 this.debounce(() => {
                     if (this.currentView === 'pending') {
                         this.loadPendingChannels(1);
                     }
-                }, 500)();
+                }, 300)();
             });
 
             viewsSliderMax.addEventListener('input', () => {
-                maxViewsInput.value = parseInt(viewsSliderMax.value).toLocaleString();
+                const value = parseInt(viewsSliderMax.value);
+                maxViewsInput.value = formatNumber(value);
                 this.debounce(() => {
                     if (this.currentView === 'pending') {
                         this.loadPendingChannels(1);
                     }
-                }, 500)();
+                }, 300)();
+            });
+
+            // Update slider when input changes
+            minViewsInput.addEventListener('input', () => {
+                const value = this.parseFormattedNumber(minViewsInput.value);
+                if (value >= 0 && value <= 10000000) {
+                    viewsSliderMin.value = value;
+                }
+            });
+
+            maxViewsInput.addEventListener('input', () => {
+                const value = this.parseFormattedNumber(maxViewsInput.value);
+                if (value >= 0 && value <= 10000000) {
+                    viewsSliderMax.value = value;
+                }
             });
         }
 
@@ -183,24 +208,54 @@ class ViewHuntApp {
         const maxSubsInput = document.getElementById('max-subs');
 
         if (subsSliderMin && subsSliderMax && minSubsInput && maxSubsInput) {
+            // Update input when slider changes
             subsSliderMin.addEventListener('input', () => {
-                minSubsInput.value = parseInt(subsSliderMin.value).toLocaleString();
+                const value = parseInt(subsSliderMin.value);
+                minSubsInput.value = formatNumber(value);
                 this.debounce(() => {
                     if (this.currentView === 'pending') {
                         this.loadPendingChannels(1);
                     }
-                }, 500)();
+                }, 300)();
             });
 
             subsSliderMax.addEventListener('input', () => {
-                maxSubsInput.value = parseInt(subsSliderMax.value).toLocaleString();
+                const value = parseInt(subsSliderMax.value);
+                maxSubsInput.value = formatNumber(value);
                 this.debounce(() => {
                     if (this.currentView === 'pending') {
                         this.loadPendingChannels(1);
                     }
-                }, 500)();
+                }, 300)();
+            });
+
+            // Update slider when input changes
+            minSubsInput.addEventListener('input', () => {
+                const value = this.parseFormattedNumber(minSubsInput.value);
+                if (value >= 0 && value <= 5000000) {
+                    subsSliderMin.value = value;
+                }
+            });
+
+            maxSubsInput.addEventListener('input', () => {
+                const value = this.parseFormattedNumber(maxSubsInput.value);
+                if (value >= 0 && value <= 5000000) {
+                    subsSliderMax.value = value;
+                }
             });
         }
+    }
+
+    // Helper function to parse formatted numbers (e.g., "1.5M" -> 1500000)
+    parseFormattedNumber(str) {
+        if (!str) return 0;
+        const cleanStr = str.toString().toLowerCase().replace(/,/g, '');
+        const num = parseFloat(cleanStr);
+        if (isNaN(num)) return 0;
+        
+        if (cleanStr.includes('m')) return Math.round(num * 1000000);
+        if (cleanStr.includes('k')) return Math.round(num * 1000);
+        return Math.round(num);
     }
 
     // Fisher-Yates shuffle algorithm for randomizing channels
@@ -322,6 +377,10 @@ class ViewHuntApp {
             // Get current filter values
             const primarySort = document.getElementById('primary-sort').value;
             const secondarySort = document.getElementById('secondary-sort').value;
+            const minViews = parseInt(document.getElementById('min-views').value.replace(/,/g, '')) || 0;
+            const maxViews = document.getElementById('max-views').value ? parseInt(document.getElementById('max-views').value.replace(/,/g, '')) : null;
+            const minSubs = parseInt(document.getElementById('min-subs').value.replace(/,/g, '')) || 0;
+            const maxSubs = document.getElementById('max-subs').value ? parseInt(document.getElementById('max-subs').value.replace(/,/g, '')) : null;
 
             // Build query parameters
             const params = new URLSearchParams({
@@ -330,6 +389,12 @@ class ViewHuntApp {
                 primarySort: primarySort,
                 secondarySort: secondarySort
             });
+            
+            // Add filter parameters if they have values
+            if (minViews > 0) params.append('minViews', minViews.toString());
+            if (maxViews) params.append('maxViews', maxViews.toString());
+            if (minSubs > 0) params.append('minSubs', minSubs.toString());
+            if (maxSubs) params.append('maxSubs', maxSubs.toString());
 
             const response = await this.fetchWithAuth(`${this.apiBase}/channels/pending?${params}`);
             

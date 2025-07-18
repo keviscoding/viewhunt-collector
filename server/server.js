@@ -757,6 +757,12 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
         const primarySort = req.query.primarySort || 'ratio-desc';
         const secondarySort = req.query.secondarySort || 'none';
         
+        // Filter parameters
+        const minViews = parseInt(req.query.minViews) || 0;
+        const maxViews = req.query.maxViews ? parseInt(req.query.maxViews) : null;
+        const minSubs = parseInt(req.query.minSubs) || 0;
+        const maxSubs = req.query.maxSubs ? parseInt(req.query.maxSubs) : null;
+        
         // Get channels user has already acted on
         const reviewedChannelIds = await db.collection('user_channel_actions')
             .find({ user_id: userId })
@@ -764,11 +770,25 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
             .toArray()
             .then(actions => actions.map(action => action.channel_id));
         
-        // Simple match query
+        // Build match query with filters
         const matchQuery = {
             status: 'pending',
             _id: { $nin: reviewedChannelIds }
         };
+        
+        // Add view count filters if specified
+        if (minViews > 0 || maxViews) {
+            matchQuery.view_count = {};
+            if (minViews > 0) matchQuery.view_count.$gte = minViews;
+            if (maxViews) matchQuery.view_count.$lte = maxViews;
+        }
+        
+        // Add subscriber count filters if specified
+        if (minSubs > 0 || maxSubs) {
+            matchQuery.subscriber_count = {};
+            if (minSubs > 0) matchQuery.subscriber_count.$gte = minSubs;
+            if (maxSubs) matchQuery.subscriber_count.$lte = maxSubs;
+        }
         
         // Helper function to get sort field and direction
         const getSortField = (sortType) => {
