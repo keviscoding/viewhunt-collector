@@ -1630,7 +1630,6 @@ class ViewHuntApp {
         // Close the modal
         document.getElementById('share-modal-overlay').remove();
     }
-}
 
     // Pagination Methods
     async loadNextPage() {
