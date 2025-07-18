@@ -73,7 +73,7 @@
                 <!-- Filters -->
                 <div class="filters" id="filters">
                     <div class="filter-group">
-                        <label for="primary-sort">Primary Sort:</label>
+                        <label for="primary-sort">Sort by:</label>
                         <select id="primary-sort" class="filter-select">
                             <option value="ratio-desc">🔥 Best Ratio</option>
                             <option value="ratio-asc">Worst Ratio</option>
@@ -87,37 +87,43 @@
                             <option value="oldest">📅 Oldest First</option>
                         </select>
                     </div>
-                    <div class="filter-group">
-                        <label for="secondary-sort">Secondary Sort:</label>
-                        <select id="secondary-sort" class="filter-select">
-                            <option value="ratio-desc">🔥 Best Ratio</option>
-                            <option value="ratio-asc">Worst Ratio</option>
-                            <option value="views-desc">👀 Most Views</option>
-                            <option value="views-asc">Least Views</option>
-                            <option value="subs-desc">📈 Most Subscribers</option>
-                            <option value="subs-asc">Least Subscribers</option>
-                            <option value="videos-desc">📹 Most Videos</option>
-                            <option value="videos-asc">📹 Least Videos</option>
-                            <option value="newest">🆕 Newest First</option>
-                            <option value="oldest">📅 Oldest First</option>
-                            <option value="none">No Secondary Sort</option>
-                        </select>
+                    
+                    <div class="filter-group range-filter">
+                        <label>👀 Views Range:</label>
+                        <div class="range-slider-container">
+                            <div class="range-inputs">
+                                <input type="number" id="min-views" class="range-input" placeholder="Min" min="0" step="1000">
+                                <span class="range-separator">to</span>
+                                <input type="number" id="max-views" class="range-input" placeholder="Max" min="0" step="1000">
+                            </div>
+                            <div class="range-slider">
+                                <input type="range" id="views-slider-min" class="slider" min="0" max="10000000" step="10000" value="0">
+                                <input type="range" id="views-slider-max" class="slider" min="0" max="10000000" step="10000" value="10000000">
+                            </div>
+                            <div class="range-labels">
+                                <span>0</span>
+                                <span>10M+</span>
+                            </div>
+                        </div>
                     </div>
-                    <div class="filter-group">
-                        <label for="min-ratio">Min Ratio:</label>
-                        <input type="number" id="min-ratio" class="filter-input" placeholder="0.0" step="0.1" min="0">
-                    </div>
-                    <div class="filter-group">
-                        <label for="min-views">Min Views:</label>
-                        <input type="number" id="min-views" class="filter-input" placeholder="1000" step="1000" min="0">
-                    </div>
-                    <div class="filter-group">
-                        <label for="min-subs">Min Subs:</label>
-                        <input type="number" id="min-subs" class="filter-input" placeholder="1000" step="1000" min="0">
-                    </div>
-                    <div class="filter-group">
-                        <label for="min-videos">Min Videos:</label>
-                        <input type="number" id="min-videos" class="filter-input" placeholder="10" step="1" min="0">
+                    
+                    <div class="filter-group range-filter">
+                        <label>📈 Subscribers Range:</label>
+                        <div class="range-slider-container">
+                            <div class="range-inputs">
+                                <input type="number" id="min-subs" class="range-input" placeholder="Min" min="0" step="1000">
+                                <span class="range-separator">to</span>
+                                <input type="number" id="max-subs" class="range-input" placeholder="Max" min="0" step="1000">
+                            </div>
+                            <div class="range-slider">
+                                <input type="range" id="subs-slider-min" class="slider" min="0" max="5000000" step="1000" value="0">
+                                <input type="range" id="subs-slider-max" class="slider" min="0" max="5000000" step="1000" value="5000000">
+                            </div>
+                            <div class="range-labels">
+                                <span>0</span>
+                                <span>5M+</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

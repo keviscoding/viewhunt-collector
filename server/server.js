@@ -756,10 +756,10 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
         // Filter parameters
         const primarySort = req.query.primarySort || 'ratio-desc';
         const secondarySort = req.query.secondarySort || 'none';
-        const minRatio = parseFloat(req.query.minRatio) || 0;
         const minViews = parseInt(req.query.minViews) || 0;
+        const maxViews = parseInt(req.query.maxViews) || Number.MAX_SAFE_INTEGER;
         const minSubs = parseInt(req.query.minSubs) || 0;
-        const minVideos = parseInt(req.query.minVideos) || 0;
+        const maxSubs = parseInt(req.query.maxSubs) || Number.MAX_SAFE_INTEGER;
         
         // Get channels user has already acted on (cached for performance)
         const reviewedChannelIds = await db.collection('user_channel_actions')
@@ -772,10 +772,8 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
         const matchQuery = {
             status: 'pending',
             _id: { $nin: reviewedChannelIds },
-            view_to_sub_ratio: { $gte: minRatio },
-            view_count: { $gte: minViews },
-            subscriber_count: { $gte: minSubs },
-            video_count: { $gte: minVideos }
+            view_count: { $gte: minViews, $lte: maxViews },
+            subscriber_count: { $gte: minSubs, $lte: maxSubs }
         };
         
         // Helper function to get sort field and direction
@@ -795,21 +793,44 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
             }
         };
 
-        // Build dual sort query
+        // Build sort query - simplified to avoid conflicts
         let sortQuery = {};
         
-        // Add primary sort
-        const primarySortField = getSortField(primarySort);
-        Object.assign(sortQuery, primarySortField);
-        
-        // Add secondary sort if specified
-        if (secondarySort && secondarySort !== 'none') {
-            const secondarySortField = getSortField(secondarySort);
-            Object.assign(sortQuery, secondarySortField);
+        // For now, use primary sort only to fix the 500 error
+        switch (primarySort) {
+            case 'ratio-desc':
+                sortQuery = { view_to_sub_ratio: -1, _id: 1 };
+                break;
+            case 'ratio-asc':
+                sortQuery = { view_to_sub_ratio: 1, _id: 1 };
+                break;
+            case 'views-desc':
+                sortQuery = { view_count: -1, _id: 1 };
+                break;
+            case 'views-asc':
+                sortQuery = { view_count: 1, _id: 1 };
+                break;
+            case 'subs-desc':
+                sortQuery = { subscriber_count: -1, _id: 1 };
+                break;
+            case 'subs-asc':
+                sortQuery = { subscriber_count: 1, _id: 1 };
+                break;
+            case 'videos-desc':
+                sortQuery = { video_count: -1, _id: 1 };
+                break;
+            case 'videos-asc':
+                sortQuery = { video_count: 1, _id: 1 };
+                break;
+            case 'newest':
+                sortQuery = { created_at: -1, _id: 1 };
+                break;
+            case 'oldest':
+                sortQuery = { created_at: 1, _id: 1 };
+                break;
+            default:
+                sortQuery = { view_to_sub_ratio: -1, _id: 1 };
         }
-        
-        // Always add _id for consistent pagination
-        sortQuery._id = 1;
         
         // Get total count for pagination (with filters applied)
         const totalChannels = await db.collection('channels').countDocuments(matchQuery);

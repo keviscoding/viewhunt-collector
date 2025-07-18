@@ -77,61 +77,25 @@ class ViewHuntApp {
             }
         });
 
-        document.getElementById('secondary-sort').addEventListener('change', () => {
-            if (this.currentView === 'pending') {
-                this.loadPendingChannels(1); // Reset to page 1 when filters change
-            } else {
-                this.applyFilters();
+        // Range filter event listeners
+        const rangeInputs = ['min-views', 'max-views', 'min-subs', 'max-subs'];
+        rangeInputs.forEach(inputId => {
+            const input = document.getElementById(inputId);
+            if (input) {
+                input.addEventListener('input', () => {
+                    this.debounce(() => {
+                        if (this.currentView === 'pending') {
+                            this.loadPendingChannels(1);
+                        } else {
+                            this.applyFilters();
+                        }
+                    }, 500)();
+                });
             }
         });
 
-        document.getElementById('min-ratio').addEventListener('input', () => {
-            this.debounce(() => {
-                if (this.currentView === 'pending') {
-                    this.loadPendingChannels(1);
-                } else {
-                    this.applyFilters();
-                }
-            }, 500)();
-        });
-
-        document.getElementById('min-views').addEventListener('input', () => {
-            this.debounce(() => {
-                if (this.currentView === 'pending') {
-                    this.loadPendingChannels(1);
-                } else {
-                    this.applyFilters();
-                }
-            }, 500)();
-        });
-
-        // Add min-subs filter if it exists
-        const minSubsInput = document.getElementById('min-subs');
-        if (minSubsInput) {
-            minSubsInput.addEventListener('input', () => {
-                this.debounce(() => {
-                    if (this.currentView === 'pending') {
-                        this.loadPendingChannels(1);
-                    } else {
-                        this.applyFilters();
-                    }
-                }, 500)();
-            });
-        }
-
-        // Add min-videos filter if it exists
-        const minVideosInput = document.getElementById('min-videos');
-        if (minVideosInput) {
-            minVideosInput.addEventListener('input', () => {
-                this.debounce(() => {
-                    if (this.currentView === 'pending') {
-                        this.loadPendingChannels(1);
-                    } else {
-                        this.applyFilters();
-                    }
-                }, 500)();
-            });
-        }
+        // Initialize range sliders
+        this.initializeRangeSliders();
 
         // Authentication forms
         document.getElementById('login-form-element').addEventListener('submit', (e) => {
@@ -175,6 +139,60 @@ class ViewHuntApp {
             clearTimeout(timeout);
             timeout = setTimeout(later, wait);
         };
+    }
+
+    initializeRangeSliders() {
+        // Views range slider
+        const viewsSliderMin = document.getElementById('views-slider-min');
+        const viewsSliderMax = document.getElementById('views-slider-max');
+        const minViewsInput = document.getElementById('min-views');
+        const maxViewsInput = document.getElementById('max-views');
+
+        if (viewsSliderMin && viewsSliderMax && minViewsInput && maxViewsInput) {
+            viewsSliderMin.addEventListener('input', () => {
+                minViewsInput.value = parseInt(viewsSliderMin.value).toLocaleString();
+                this.debounce(() => {
+                    if (this.currentView === 'pending') {
+                        this.loadPendingChannels(1);
+                    }
+                }, 500)();
+            });
+
+            viewsSliderMax.addEventListener('input', () => {
+                maxViewsInput.value = parseInt(viewsSliderMax.value).toLocaleString();
+                this.debounce(() => {
+                    if (this.currentView === 'pending') {
+                        this.loadPendingChannels(1);
+                    }
+                }, 500)();
+            });
+        }
+
+        // Subs range slider
+        const subsSliderMin = document.getElementById('subs-slider-min');
+        const subsSliderMax = document.getElementById('subs-slider-max');
+        const minSubsInput = document.getElementById('min-subs');
+        const maxSubsInput = document.getElementById('max-subs');
+
+        if (subsSliderMin && subsSliderMax && minSubsInput && maxSubsInput) {
+            subsSliderMin.addEventListener('input', () => {
+                minSubsInput.value = parseInt(subsSliderMin.value).toLocaleString();
+                this.debounce(() => {
+                    if (this.currentView === 'pending') {
+                        this.loadPendingChannels(1);
+                    }
+                }, 500)();
+            });
+
+            subsSliderMax.addEventListener('input', () => {
+                maxSubsInput.value = parseInt(subsSliderMax.value).toLocaleString();
+                this.debounce(() => {
+                    if (this.currentView === 'pending') {
+                        this.loadPendingChannels(1);
+                    }
+                }, 500)();
+            });
+        }
     }
 
     // Fisher-Yates shuffle algorithm for randomizing channels
@@ -312,22 +330,20 @@ class ViewHuntApp {
 
             // Get current filter values
             const primarySort = document.getElementById('primary-sort').value;
-            const secondarySort = document.getElementById('secondary-sort').value;
-            const minRatio = parseFloat(document.getElementById('min-ratio').value) || 0;
             const minViews = parseInt(document.getElementById('min-views').value) || 0;
+            const maxViews = parseInt(document.getElementById('max-views').value) || Number.MAX_SAFE_INTEGER;
             const minSubs = parseInt(document.getElementById('min-subs').value) || 0;
-            const minVideos = parseInt(document.getElementById('min-videos').value) || 0;
+            const maxSubs = parseInt(document.getElementById('max-subs').value) || Number.MAX_SAFE_INTEGER;
 
             // Build query parameters for full database sorting
             const params = new URLSearchParams({
                 page: page.toString(),
                 limit: '20',
                 primarySort: primarySort,
-                secondarySort: secondarySort,
-                minRatio: minRatio.toString(),
                 minViews: minViews.toString(),
+                maxViews: maxViews === Number.MAX_SAFE_INTEGER ? '' : maxViews.toString(),
                 minSubs: minSubs.toString(),
-                minVideos: minVideos.toString()
+                maxSubs: maxSubs === Number.MAX_SAFE_INTEGER ? '' : maxSubs.toString()
             });
 
             const response = await this.fetchWithAuth(`${this.apiBase}/channels/pending?${params}`);
