@@ -814,7 +814,7 @@ class ViewHuntApp {
             
             if (view === 'pending') {
                 if (filters) filters.style.display = 'grid';
-                if (paginationControls) paginationControls.style.display = 'flex';
+                // Pagination will be shown by updatePaginationControls() when data loads
             }
 
             // Load channels for the selected view
@@ -2128,40 +2128,7 @@ class ViewHuntApp {
         }
     }
 
-    updatePaginationControls() {
-        const paginationControls = document.getElementById('pagination-controls');
-        const paginationText = document.getElementById('pagination-text');
-        const channelsCount = document.getElementById('channels-count');
-        const nextBtn = document.getElementById('next-page-btn');
-        const prevBtn = document.getElementById('prev-page-btn');
 
-        // Show pagination for pending channels with random batch system
-        if (this.currentView === 'pending' && this.allChannels && this.allChannels.length > 0) {
-            paginationControls.style.display = 'flex';
-            
-            // Update pagination info - show as random batches
-            paginationText.textContent = `Random Batch ${this.currentBatch} of ${this.totalBatches}`;
-            channelsCount.textContent = `${this.channels.length} of ${this.allChannels.length} channels (randomized)`;
-            
-            // Update button text and states
-            prevBtn.innerHTML = '🔀 Previous Batch';
-            nextBtn.innerHTML = '🔀 Next Batch';
-            
-            prevBtn.disabled = this.currentBatch <= 1 || this.isLoadingPage;
-            nextBtn.disabled = this.currentBatch >= this.totalBatches || this.isLoadingPage;
-            
-            // Add visual feedback for button states
-            if (this.currentBatch < this.totalBatches) {
-                nextBtn.classList.remove('btn-secondary');
-                nextBtn.classList.add('btn-primary');
-            } else {
-                nextBtn.classList.remove('btn-primary');
-                nextBtn.classList.add('btn-secondary');
-            }
-        } else {
-            paginationControls.style.display = 'none';
-        }
-    }
 
 
 }
