@@ -409,12 +409,16 @@ body {
 }
 
 .video-count {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    opacity: 0.8;
-    font-weight: 500;
-    margin-top: 0.3rem;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    opacity: 0.9;
+    font-weight: 600;
+    margin-top: 0.4rem;
     display: block;
+    background: rgba(102, 126, 234, 0.1);
+    padding: 0.2rem 0.5rem;
+    border-radius: 8px;
+    border: 1px solid rgba(102, 126, 234, 0.2);
 }
 
 .channel-stats {

@@ -305,6 +305,11 @@ class ViewHuntApp {
         // Use average views instead of single video views for better niche analysis
         const averageViews = formatNumber(channel.average_views || channel.view_count || 0);
         const videoCount = channel.video_count || 0;
+        
+        // Debug: log video count to see what's happening
+        if (channel.video_count === undefined) {
+            console.log(`Channel ${channel.channel_name} has no video_count field`);
+        }
         const subCount = formatNumber(channel.subscriber_count || 0);
         const ratio = channel.view_to_sub_ratio ? channel.view_to_sub_ratio.toFixed(2) : 'N/A';
 
@@ -319,7 +324,7 @@ class ViewHuntApp {
                 <div class="channel-info">
                     <h3>${this.escapeHtml(channel.channel_name)}</h3>
                     <p>${this.escapeHtml(channel.video_title || 'No video title')}</p>
-                    <small class="video-count">${videoCount} videos</small>
+                    <small class="video-count">${videoCount > 0 ? videoCount.toLocaleString() : 'N/A'} videos</small>
                 </div>
             </div>
             
