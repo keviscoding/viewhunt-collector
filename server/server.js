@@ -757,9 +757,9 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
         const primarySort = req.query.primarySort || 'ratio-desc';
         const secondarySort = req.query.secondarySort || 'none';
         const minViews = parseInt(req.query.minViews) || 0;
-        const maxViews = parseInt(req.query.maxViews) || Number.MAX_SAFE_INTEGER;
+        const maxViews = req.query.maxViews ? parseInt(req.query.maxViews) : 999999999; // 999M max
         const minSubs = parseInt(req.query.minSubs) || 0;
-        const maxSubs = parseInt(req.query.maxSubs) || Number.MAX_SAFE_INTEGER;
+        const maxSubs = req.query.maxSubs ? parseInt(req.query.maxSubs) : 999999999; // 999M max
         
         // Get channels user has already acted on (cached for performance)
         const reviewedChannelIds = await db.collection('user_channel_actions')
@@ -771,10 +771,22 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
         // Build match query with filters
         const matchQuery = {
             status: 'pending',
-            _id: { $nin: reviewedChannelIds },
-            view_count: { $gte: minViews, $lte: maxViews },
-            subscriber_count: { $gte: minSubs, $lte: maxSubs }
+            _id: { $nin: reviewedChannelIds }
         };
+        
+        // Add view count filters if specified
+        if (minViews > 0 || maxViews < 999999999) {
+            matchQuery.view_count = {};
+            if (minViews > 0) matchQuery.view_count.$gte = minViews;
+            if (maxViews < 999999999) matchQuery.view_count.$lte = maxViews;
+        }
+        
+        // Add subscriber count filters if specified
+        if (minSubs > 0 || maxSubs < 999999999) {
+            matchQuery.subscriber_count = {};
+            if (minSubs > 0) matchQuery.subscriber_count.$gte = minSubs;
+            if (maxSubs < 999999999) matchQuery.subscriber_count.$lte = maxSubs;
+        }
         
         // Helper function to get sort field and direction
         const getSortField = (sortType) => {
