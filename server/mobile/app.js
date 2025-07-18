@@ -77,6 +77,14 @@ class ViewHuntApp {
             }
         });
 
+        document.getElementById('secondary-sort').addEventListener('change', () => {
+            if (this.currentView === 'pending') {
+                this.loadPendingChannels(1); // Reset to page 1 when filters change
+            } else {
+                this.applyFilters();
+            }
+        });
+
         // Range filter event listeners
         const rangeInputs = ['min-views', 'max-views', 'min-subs', 'max-subs'];
         rangeInputs.forEach(inputId => {
@@ -330,6 +338,7 @@ class ViewHuntApp {
 
             // Get current filter values
             const primarySort = document.getElementById('primary-sort').value;
+            const secondarySort = document.getElementById('secondary-sort').value;
             const minViews = parseInt(document.getElementById('min-views').value) || 0;
             const maxViews = parseInt(document.getElementById('max-views').value) || Number.MAX_SAFE_INTEGER;
             const minSubs = parseInt(document.getElementById('min-subs').value) || 0;
@@ -340,6 +349,7 @@ class ViewHuntApp {
                 page: page.toString(),
                 limit: '20',
                 primarySort: primarySort,
+                secondarySort: secondarySort,
                 minViews: minViews.toString(),
                 maxViews: maxViews === Number.MAX_SAFE_INTEGER ? '' : maxViews.toString(),
                 minSubs: minSubs.toString(),

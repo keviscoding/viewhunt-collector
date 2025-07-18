@@ -793,44 +793,29 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
             }
         };
 
-        // Build sort query - simplified to avoid conflicts
+        // Build dual sort query properly
         let sortQuery = {};
         
-        // For now, use primary sort only to fix the 500 error
-        switch (primarySort) {
-            case 'ratio-desc':
-                sortQuery = { view_to_sub_ratio: -1, _id: 1 };
-                break;
-            case 'ratio-asc':
-                sortQuery = { view_to_sub_ratio: 1, _id: 1 };
-                break;
-            case 'views-desc':
-                sortQuery = { view_count: -1, _id: 1 };
-                break;
-            case 'views-asc':
-                sortQuery = { view_count: 1, _id: 1 };
-                break;
-            case 'subs-desc':
-                sortQuery = { subscriber_count: -1, _id: 1 };
-                break;
-            case 'subs-asc':
-                sortQuery = { subscriber_count: 1, _id: 1 };
-                break;
-            case 'videos-desc':
-                sortQuery = { video_count: -1, _id: 1 };
-                break;
-            case 'videos-asc':
-                sortQuery = { video_count: 1, _id: 1 };
-                break;
-            case 'newest':
-                sortQuery = { created_at: -1, _id: 1 };
-                break;
-            case 'oldest':
-                sortQuery = { created_at: 1, _id: 1 };
-                break;
-            default:
-                sortQuery = { view_to_sub_ratio: -1, _id: 1 };
+        // Add primary sort
+        const primarySortField = getSortField(primarySort);
+        const primaryKey = Object.keys(primarySortField)[0];
+        const primaryValue = primarySortField[primaryKey];
+        sortQuery[primaryKey] = primaryValue;
+        
+        // Add secondary sort if specified and different from primary
+        if (secondarySort && secondarySort !== 'none' && secondarySort !== primarySort) {
+            const secondarySortField = getSortField(secondarySort);
+            const secondaryKey = Object.keys(secondarySortField)[0];
+            const secondaryValue = secondarySortField[secondaryKey];
+            
+            // Only add if it's a different field than primary
+            if (secondaryKey !== primaryKey) {
+                sortQuery[secondaryKey] = secondaryValue;
+            }
         }
+        
+        // Always add _id for consistent pagination
+        sortQuery._id = 1;
         
         // Get total count for pagination (with filters applied)
         const totalChannels = await db.collection('channels').countDocuments(matchQuery);
