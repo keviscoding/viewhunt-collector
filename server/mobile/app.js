@@ -288,10 +288,15 @@ class ViewHuntApp {
             } else {
                 this.renderChannels();
             }
+
+            // Update pagination controls
+            this.updatePaginationControls();
+
         } catch (error) {
             console.error('Error loading channels:', error);
             loading.style.display = 'none';
             emptyState.style.display = 'block';
+            this.updatePaginationControls();
         }
     }
 
@@ -511,6 +516,7 @@ class ViewHuntApp {
                 filters.style.display = 'grid';
             }
 
+            // Always reload channels to get fresh randomization for pending view
             this.loadChannels();
         }
     }
@@ -1749,7 +1755,11 @@ class ViewHuntApp {
             if (this.currentView === 'pending' && data.channels) {
                 this.channels = data.channels;
                 this.pagination = data.pagination;
-                console.log(`Loaded page ${pageNumber}: ${this.channels.length} channels`);
+                
+                // Randomize the new batch for better discovery
+                this.shuffleArray(this.channels);
+                
+                console.log(`Loaded batch ${pageNumber}: ${this.channels.length} channels - Randomized`);
             } else {
                 // Handle direct array response for approved channels
                 this.channels = Array.isArray(data) ? data : [];
@@ -1788,11 +1798,14 @@ class ViewHuntApp {
         if (this.currentView === 'pending' && this.pagination) {
             paginationControls.style.display = 'flex';
             
-            // Update pagination info
-            paginationText.textContent = `Page ${this.pagination.page} of ${this.pagination.pages}`;
-            channelsCount.textContent = `${this.channels.length} of ${this.pagination.total} channels`;
+            // Update pagination info - show as batches instead of pages
+            paginationText.textContent = `Batch ${this.pagination.page} of ${this.pagination.pages}`;
+            channelsCount.textContent = `${this.channels.length} of ${this.pagination.total} channels (randomized)`;
             
-            // Update button states
+            // Update button text and states
+            prevBtn.innerHTML = '🔀 Previous Batch';
+            nextBtn.innerHTML = '🔀 Next Batch';
+            
             prevBtn.disabled = !this.pagination.hasPrev || this.isLoadingPage;
             nextBtn.disabled = !this.pagination.hasNext || this.isLoadingPage;
             
