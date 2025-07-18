@@ -166,8 +166,41 @@ class ViewHuntApp {
 
         try {
             const endpoint = this.currentView === 'pending' ? '/channels/pending' : '/channels/approved';
-            const response = await fetch(`${this.apiBase}${endpoint}`);
-            this.channels = await response.json();
+            
+            // Both endpoints now require authentication
+            if (!this.token) {
+                this.channels = [];
+                loading.style.display = 'none';
+                emptyState.style.display = 'block';
+                emptyState.querySelector('h2').textContent = 'Sign In Required';
+                emptyState.querySelector('p').textContent = 'Please sign in to view channels.';
+                return;
+            }
+            
+            const response = await fetch(`${this.apiBase}${endpoint}`, {
+                headers: {
+                    'Authorization': `Bearer ${this.token}`
+                }
+            });
+            
+            if (!response.ok) {
+                if (response.status === 401) {
+                    // Token expired or invalid
+                    localStorage.removeItem('viewhunt_token');
+                    this.token = null;
+                    this.updateUIForLoggedOutUser();
+                    this.channels = [];
+                    loading.style.display = 'none';
+                    emptyState.style.display = 'block';
+                    emptyState.querySelector('h2').textContent = 'Sign In Required';
+                    emptyState.querySelector('p').textContent = 'Please sign in to view channels.';
+                    return;
+                }
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const data = await response.json();
+            this.channels = Array.isArray(data) ? data : [];
 
             loading.style.display = 'none';
 
