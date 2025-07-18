@@ -1001,7 +1001,8 @@ body {
 
 .collection-updated {
     font-size: 0.8rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
+    opacity: 0.8;
 }
 
 .collection-details {
@@ -1657,7 +1658,7 @@ vis Admin Styles */
 
 .btn-secondary:disabled {
     background: #d1d5db;
-    color: #9ca3af;
+    color: var(--text-secondary);
     cursor: not-allowed;
     transform: none;
 }

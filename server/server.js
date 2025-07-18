@@ -30,7 +30,7 @@ app.get('/viewhunt-collector-server2', (req, res) => {
 
 function handleMobileApp(req, res) {
     const mobilePath = path.join(__dirname, 'mobile/index.html');
-    console.log('Trying to serve mobile app from:', mobilePath);
+    console.log('Serving ViewHunt mobile app from:', mobilePath);
     
     // Check if file exists
     if (require('fs').existsSync(mobilePath)) {
