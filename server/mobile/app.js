@@ -1632,13 +1632,7 @@ class ViewHuntApp {
     }
 }
 
-// Initialize app
-let app;
-document.addEventListener('DOMContentLoaded', () => {
-    app = new ViewHuntApp();
-    window.app = app; // Make it globally available
-});    // P
-agination Methods
+    // Pagination Methods
     async loadNextPage() {
         if (this.isLoadingPage || !this.pagination || !this.pagination.hasNext) {
             return;
@@ -1844,4 +1838,12 @@ agination Methods
             emptyState.style.display = 'block';
             this.updatePaginationControls();
         }
-    }
+    }}
+
+// Ini
+tialize app
+let app;
+document.addEventListener('DOMContentLoaded', () => {
+    app = new ViewHuntApp();
+    window.app = app; // Make it globally available
+});
