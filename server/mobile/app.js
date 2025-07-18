@@ -14,14 +14,53 @@ class ViewHuntApp {
         this.pagination = null;
         this.isLoadingPage = false;
         
+        // Dark mode state
+        this.isDarkMode = localStorage.getItem('viewhunt_theme') === 'dark';
+        
         this.init();
     }
 
     async init() {
+        this.initTheme();
         this.setupEventListeners();
         await this.checkAuthStatus();
         await this.loadStats();
         await this.loadChannels();
+    }
+
+    // Dark Mode Methods
+    initTheme() {
+        // Apply saved theme or default to light
+        if (this.isDarkMode) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            this.updateThemeIcon('☀️');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'light');
+            this.updateThemeIcon('🌙');
+        }
+    }
+
+    toggleTheme() {
+        this.isDarkMode = !this.isDarkMode;
+        
+        if (this.isDarkMode) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            localStorage.setItem('viewhunt_theme', 'dark');
+            this.updateThemeIcon('☀️');
+            this.showToast('Dark mode enabled 🌙');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'light');
+            localStorage.setItem('viewhunt_theme', 'light');
+            this.updateThemeIcon('🌙');
+            this.showToast('Light mode enabled ☀️');
+        }
+    }
+
+    updateThemeIcon(icon) {
+        const themeIcon = document.querySelector('.theme-icon');
+        if (themeIcon) {
+            themeIcon.textContent = icon;
+        }
     }
 
     setupEventListeners() {
