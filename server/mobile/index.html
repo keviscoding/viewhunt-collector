@@ -81,6 +81,9 @@
                             <option value="views-asc">Least Views</option>
                             <option value="subs-desc">📈 Most Subscribers</option>
                             <option value="subs-asc">Least Subscribers</option>
+                            <option value="newest">🆕 Newest First</option>
+                            <option value="oldest">📅 Oldest First</option>
+                            <option value="random">🎲 Random</option>
                         </select>
                     </div>
                     <div class="filter-group">
@@ -90,6 +93,10 @@
                     <div class="filter-group">
                         <label for="min-views">Min Views:</label>
                         <input type="number" id="min-views" class="filter-input" placeholder="1000" step="1000" min="0">
+                    </div>
+                    <div class="filter-group">
+                        <label for="min-subs">Min Subs:</label>
+                        <input type="number" id="min-subs" class="filter-input" placeholder="1000" step="1000" min="0">
                     </div>
                 </div>
 
@@ -101,14 +108,13 @@
                 <!-- Pagination Controls -->
                 <div class="pagination-controls" id="pagination-controls" style="display: none;">
                     <div class="pagination-info">
-                        <span id="pagination-text">Page 1 of 1</span>
-                        <span id="channels-count">0 channels</span>
+                        <span id="pagination-text">Loading...</span>
                     </div>
                     <div class="pagination-buttons">
-                        <button class="btn btn-secondary" id="prev-page-btn" onclick="window.app.loadPreviousPage()" disabled>
+                        <button id="prev-page" class="btn btn-secondary" disabled>
                             ← Previous
                         </button>
-                        <button class="btn btn-primary" id="next-page-btn" onclick="window.app.loadNextPage()">
+                        <button id="next-page" class="btn btn-secondary" disabled>
                             Next →
                         </button>
                     </div>
