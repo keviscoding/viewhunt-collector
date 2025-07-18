@@ -153,7 +153,7 @@
                     <!-- Channel cards will be inserted here -->
                 </div>
 
-                <!-- Pagination Controls -->
+                <!-- Pagination Controls (at bottom of channel list) -->
                 <div class="pagination-controls" id="pagination-controls" style="display: none;">
                     <div class="pagination-info">
                         <span id="pagination-text">Loading...</span>
@@ -164,15 +164,18 @@
                         </button>
                         <div class="page-jump">
                             <span>Page</span>
-                            <input type="number" id="page-input" class="page-input" min="1" value="1">
+                            <select id="page-select" class="page-select">
+                                <option value="1">1</option>
+                            </select>
                             <span>of <span id="total-pages">1</span></span>
-                            <button id="go-to-page" class="btn btn-primary btn-small">Go</button>
                         </div>
                         <button id="next-page" class="btn btn-secondary" disabled>
                             Next →
                         </button>
                     </div>
                 </div>
+            </div>
+        </main>
 
                 <!-- Collections View -->
                 <div class="collections-view" id="collections-view" style="display: none;">

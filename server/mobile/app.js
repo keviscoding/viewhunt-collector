@@ -94,22 +94,11 @@ class ViewHuntApp {
             }
         });
 
-        // Page jump functionality
-        document.getElementById('go-to-page').addEventListener('click', () => {
-            const pageInput = document.getElementById('page-input');
-            const page = parseInt(pageInput.value);
+        // Page select dropdown functionality
+        document.getElementById('page-select').addEventListener('change', (e) => {
+            const page = parseInt(e.target.value);
             if (page && page >= 1 && this.pagination && page <= this.pagination.totalPages) {
                 this.loadPendingChannels(page);
-            } else {
-                this.showToast('Invalid page number ❌');
-                pageInput.value = this.pagination ? this.pagination.currentPage : 1;
-            }
-        });
-
-        // Allow Enter key to jump to page
-        document.getElementById('page-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                document.getElementById('go-to-page').click();
             }
         });
 
@@ -400,7 +389,7 @@ class ViewHuntApp {
             // Build query parameters
             const params = new URLSearchParams({
                 page: page.toString(),
-                limit: '20',
+                limit: '50',
                 primarySort: primarySort,
                 secondarySort: secondarySort
             });
@@ -538,7 +527,7 @@ class ViewHuntApp {
     updatePaginationControls() {
         const paginationControls = document.getElementById('pagination-controls');
         const paginationText = document.getElementById('pagination-text');
-        const pageInput = document.getElementById('page-input');
+        const pageSelect = document.getElementById('page-select');
         const totalPagesSpan = document.getElementById('total-pages');
         
         if (!this.pagination) {
@@ -557,13 +546,23 @@ class ViewHuntApp {
             paginationText.textContent = `${start}-${end} of ${this.pagination.totalChannels.toLocaleString()} channels`;
         }
         
-        // Update page input and total pages
-        if (pageInput) {
-            pageInput.value = this.pagination.currentPage;
-            pageInput.max = this.pagination.totalPages;
-        }
-        if (totalPagesSpan) {
+        // Populate page select dropdown
+        if (pageSelect && totalPagesSpan) {
             totalPagesSpan.textContent = this.pagination.totalPages;
+            
+            // Clear existing options
+            pageSelect.innerHTML = '';
+            
+            // Add options for each page
+            for (let i = 1; i <= this.pagination.totalPages; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = i;
+                if (i === this.pagination.currentPage) {
+                    option.selected = true;
+                }
+                pageSelect.appendChild(option);
+            }
         }
         
         // Update button states
