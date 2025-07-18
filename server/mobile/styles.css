@@ -170,7 +170,7 @@ body {
 
 .stat-label {
     font-size: 0.75rem;
-    color: #666;
+    color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -236,7 +236,7 @@ body {
 
 /* Filters */
 .filters {
-    background: rgba(255, 255, 255, 0.95);
+    background: var(--bg-card);
     backdrop-filter: blur(10px);
     border-radius: 16px;
     padding: 1.5rem;
@@ -244,7 +244,7 @@ body {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1rem;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 20px var(--shadow-light);
 }
 
 .filter-group {
@@ -256,7 +256,7 @@ body {
 .filter-group label {
     font-size: 0.875rem;
     font-weight: 600;
-    color: #374151;
+    color: var(--text-primary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -264,10 +264,11 @@ body {
 .filter-select,
 .filter-input {
     padding: 0.75rem;
-    border: 2px solid #e5e7eb;
+    border: 2px solid var(--border-color);
     border-radius: 12px;
     font-size: 0.875rem;
-    background: white;
+    background: var(--bg-card);
+    color: var(--text-primary);
     transition: all 0.2s ease;
 }
 
@@ -425,12 +426,12 @@ body {
     display: block;
     font-size: 1.1rem;
     font-weight: 600;
-    color: #333;
+    color: var(--text-primary);
 }
 
 .stat-label {
     font-size: 0.75rem;
-    color: #666;
+    color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-top: 0.25rem;
@@ -577,7 +578,7 @@ body {
 }
 
 .nav-btn:not(.active) {
-    color: #666;
+    color: var(--text-secondary);
 }
 
 .nav-btn:not(.active):hover {
@@ -1223,11 +1224,11 @@ l View Styles */
 .social-card-header h3 {
     font-size: 1.3rem;
     margin-bottom: 0.5rem;
-    color: #333;
+    color: var(--text-primary);
 }
 
 .social-card-header p {
-    color: #666;
+    color: var(--text-secondary);
     font-size: 0.9rem;
 }
 
@@ -1628,12 +1629,12 @@ vis Admin Styles */
 
 .pagination-info span {
     font-size: 0.9rem;
-    color: #666;
+    color: var(--text-secondary);
 }
 
 .pagination-info span:first-child {
     font-weight: 600;
-    color: #333;
+    color: var(--text-primary);
     font-size: 1rem;
 }
 
