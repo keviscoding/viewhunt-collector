@@ -1145,17 +1145,54 @@ class ViewHuntApp {
         content.innerHTML = '<div class="social-loading">Loading Kevis\'s picks...</div>';
         
         try {
-            // For now, we'll show approved channels by Kevis (you can filter by your user ID later)
-            const response = await fetch(`${this.apiBase}/channels/approved`);
-            const channels = await response.json();
+            // Load Kevis's Picks collection specifically
+            if (!this.token) {
+                content.innerHTML = '<div class="social-empty">Sign in to see Kevis\'s picks! 🔐</div>';
+                return;
+            }
+
+            const response = await fetch(`${this.apiBase}/collections`, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
             
-            // Take top 5 channels for now
-            const topChannels = channels.slice(0, 5);
-            
-            if (topChannels.length === 0) {
+            if (!response.ok) {
                 content.innerHTML = '<div class="social-empty">No picks yet! 🎯</div>';
                 return;
             }
+
+            const collections = await response.json();
+            
+            // Find Kevis's Picks collection (created by admin)
+            let kevisCollection = null;
+            
+            // First try to find a collection named "Kevis's Picks"
+            kevisCollection = collections.find(c => c.name === "Kevis's Picks");
+            
+            if (!kevisCollection) {
+                content.innerHTML = '<div class="social-empty">No picks yet! 🎯</div>';
+                return;
+            }
+
+            // Load channels in Kevis's Picks collection
+            const channelsResponse = await fetch(`${this.apiBase}/collections/${kevisCollection._id}/channels`, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+            
+            if (!channelsResponse.ok) {
+                content.innerHTML = '<div class="social-empty">No picks yet! 🎯</div>';
+                return;
+            }
+
+            const data = await channelsResponse.json();
+            const channels = data.channels || [];
+            
+            if (channels.length === 0) {
+                content.innerHTML = '<div class="social-empty">No picks yet! 🎯</div>';
+                return;
+            }
+            
+            // Show top 6 channels from Kevis's Picks
+            const topChannels = channels.slice(0, 6);
             
             content.innerHTML = topChannels.map(channel => `
                 <div class="social-channel-item">
@@ -1168,6 +1205,7 @@ class ViewHuntApp {
                     <div class="social-channel-info">
                         <h4>${this.escapeHtml(channel.channel_name)}</h4>
                         <p>Ratio: ${channel.view_to_sub_ratio ? channel.view_to_sub_ratio.toFixed(2) : 'N/A'}</p>
+                        <small>Curated by Kevis</small>
                     </div>
                     <a href="${channel.channel_url}" target="_blank" class="social-channel-link">View</a>
                 </div>

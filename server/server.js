@@ -69,6 +69,13 @@ async function connectToMongoDB() {
         await db.collection('collection_items').createIndex({ collection_id: 1 });
         await db.collection('collection_items').createIndex({ user_id: 1, channel_id: 1 }, { unique: true });
         
+        // User actions indexes for the new system
+        await db.collection('user_channel_actions').createIndex({ user_id: 1 });
+        await db.collection('user_channel_actions').createIndex({ channel_id: 1 });
+        await db.collection('user_channel_actions').createIndex({ user_id: 1, channel_id: 1 }, { unique: true });
+        await db.collection('user_channel_actions').createIndex({ action: 1 });
+        await db.collection('user_channel_actions').createIndex({ created_at: -1 });
+        
         console.log('Connected to MongoDB successfully');
     } catch (error) {
         console.error('MongoDB connection error:', error);
@@ -521,30 +528,55 @@ app.post('/api/channels/bulk', async (req, res) => {
     }
 });
 
-// Approve a channel (requires authentication)
+// Approve a channel (requires authentication) - User-specific approach
 app.put('/api/channels/:id/approve', authenticateToken, async (req, res) => {
     const channelId = req.params.id;
+    const userId = new ObjectId(req.user.userId);
     
     try {
-        const result = await db.collection('channels').updateOne(
-            { _id: new ObjectId(channelId) },
-            { 
-                $set: { 
-                    status: 'approved', 
-                    approved_by: new ObjectId(req.user.userId),
-                    approved_by_name: req.user.display_name,
-                    updated_at: new Date() 
-                } 
-            }
-        );
-        
-        if (result.matchedCount === 0) {
+        // Check if channel exists
+        const channel = await db.collection('channels').findOne({ _id: new ObjectId(channelId) });
+        if (!channel) {
             return res.status(404).json({ error: 'Channel not found' });
         }
 
+        // Check if user already acted on this channel
+        const existingAction = await db.collection('user_channel_actions').findOne({
+            user_id: userId,
+            channel_id: new ObjectId(channelId)
+        });
+
+        if (existingAction) {
+            return res.status(400).json({ error: 'You have already reviewed this channel' });
+        }
+
+        // Record user's approval action
+        await db.collection('user_channel_actions').insertOne({
+            user_id: userId,
+            channel_id: new ObjectId(channelId),
+            action: 'approved',
+            created_at: new Date(),
+            user_name: req.user.display_name
+        });
+
+        // Update channel's approval count and trending score
+        await db.collection('channels').updateOne(
+            { _id: new ObjectId(channelId) },
+            { 
+                $inc: { 
+                    approval_count: 1,
+                    trending_score: 1
+                },
+                $set: { 
+                    last_approved_at: new Date(),
+                    updated_at: new Date()
+                }
+            }
+        );
+
         // Update user stats
         await db.collection('users').updateOne(
-            { _id: new ObjectId(req.user.userId) },
+            { _id: userId },
             { 
                 $inc: { 
                     'stats.channels_approved': 1,
@@ -561,30 +593,40 @@ app.put('/api/channels/:id/approve', authenticateToken, async (req, res) => {
     }
 });
 
-// Reject a channel (requires authentication)
+// Reject a channel (requires authentication) - User-specific approach
 app.put('/api/channels/:id/reject', authenticateToken, async (req, res) => {
     const channelId = req.params.id;
+    const userId = new ObjectId(req.user.userId);
     
     try {
-        const result = await db.collection('channels').updateOne(
-            { _id: new ObjectId(channelId) },
-            { 
-                $set: { 
-                    status: 'rejected', 
-                    rejected_by: new ObjectId(req.user.userId),
-                    rejected_by_name: req.user.display_name,
-                    updated_at: new Date() 
-                } 
-            }
-        );
-        
-        if (result.matchedCount === 0) {
+        // Check if channel exists
+        const channel = await db.collection('channels').findOne({ _id: new ObjectId(channelId) });
+        if (!channel) {
             return res.status(404).json({ error: 'Channel not found' });
         }
 
+        // Check if user already acted on this channel
+        const existingAction = await db.collection('user_channel_actions').findOne({
+            user_id: userId,
+            channel_id: new ObjectId(channelId)
+        });
+
+        if (existingAction) {
+            return res.status(400).json({ error: 'You have already reviewed this channel' });
+        }
+
+        // Record user's rejection action
+        await db.collection('user_channel_actions').insertOne({
+            user_id: userId,
+            channel_id: new ObjectId(channelId),
+            action: 'rejected',
+            created_at: new Date(),
+            user_name: req.user.display_name
+        });
+
         // Update user stats
         await db.collection('users').updateOne(
-            { _id: new ObjectId(req.user.userId) },
+            { _id: userId },
             { 
                 $inc: { 
                     'stats.channels_rejected': 1,
@@ -601,45 +643,209 @@ app.put('/api/channels/:id/reject', authenticateToken, async (req, res) => {
     }
 });
 
-// Get approved channels
-app.get('/api/channels/approved', async (req, res) => {
+// Get approved channels - User-specific or Admin view
+app.get('/api/channels/approved', authenticateToken, async (req, res) => {
     try {
-        const channels = await db.collection('channels')
-            .find({ status: 'approved' })
-            .sort({ updated_at: -1 })
-            .limit(100)
-            .toArray();
+        const userId = new ObjectId(req.user.userId);
+        const isAdmin = req.user.email === 'nwalikelv@gmail.com' || req.user.email === 'kevis@viewhunt.com';
         
-        res.json(channels);
+        if (isAdmin) {
+            // Admin sees all channels with approval counts
+            const channels = await db.collection('channels')
+                .aggregate([
+                    {
+                        $lookup: {
+                            from: 'user_channel_actions',
+                            localField: '_id',
+                            foreignField: 'channel_id',
+                            as: 'approvals'
+                        }
+                    },
+                    {
+                        $match: {
+                            'approvals.action': 'approved'
+                        }
+                    },
+                    {
+                        $addFields: {
+                            approval_count: { $size: '$approvals' },
+                            recent_approvals: {
+                                $size: {
+                                    $filter: {
+                                        input: '$approvals',
+                                        cond: {
+                                            $gte: ['$$this.created_at', new Date(Date.now() - 24 * 60 * 60 * 1000)]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    { $sort: { approval_count: -1, recent_approvals: -1 } },
+                    { $limit: 100 }
+                ])
+                .toArray();
+            
+            res.json(channels);
+        } else {
+            // Regular users see only their approved channels
+            const userApprovals = await db.collection('user_channel_actions')
+                .aggregate([
+                    {
+                        $match: {
+                            user_id: userId,
+                            action: 'approved'
+                        }
+                    },
+                    {
+                        $lookup: {
+                            from: 'channels',
+                            localField: 'channel_id',
+                            foreignField: '_id',
+                            as: 'channel'
+                        }
+                    },
+                    { $unwind: '$channel' },
+                    { $sort: { created_at: -1 } },
+                    { $limit: 50 },
+                    {
+                        $replaceRoot: {
+                            newRoot: {
+                                $mergeObjects: ['$channel', { approved_at: '$created_at' }]
+                            }
+                        }
+                    }
+                ])
+                .toArray();
+            
+            res.json(userApprovals);
+        }
     } catch (error) {
         console.error('Error fetching approved channels:', error);
         res.status(500).json({ error: 'Database error' });
     }
 });
 
-// Get trending channels (approved in last 24 hours)
+// Get pending channels for user (excluding already reviewed)
+app.get('/api/channels/pending', authenticateToken, async (req, res) => {
+    try {
+        const userId = new ObjectId(req.user.userId);
+        
+        // Get channels user has already acted on
+        const reviewedChannels = await db.collection('user_channel_actions')
+            .find({ user_id: userId })
+            .toArray();
+        
+        const reviewedChannelIds = reviewedChannels.map(action => action.channel_id);
+        
+        // Get pending channels excluding reviewed ones
+        const channels = await db.collection('channels')
+            .find({ 
+                status: 'pending',
+                _id: { $nin: reviewedChannelIds }
+            })
+            .sort({ view_to_sub_ratio: -1 })
+            .limit(50)
+            .toArray();
+        
+        res.json(channels);
+    } catch (error) {
+        console.error('Error fetching pending channels:', error);
+        res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// Get trending channels (based on recent approvals from multiple users)
 app.get('/api/channels/trending', async (req, res) => {
     try {
         // Calculate 24 hours ago
         const yesterday = new Date();
         yesterday.setHours(yesterday.getHours() - 24);
         
-        // Get channels approved in the last 24 hours
-        const trendingChannels = await db.collection('channels')
-            .find({ 
-                status: 'approved',
-                updated_at: { $gte: yesterday }
-            })
-            .sort({ updated_at: -1 })
-            .limit(20)
+        // Get channels with most approvals in last 24 hours
+        const trendingChannels = await db.collection('user_channel_actions')
+            .aggregate([
+                {
+                    $match: {
+                        action: 'approved',
+                        created_at: { $gte: yesterday }
+                    }
+                },
+                {
+                    $group: {
+                        _id: '$channel_id',
+                        approval_count: { $sum: 1 },
+                        latest_approval: { $max: '$created_at' }
+                    }
+                },
+                {
+                    $lookup: {
+                        from: 'channels',
+                        localField: '_id',
+                        foreignField: '_id',
+                        as: 'channel'
+                    }
+                },
+                { $unwind: '$channel' },
+                { $sort: { approval_count: -1, latest_approval: -1 } },
+                { $limit: 8 },
+                {
+                    $replaceRoot: {
+                        newRoot: {
+                            $mergeObjects: [
+                                '$channel',
+                                { 
+                                    trending_approvals: '$approval_count',
+                                    latest_approval: '$latest_approval'
+                                }
+                            ]
+                        }
+                    }
+                }
+            ])
             .toArray();
         
-        // If we have less than 5 trending channels, supplement with recent approved channels
+        // If we have less than 5 trending channels, supplement with recently approved channels
         if (trendingChannels.length < 5) {
-            const additionalChannels = await db.collection('channels')
-                .find({ status: 'approved' })
-                .sort({ updated_at: -1 })
-                .limit(10)
+            const additionalChannels = await db.collection('user_channel_actions')
+                .aggregate([
+                    {
+                        $match: {
+                            action: 'approved'
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: '$channel_id',
+                            approval_count: { $sum: 1 },
+                            latest_approval: { $max: '$created_at' }
+                        }
+                    },
+                    {
+                        $lookup: {
+                            from: 'channels',
+                            localField: '_id',
+                            foreignField: '_id',
+                            as: 'channel'
+                        }
+                    },
+                    { $unwind: '$channel' },
+                    { $sort: { latest_approval: -1 } },
+                    { $limit: 10 },
+                    {
+                        $replaceRoot: {
+                            newRoot: {
+                                $mergeObjects: [
+                                    '$channel',
+                                    { 
+                                        trending_approvals: '$approval_count',
+                                        latest_approval: '$latest_approval'
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                ])
                 .toArray();
             
             // Merge and deduplicate
@@ -650,7 +856,7 @@ app.get('/api/channels/trending', async (req, res) => {
             
             res.json(supplemented);
         } else {
-            res.json(trendingChannels.slice(0, 8));
+            res.json(trendingChannels);
         }
         
     } catch (error) {
