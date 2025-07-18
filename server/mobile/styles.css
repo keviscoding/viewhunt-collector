@@ -1496,6 +1496,8 @@ vis Admin Styles */
         flex-direction: column;
         gap: 1rem;
         text-align: center;
+        margin-bottom: 8rem; /* Extra space above bottom nav on mobile */
+        padding: 1.5rem 1rem; /* Slightly less padding on mobile */
     }
     
     .pagination-buttons {

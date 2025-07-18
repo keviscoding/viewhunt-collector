@@ -1700,6 +1700,9 @@ class ViewHuntApp {
                 this.updatePaginationControls();
                 channelGrid.style.opacity = '1';
                 channelGrid.classList.remove('loading');
+                
+                // Scroll to top of page for better UX
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             }, 200);
 
         } catch (error) {

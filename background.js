@@ -285,7 +285,8 @@ async function processSubscriberData() {
                 videoTitle: video.videoTitle,
                 viewCount: video.viewCount,
                 subscriberCount: subscriberCount,
-                viewToSubRatio: viewToSubRatio
+                viewToSubRatio: viewToSubRatio,
+                avatarUrl: channelInfo.avatarUrl || null
             });
         }
     }
@@ -427,7 +428,7 @@ async function processBatch(channels) {
             console.log(`ViewHunt API: Fetching stats for: ${channelIds.slice(0, 3).join(', ')}${channelIds.length > 3 ? '...' : ''}`);
             
             const response = await fetch(
-                `${YOUTUBE_API_BASE}/channels?part=statistics&id=${channelIds.join(',')}&key=${state.apiKey}`
+                `${YOUTUBE_API_BASE}/channels?part=statistics,snippet&id=${channelIds.join(',')}&key=${state.apiKey}`
             );
             
             if (!response.ok) {
@@ -442,10 +443,15 @@ async function processBatch(channels) {
             if (data.items) {
                 data.items.forEach(item => {
                     const subscriberCount = parseInt(item.statistics.subscriberCount || 0);
+                    const avatarUrl = item.snippet?.thumbnails?.default?.url || 
+                                     item.snippet?.thumbnails?.medium?.url || 
+                                     item.snippet?.thumbnails?.high?.url || null;
+                    
                     const channelInfo = channelsWithIds.find(ch => ch.realChannelId === item.id);
                     if (channelInfo) {
                         channelInfo.subscriberCount = subscriberCount;
-                        console.log(`ViewHunt API: ${channelInfo.channelName}: ${subscriberCount.toLocaleString()} subscribers`);
+                        channelInfo.avatarUrl = avatarUrl;
+                        console.log(`ViewHunt API: ${channelInfo.channelName}: ${subscriberCount.toLocaleString()} subscribers, Avatar: ${avatarUrl ? 'Yes' : 'No'}`);
                     }
                 });
             }
