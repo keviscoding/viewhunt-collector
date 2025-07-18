@@ -1914,52 +1914,101 @@ vis Admin Styles */
 
 .range-slider {
     position: relative;
-    height: 6px;
+    height: 20px;
     background: rgba(255, 255, 255, 0.2);
-    border-radius: 3px;
+    border-radius: 10px;
     margin: 0.5rem 0;
+    display: flex;
+    align-items: center;
 }
 
 .slider {
     position: absolute;
     width: 100%;
-    height: 6px;
+    height: 20px;
     background: transparent;
     outline: none;
     -webkit-appearance: none;
     appearance: none;
     cursor: pointer;
+    pointer-events: none; /* Disable pointer events on track */
+}
+
+.slider::-webkit-slider-track {
+    background: transparent;
+}
+
+.slider::-moz-range-track {
+    background: transparent;
+    border: none;
 }
 
 .slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     background: linear-gradient(135deg, #667eea, #764ba2);
     border-radius: 50%;
     cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     transition: transform 0.2s ease;
+    pointer-events: auto; /* Enable pointer events on thumb */
+    position: relative;
+    z-index: 2;
 }
 
 .slider::-webkit-slider-thumb:hover {
     transform: scale(1.1);
 }
 
+.slider::-webkit-slider-thumb:active {
+    transform: scale(1.2);
+}
+
 .slider::-moz-range-thumb {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     background: linear-gradient(135deg, #667eea, #764ba2);
     border-radius: 50%;
     cursor: pointer;
     border: none;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     transition: transform 0.2s ease;
+    pointer-events: auto;
+    position: relative;
+    z-index: 2;
 }
 
 .slider::-moz-range-thumb:hover {
     transform: scale(1.1);
+}
+
+.slider::-moz-range-thumb:active {
+    transform: scale(1.2);
+}
+
+/* Apply Filters Button */
+.apply-filters-btn {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: 1rem;
+    width: 100%;
+}
+
+.apply-filters-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.apply-filters-btn:active {
+    transform: translateY(0);
 }
 
 .range-labels {

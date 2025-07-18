@@ -85,24 +85,16 @@ class ViewHuntApp {
             }
         });
 
-        // Range filter event listeners
-        const rangeInputs = ['min-views', 'max-views', 'min-subs', 'max-subs'];
-        rangeInputs.forEach(inputId => {
-            const input = document.getElementById(inputId);
-            if (input) {
-                input.addEventListener('input', () => {
-                    this.debounce(() => {
-                        if (this.currentView === 'pending') {
-                            this.loadPendingChannels(1);
-                        } else {
-                            this.applyFilters();
-                        }
-                    }, 500)();
-                });
+        // Apply Filters button
+        document.getElementById('apply-filters-btn').addEventListener('click', () => {
+            if (this.currentView === 'pending') {
+                this.loadPendingChannels(1);
+            } else {
+                this.applyFilters();
             }
         });
 
-        // Initialize range sliders
+        // Initialize range sliders (without real-time filtering)
         this.initializeRangeSliders();
 
         // Authentication forms
@@ -164,25 +156,27 @@ class ViewHuntApp {
         const maxViewsInput = document.getElementById('max-views');
 
         if (viewsSliderMin && viewsSliderMax && minViewsInput && maxViewsInput) {
-            // Update input when slider changes
+            // Update input when slider changes (no real-time filtering)
             viewsSliderMin.addEventListener('input', () => {
                 const value = parseInt(viewsSliderMin.value);
                 minViewsInput.value = formatNumber(value);
-                this.debounce(() => {
-                    if (this.currentView === 'pending') {
-                        this.loadPendingChannels(1);
-                    }
-                }, 300)();
+                
+                // Ensure min doesn't exceed max
+                if (value > parseInt(viewsSliderMax.value)) {
+                    viewsSliderMax.value = value;
+                    maxViewsInput.value = formatNumber(value);
+                }
             });
 
             viewsSliderMax.addEventListener('input', () => {
                 const value = parseInt(viewsSliderMax.value);
                 maxViewsInput.value = formatNumber(value);
-                this.debounce(() => {
-                    if (this.currentView === 'pending') {
-                        this.loadPendingChannels(1);
-                    }
-                }, 300)();
+                
+                // Ensure max doesn't go below min
+                if (value < parseInt(viewsSliderMin.value)) {
+                    viewsSliderMin.value = value;
+                    minViewsInput.value = formatNumber(value);
+                }
             });
 
             // Update slider when input changes
@@ -208,25 +202,27 @@ class ViewHuntApp {
         const maxSubsInput = document.getElementById('max-subs');
 
         if (subsSliderMin && subsSliderMax && minSubsInput && maxSubsInput) {
-            // Update input when slider changes
+            // Update input when slider changes (no real-time filtering)
             subsSliderMin.addEventListener('input', () => {
                 const value = parseInt(subsSliderMin.value);
                 minSubsInput.value = formatNumber(value);
-                this.debounce(() => {
-                    if (this.currentView === 'pending') {
-                        this.loadPendingChannels(1);
-                    }
-                }, 300)();
+                
+                // Ensure min doesn't exceed max
+                if (value > parseInt(subsSliderMax.value)) {
+                    subsSliderMax.value = value;
+                    maxSubsInput.value = formatNumber(value);
+                }
             });
 
             subsSliderMax.addEventListener('input', () => {
                 const value = parseInt(subsSliderMax.value);
                 maxSubsInput.value = formatNumber(value);
-                this.debounce(() => {
-                    if (this.currentView === 'pending') {
-                        this.loadPendingChannels(1);
-                    }
-                }, 300)();
+                
+                // Ensure max doesn't go below min
+                if (value < parseInt(subsSliderMin.value)) {
+                    subsSliderMin.value = value;
+                    minSubsInput.value = formatNumber(value);
+                }
             });
 
             // Update slider when input changes
