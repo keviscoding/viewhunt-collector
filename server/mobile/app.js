@@ -5,10 +5,13 @@ class ViewHuntApp {
         this.currentView = 'pending';
         this.channels = [];
         this.currentBatch = [];
-        this.hasMoreBatches = true;
+        this.pagination = null;
+        this.currentPage = 1;
         this.isLoadingBatch = false;
         this.authToken = localStorage.getItem('viewhunt_token');
+        this.token = this.authToken; // Alias for compatibility
         this.user = null;
+        this.isDarkMode = localStorage.getItem('viewhunt_theme') === 'dark';
         
         this.init();
     }
@@ -65,10 +68,10 @@ class ViewHuntApp {
             });
         });
 
-        // Filters - now trigger new batch loading for pending view
+        // Filters - now trigger full database sorting for pending view
         document.getElementById('sort-select').addEventListener('change', () => {
             if (this.currentView === 'pending') {
-                this.loadNewBatch();
+                this.loadPendingChannels(1); // Reset to page 1 when filters change
             } else {
                 this.applyFilters();
             }
@@ -77,7 +80,7 @@ class ViewHuntApp {
         document.getElementById('min-ratio').addEventListener('input', () => {
             this.debounce(() => {
                 if (this.currentView === 'pending') {
-                    this.loadNewBatch();
+                    this.loadPendingChannels(1);
                 } else {
                     this.applyFilters();
                 }
@@ -87,12 +90,26 @@ class ViewHuntApp {
         document.getElementById('min-views').addEventListener('input', () => {
             this.debounce(() => {
                 if (this.currentView === 'pending') {
-                    this.loadNewBatch();
+                    this.loadPendingChannels(1);
                 } else {
                     this.applyFilters();
                 }
             }, 500)();
         });
+
+        // Add min-subs filter if it exists
+        const minSubsInput = document.getElementById('min-subs');
+        if (minSubsInput) {
+            minSubsInput.addEventListener('input', () => {
+                this.debounce(() => {
+                    if (this.currentView === 'pending') {
+                        this.loadPendingChannels(1);
+                    } else {
+                        this.applyFilters();
+                    }
+                }, 500)();
+            });
+        }
 
         // Authentication forms
         document.getElementById('login-form-element').addEventListener('submit', (e) => {
@@ -219,18 +236,20 @@ class ViewHuntApp {
 
     async loadChannels() {
         if (this.currentView === 'pending') {
-            // Use optimized batch loading for pending channels
-            await this.loadNewBatch();
+            // Use optimized full database sorting for pending channels
+            await this.loadPendingChannels(1);
         } else {
             // Use traditional loading for approved channels
             await this.loadApprovedChannels();
         }
     }
 
-    async loadNewBatch() {
+    async loadPendingChannels(page = 1) {
         if (this.isLoadingBatch) return;
         
         this.isLoadingBatch = true;
+        this.currentPage = page;
+        
         const loading = document.getElementById('loading');
         const emptyState = document.getElementById('empty-state');
         const channelGrid = document.getElementById('channel-grid');
@@ -243,7 +262,7 @@ class ViewHuntApp {
             // Check authentication
             if (!this.authToken) {
                 this.currentBatch = [];
-                this.hasMoreBatches = false;
+                this.pagination = null;
                 loading.style.display = 'none';
                 emptyState.style.display = 'block';
                 emptyState.querySelector('h2').textContent = 'Sign In Required';
@@ -255,14 +274,16 @@ class ViewHuntApp {
             const sortBy = document.getElementById('sort-select').value;
             const minRatio = parseFloat(document.getElementById('min-ratio').value) || 0;
             const minViews = parseInt(document.getElementById('min-views').value) || 0;
+            const minSubs = parseInt(document.getElementById('min-subs').value) || 0;
 
-            // Build query parameters for optimized batch
+            // Build query parameters for full database sorting
             const params = new URLSearchParams({
-                batchSize: '200',      // Server fetches 200 random channels
-                displayLimit: '20',    // Display up to 20 channels
+                page: page.toString(),
+                limit: '20',
                 sortBy: sortBy,
                 minRatio: minRatio.toString(),
-                minViews: minViews.toString()
+                minViews: minViews.toString(),
+                minSubs: minSubs.toString()
             });
 
             const response = await this.fetchWithAuth(`${this.apiBase}/channels/pending?${params}`);
@@ -280,23 +301,23 @@ class ViewHuntApp {
             const data = await response.json();
 
             this.currentBatch = data.channels || [];
-            this.hasMoreBatches = data.hasMore || false;
+            this.pagination = data.pagination || null;
             
             loading.style.display = 'none';
 
             if (this.currentBatch.length === 0) {
                 emptyState.style.display = 'block';
                 emptyState.querySelector('h2').textContent = 'No Channels Match Your Filters';
-                emptyState.querySelector('p').textContent = 'Try adjusting your filter criteria or click "Next Batch" for different channels.';
+                emptyState.querySelector('p').textContent = 'Try adjusting your filter criteria to see more results.';
             } else {
-                this.renderBatchChannels();
+                this.renderPaginatedChannels();
             }
 
-            // Update batch info display
-            this.updateBatchInfo(data.batchInfo);
+            // Update pagination controls
+            this.updatePaginationControls();
 
         } catch (error) {
-            console.error('Error loading channel batch:', error);
+            console.error('Error loading channels:', error);
             loading.style.display = 'none';
             emptyState.style.display = 'block';
             emptyState.querySelector('h2').textContent = 'Error Loading Channels';
@@ -304,6 +325,11 @@ class ViewHuntApp {
         } finally {
             this.isLoadingBatch = false;
         }
+    }
+
+    // Alias for backward compatibility
+    async loadNewBatch() {
+        await this.loadPendingChannels(1);
     }
 
     async loadApprovedChannels() {
@@ -371,7 +397,7 @@ class ViewHuntApp {
         });
     }
 
-    renderBatchChannels() {
+    renderPaginatedChannels() {
         const channelGrid = document.getElementById('channel-grid');
         const emptyState = document.getElementById('empty-state');
 
@@ -382,58 +408,46 @@ class ViewHuntApp {
             const card = this.createChannelCard(channel);
             channelGrid.appendChild(card);
         });
-
-        // Add "Next Batch" button if there are more batches available
-        if (this.hasMoreBatches) {
-            this.addNextBatchButton();
-        }
     }
 
-    addNextBatchButton() {
-        const channelGrid = document.getElementById('channel-grid');
+    updatePaginationControls() {
+        const paginationControls = document.getElementById('pagination-controls');
+        const paginationText = document.getElementById('pagination-text');
         
-        const nextBatchCard = document.createElement('div');
-        nextBatchCard.className = 'channel-card next-batch-card';
-        nextBatchCard.innerHTML = `
-            <div style="text-align: center; padding: 2rem;">
-                <div style="font-size: 3rem; margin-bottom: 1rem;">🔄</div>
-                <h3 style="margin-bottom: 1rem;">Want to see different channels?</h3>
-                <p style="margin-bottom: 1.5rem; color: #666;">Get a fresh batch of 200 random channels with your current filters applied.</p>
-                <button class="btn btn-primary" onclick="window.app.loadNewBatch()" style="width: 100%;">
-                    🎲 Next Batch
-                </button>
-            </div>
-        `;
+        if (!this.pagination) {
+            paginationControls.style.display = 'none';
+            return;
+        }
+
+        paginationControls.style.display = 'flex';
         
-        channelGrid.appendChild(nextBatchCard);
+        // Update pagination text
+        if (this.pagination.isRandom) {
+            paginationText.textContent = `${this.pagination.totalChannels.toLocaleString()} channels (randomized)`;
+        } else {
+            const start = ((this.pagination.currentPage - 1) * this.pagination.limit) + 1;
+            const end = Math.min(this.pagination.currentPage * this.pagination.limit, this.pagination.totalChannels);
+            paginationText.textContent = `${start}-${end} of ${this.pagination.totalChannels.toLocaleString()} channels`;
+        }
+        
+        // Update button states
+        const prevBtn = document.getElementById('prev-page');
+        const nextBtn = document.getElementById('next-page');
+        
+        if (prevBtn) {
+            prevBtn.disabled = !this.pagination.hasPrev;
+            prevBtn.onclick = () => this.loadPendingChannels(this.pagination.currentPage - 1);
+        }
+        
+        if (nextBtn) {
+            nextBtn.disabled = !this.pagination.hasNext;
+            nextBtn.onclick = () => this.loadPendingChannels(this.pagination.currentPage + 1);
+        }
     }
 
     updateBatchInfo(batchInfo) {
-        // Create or update batch info display
-        let batchInfoEl = document.getElementById('batch-info');
-        if (!batchInfoEl) {
-            batchInfoEl = document.createElement('div');
-            batchInfoEl.id = 'batch-info';
-            batchInfoEl.style.cssText = `
-                background: rgba(255, 255, 255, 0.1);
-                padding: 0.75rem 1rem;
-                border-radius: 8px;
-                margin-bottom: 1rem;
-                font-size: 0.9rem;
-                color: #ccc;
-            `;
-            
-            const filtersEl = document.getElementById('filters');
-            if (filtersEl && filtersEl.parentNode) {
-                filtersEl.parentNode.insertBefore(batchInfoEl, filtersEl.nextSibling);
-            }
-        }
-
-        if (batchInfo) {
-            batchInfoEl.innerHTML = `
-                📊 Batch: ${batchInfo.batchReceived} fetched → ${batchInfo.afterFiltering} after filters → ${batchInfo.displayed} displayed
-            `;
-        }
+        // This method is now replaced by updatePaginationControls
+        // Keeping for backward compatibility but it's no longer used
     }
 
     // Get a random batch of channels from the full sorted list
@@ -641,13 +655,13 @@ class ViewHuntApp {
         const paginationControls = document.getElementById('pagination-controls');
 
         // Hide all views first (including pagination)
-        filters.style.display = 'none';
-        channelGrid.style.display = 'none';
-        collectionsView.style.display = 'none';
-        socialView.style.display = 'none';
-        emptyState.style.display = 'none';
-        loading.style.display = 'none';
-        paginationControls.style.display = 'none';
+        if (filters) filters.style.display = 'none';
+        if (channelGrid) channelGrid.style.display = 'none';
+        if (collectionsView) collectionsView.style.display = 'none';
+        if (socialView) socialView.style.display = 'none';
+        if (emptyState) emptyState.style.display = 'none';
+        if (loading) loading.style.display = 'none';
+        if (paginationControls) paginationControls.style.display = 'none';
 
         this.currentView = view;
 
@@ -661,13 +675,14 @@ class ViewHuntApp {
             this.loadSocialData();
         } else {
             // Show channels view (pending/approved)
-            channelGrid.style.display = 'grid';
+            if (channelGrid) channelGrid.style.display = 'grid';
             
             if (view === 'pending') {
-                filters.style.display = 'grid';
+                if (filters) filters.style.display = 'grid';
+                if (paginationControls) paginationControls.style.display = 'flex';
             }
 
-            // Always reload channels to get fresh randomization for pending view
+            // Load channels for the selected view
             this.loadChannels();
         }
     }

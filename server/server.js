@@ -64,6 +64,28 @@ async function connectToMongoDB() {
         await db.collection('channels').createIndex({ view_to_sub_ratio: -1 });
         await db.collection('channels').createIndex({ channel_url: 1 }, { unique: true });
         
+        // Compound indexes for optimized sorting with filters
+        await db.collection('channels').createIndex({ 
+            status: 1, 
+            view_to_sub_ratio: -1, 
+            _id: 1 
+        });
+        await db.collection('channels').createIndex({ 
+            status: 1, 
+            view_count: -1, 
+            _id: 1 
+        });
+        await db.collection('channels').createIndex({ 
+            status: 1, 
+            subscriber_count: -1, 
+            _id: 1 
+        });
+        await db.collection('channels').createIndex({ 
+            status: 1, 
+            created_at: -1, 
+            _id: 1 
+        });
+        
         // Collections indexes
         await db.collection('collections').createIndex({ user_id: 1 });
         await db.collection('collection_items').createIndex({ collection_id: 1 });
@@ -716,104 +738,144 @@ app.get('/api/channels/approved', authenticateToken, async (req, res) => {
     }
 });
 
-// Get pending channels for user (excluding already reviewed) - with optimized random batching
+// Get pending channels for user (excluding already reviewed) - with optimized full database sorting
 app.get('/api/channels/pending', authenticateToken, async (req, res) => {
     try {
         const userId = new ObjectId(req.user.userId);
         
-        // Get batch size from query params (default 200 for server batch, 20 for display)
-        const batchSize = parseInt(req.query.batchSize) || 200;
-        const displayLimit = parseInt(req.query.displayLimit) || 20;
+        // Pagination parameters
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const skip = (page - 1) * limit;
+        
+        // Filter parameters
         const sortBy = req.query.sortBy || 'ratio-desc';
         const minRatio = parseFloat(req.query.minRatio) || 0;
         const minViews = parseInt(req.query.minViews) || 0;
+        const minSubs = parseInt(req.query.minSubs) || 0;
         
-        // Get channels user has already acted on (more efficient query)
+        // Get channels user has already acted on (cached for performance)
         const reviewedChannelIds = await db.collection('user_channel_actions')
             .find({ user_id: userId })
             .project({ channel_id: 1 })
             .toArray()
             .then(actions => actions.map(action => action.channel_id));
         
-        // Get total count of available channels for this user
-        const totalAvailable = await db.collection('channels').countDocuments({ 
+        // Build match query with filters
+        const matchQuery = {
             status: 'pending',
-            _id: { $nin: reviewedChannelIds }
-        });
+            _id: { $nin: reviewedChannelIds },
+            view_to_sub_ratio: { $gte: minRatio },
+            view_count: { $gte: minViews },
+            subscriber_count: { $gte: minSubs }
+        };
         
-        if (totalAvailable === 0) {
+        // Build sort query based on sortBy parameter
+        let sortQuery = {};
+        switch (sortBy) {
+            case 'ratio-desc':
+                sortQuery = { view_to_sub_ratio: -1, _id: 1 }; // _id for consistent pagination
+                break;
+            case 'ratio-asc':
+                sortQuery = { view_to_sub_ratio: 1, _id: 1 };
+                break;
+            case 'views-desc':
+                sortQuery = { view_count: -1, _id: 1 };
+                break;
+            case 'views-asc':
+                sortQuery = { view_count: 1, _id: 1 };
+                break;
+            case 'subs-desc':
+                sortQuery = { subscriber_count: -1, _id: 1 };
+                break;
+            case 'subs-asc':
+                sortQuery = { subscriber_count: 1, _id: 1 };
+                break;
+            case 'newest':
+                sortQuery = { created_at: -1, _id: 1 };
+                break;
+            case 'oldest':
+                sortQuery = { created_at: 1, _id: 1 };
+                break;
+            case 'random':
+                // For random, we'll use a different approach
+                const totalCount = await db.collection('channels').countDocuments(matchQuery);
+                if (totalCount === 0) {
+                    return res.json({
+                        channels: [],
+                        pagination: {
+                            currentPage: 1,
+                            totalPages: 0,
+                            totalChannels: 0,
+                            hasNext: false,
+                            hasPrev: false
+                        }
+                    });
+                }
+                
+                // Get random sample for random sort
+                const randomChannels = await db.collection('channels')
+                    .aggregate([
+                        { $match: matchQuery },
+                        { $sample: { size: Math.min(limit, totalCount) } }
+                    ])
+                    .toArray();
+                
+                return res.json({
+                    channels: randomChannels,
+                    pagination: {
+                        currentPage: 1,
+                        totalPages: 1,
+                        totalChannels: totalCount,
+                        hasNext: false,
+                        hasPrev: false,
+                        isRandom: true
+                    }
+                });
+            default:
+                sortQuery = { view_to_sub_ratio: -1, _id: 1 };
+        }
+        
+        // Get total count for pagination (with filters applied)
+        const totalChannels = await db.collection('channels').countDocuments(matchQuery);
+        const totalPages = Math.ceil(totalChannels / limit);
+        
+        if (totalChannels === 0) {
             return res.json({
                 channels: [],
-                hasMore: false,
-                totalAvailable: 0,
-                batchInfo: {
-                    batchSize,
-                    displayLimit,
-                    sortBy,
-                    minRatio,
-                    minViews
+                pagination: {
+                    currentPage: page,
+                    totalPages: 0,
+                    totalChannels: 0,
+                    hasNext: false,
+                    hasPrev: false
                 }
             });
         }
         
-        // Use MongoDB's $sample to get random batch (more efficient than skip/limit for randomization)
-        const randomBatch = await db.collection('channels')
-            .aggregate([
-                {
-                    $match: { 
-                        status: 'pending',
-                        _id: { $nin: reviewedChannelIds }
-                    }
-                },
-                { $sample: { size: Math.min(batchSize, totalAvailable) } }
-            ])
+        // Get channels with efficient database-level sorting and pagination
+        const channels = await db.collection('channels')
+            .find(matchQuery)
+            .sort(sortQuery)
+            .skip(skip)
+            .limit(limit)
             .toArray();
         
-        // Apply server-side filtering
-        let filteredChannels = randomBatch.filter(channel => {
-            const ratio = channel.view_to_sub_ratio || 0;
-            const views = channel.view_count || 0;
-            return ratio >= minRatio && views >= minViews;
-        });
-        
-        // Apply server-side sorting
-        filteredChannels.sort((a, b) => {
-            switch (sortBy) {
-                case 'ratio-desc':
-                    return (b.view_to_sub_ratio || 0) - (a.view_to_sub_ratio || 0);
-                case 'ratio-asc':
-                    return (a.view_to_sub_ratio || 0) - (b.view_to_sub_ratio || 0);
-                case 'views-desc':
-                    return (b.view_count || 0) - (a.view_count || 0);
-                case 'views-asc':
-                    return (a.view_count || 0) - (b.view_count || 0);
-                case 'subs-desc':
-                    return (b.subscriber_count || 0) - (a.subscriber_count || 0);
-                case 'subs-asc':
-                    return (a.subscriber_count || 0) - (b.subscriber_count || 0);
-                case 'random':
-                    return Math.random() - 0.5;
-                default:
-                    return (b.view_to_sub_ratio || 0) - (a.view_to_sub_ratio || 0);
-            }
-        });
-        
-        // Limit to display amount
-        const displayChannels = filteredChannels.slice(0, displayLimit);
-        
         res.json({
-            channels: displayChannels,
-            hasMore: totalAvailable > batchSize, // There are more channels available for next batch
-            totalAvailable,
-            batchInfo: {
-                batchSize,
-                displayLimit,
+            channels,
+            pagination: {
+                currentPage: page,
+                totalPages,
+                totalChannels,
+                hasNext: page < totalPages,
+                hasPrev: page > 1,
+                limit
+            },
+            filters: {
                 sortBy,
                 minRatio,
                 minViews,
-                batchReceived: randomBatch.length,
-                afterFiltering: filteredChannels.length,
-                displayed: displayChannels.length
+                minSubs
             }
         });
         
