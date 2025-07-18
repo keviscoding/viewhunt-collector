@@ -726,29 +726,49 @@ app.get('/api/channels/approved', authenticateToken, async (req, res) => {
     }
 });
 
-// Get pending channels for user (excluding already reviewed)
+// Get pending channels for user (excluding already reviewed) - with pagination
 app.get('/api/channels/pending', authenticateToken, async (req, res) => {
     try {
         const userId = new ObjectId(req.user.userId);
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20; // Reduced from 50 for better performance
+        const skip = (page - 1) * limit;
         
-        // Get channels user has already acted on
-        const reviewedChannels = await db.collection('user_channel_actions')
+        // Get channels user has already acted on (more efficient query)
+        const reviewedChannelIds = await db.collection('user_channel_actions')
             .find({ user_id: userId })
-            .toArray();
+            .project({ channel_id: 1 })
+            .toArray()
+            .then(actions => actions.map(action => action.channel_id));
         
-        const reviewedChannelIds = reviewedChannels.map(action => action.channel_id);
-        
-        // Get pending channels excluding reviewed ones
+        // Get pending channels excluding reviewed ones with pagination
         const channels = await db.collection('channels')
             .find({ 
                 status: 'pending',
                 _id: { $nin: reviewedChannelIds }
             })
             .sort({ view_to_sub_ratio: -1 })
-            .limit(50)
+            .skip(skip)
+            .limit(limit)
             .toArray();
         
-        res.json(channels);
+        // Get total count for pagination info
+        const totalCount = await db.collection('channels').countDocuments({ 
+            status: 'pending',
+            _id: { $nin: reviewedChannelIds }
+        });
+        
+        res.json({
+            channels,
+            pagination: {
+                page,
+                limit,
+                total: totalCount,
+                pages: Math.ceil(totalCount / limit),
+                hasNext: page * limit < totalCount,
+                hasPrev: page > 1
+            }
+        });
     } catch (error) {
         console.error('Error fetching pending channels:', error);
         res.status(500).json({ error: 'Database error' });

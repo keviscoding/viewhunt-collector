@@ -177,7 +177,12 @@ class ViewHuntApp {
                 return;
             }
             
-            const response = await fetch(`${this.apiBase}${endpoint}`, {
+            // Add pagination parameters for pending channels
+            const url = this.currentView === 'pending' ? 
+                `${this.apiBase}${endpoint}?page=1&limit=20` : 
+                `${this.apiBase}${endpoint}`;
+            
+            const response = await fetch(url, {
                 headers: {
                     'Authorization': `Bearer ${this.token}`
                 }
@@ -200,7 +205,16 @@ class ViewHuntApp {
             }
             
             const data = await response.json();
-            this.channels = Array.isArray(data) ? data : [];
+            
+            // Handle paginated response for pending channels
+            if (this.currentView === 'pending' && data.channels) {
+                this.channels = data.channels;
+                this.pagination = data.pagination;
+                console.log(`Loaded ${this.channels.length} channels (Page ${data.pagination.page}/${data.pagination.pages})`);
+            } else {
+                // Handle direct array response for approved channels
+                this.channels = Array.isArray(data) ? data : [];
+            }
 
             loading.style.display = 'none';
 
