@@ -753,8 +753,9 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const skip = (page - 1) * limit;
         
-        // Simple sort parameter
+        // Sort parameters
         const primarySort = req.query.primarySort || 'ratio-desc';
+        const secondarySort = req.query.secondarySort || 'none';
         
         // Get channels user has already acted on
         const reviewedChannelIds = await db.collection('user_channel_actions')
@@ -769,41 +770,42 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
             _id: { $nin: reviewedChannelIds }
         };
         
-        // Simple sort query
-        let sortQuery = { view_to_sub_ratio: -1, _id: 1 }; // Default to best ratio
+        // Helper function to get sort field and direction
+        const getSortField = (sortType) => {
+            switch (sortType) {
+                case 'ratio-desc': return ['view_to_sub_ratio', -1];
+                case 'ratio-asc': return ['view_to_sub_ratio', 1];
+                case 'views-desc': return ['view_count', -1];
+                case 'views-asc': return ['view_count', 1];
+                case 'subs-desc': return ['subscriber_count', -1];
+                case 'subs-asc': return ['subscriber_count', 1];
+                case 'videos-desc': return ['video_count', -1];
+                case 'videos-asc': return ['video_count', 1];
+                case 'newest': return ['created_at', -1];
+                case 'oldest': return ['created_at', 1];
+                default: return ['view_to_sub_ratio', -1];
+            }
+        };
+
+        // Build dual sort query
+        let sortQuery = {};
         
-        switch (primarySort) {
-            case 'ratio-desc':
-                sortQuery = { view_to_sub_ratio: -1, _id: 1 };
-                break;
-            case 'ratio-asc':
-                sortQuery = { view_to_sub_ratio: 1, _id: 1 };
-                break;
-            case 'views-desc':
-                sortQuery = { view_count: -1, _id: 1 };
-                break;
-            case 'views-asc':
-                sortQuery = { view_count: 1, _id: 1 };
-                break;
-            case 'subs-desc':
-                sortQuery = { subscriber_count: -1, _id: 1 };
-                break;
-            case 'subs-asc':
-                sortQuery = { subscriber_count: 1, _id: 1 };
-                break;
-            case 'videos-desc':
-                sortQuery = { video_count: -1, _id: 1 };
-                break;
-            case 'videos-asc':
-                sortQuery = { video_count: 1, _id: 1 };
-                break;
-            case 'newest':
-                sortQuery = { created_at: -1, _id: 1 };
-                break;
-            case 'oldest':
-                sortQuery = { created_at: 1, _id: 1 };
-                break;
+        // Add primary sort
+        const [primaryField, primaryDirection] = getSortField(primarySort);
+        sortQuery[primaryField] = primaryDirection;
+        
+        // Add secondary sort if specified and different from primary
+        if (secondarySort && secondarySort !== 'none') {
+            const [secondaryField, secondaryDirection] = getSortField(secondarySort);
+            
+            // Only add if it's a different field than primary
+            if (secondaryField !== primaryField) {
+                sortQuery[secondaryField] = secondaryDirection;
+            }
         }
+        
+        // Always add _id for consistent pagination
+        sortQuery._id = 1;
         
         // Get total count
         const totalChannels = await db.collection('channels').countDocuments(matchQuery);

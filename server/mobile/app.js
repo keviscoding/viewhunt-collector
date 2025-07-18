@@ -319,14 +319,16 @@ class ViewHuntApp {
                 return;
             }
 
-            // Get current filter values - SIMPLIFIED
+            // Get current filter values
             const primarySort = document.getElementById('primary-sort').value;
+            const secondarySort = document.getElementById('secondary-sort').value;
 
-            // Build query parameters - SIMPLIFIED
+            // Build query parameters
             const params = new URLSearchParams({
                 page: page.toString(),
                 limit: '20',
-                primarySort: primarySort
+                primarySort: primarySort,
+                secondarySort: secondarySort
             });
 
             const response = await this.fetchWithAuth(`${this.apiBase}/channels/pending?${params}`);
