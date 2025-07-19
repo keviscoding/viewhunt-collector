@@ -99,7 +99,19 @@ async function connectToMongoDB() {
         // Collections indexes
         await db.collection('collections').createIndex({ user_id: 1 });
         await db.collection('collection_items').createIndex({ collection_id: 1 });
-        await db.collection('collection_items').createIndex({ user_id: 1, channel_id: 1 }, { unique: true });
+        
+        // Fix collection_items unique index (allow same channel in different collections)
+        try {
+            // Drop the old incorrect index if it exists
+            await db.collection('collection_items').dropIndex({ user_id: 1, channel_id: 1 });
+            console.log('Dropped old collection_items index');
+        } catch (error) {
+            // Index might not exist, that's okay
+            console.log('Old collection_items index not found (this is okay)');
+        }
+        
+        // Create the correct index (prevent duplicates within same collection)
+        await db.collection('collection_items').createIndex({ collection_id: 1, channel_id: 1 }, { unique: true });
         
         // User actions indexes for the new system
         await db.collection('user_channel_actions').createIndex({ user_id: 1 });
@@ -1324,6 +1336,12 @@ app.post('/api/collections/:id/channels', authenticateToken, async (req, res) =>
         
     } catch (error) {
         console.error('Error adding channel to collection:', error);
+        
+        // Handle duplicate key error specifically
+        if (error.code === 11000) {
+            return res.status(400).json({ error: 'Channel is already in this collection' });
+        }
+        
         res.status(500).json({ error: 'Database error' });
     }
 });
