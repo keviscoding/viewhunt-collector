@@ -142,6 +142,25 @@
                         </div>
                     </div>
                     
+                    <div class="filter-group range-filter">
+                        <label>📹 Videos Range:</label>
+                        <div class="range-slider-container">
+                            <div class="range-inputs">
+                                <input type="number" id="min-videos" class="range-input" placeholder="Min" min="0" step="10">
+                                <span class="range-separator">to</span>
+                                <input type="number" id="max-videos" class="range-input" placeholder="Max" min="0" step="10">
+                            </div>
+                            <div class="range-slider">
+                                <input type="range" id="videos-slider-min" class="slider" min="0" max="1000" step="5" value="0">
+                                <input type="range" id="videos-slider-max" class="slider" min="0" max="1000" step="5" value="1000">
+                            </div>
+                            <div class="range-labels">
+                                <span>0</span>
+                                <span>1000+</span>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <!-- Apply Filters Button -->
                     <button class="apply-filters-btn" id="apply-filters-btn">
                         🔍 Apply Filters

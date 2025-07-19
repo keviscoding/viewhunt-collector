@@ -767,6 +767,8 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
         const maxViews = req.query.maxViews ? parseInt(req.query.maxViews) : null;
         const minSubs = parseInt(req.query.minSubs) || 0;
         const maxSubs = req.query.maxSubs ? parseInt(req.query.maxSubs) : null;
+        const minVideos = parseInt(req.query.minVideos) || 0;
+        const maxVideos = req.query.maxVideos ? parseInt(req.query.maxVideos) : null;
         
         // Get channels user has already acted on
         const reviewedChannelIds = await db.collection('user_channel_actions')
@@ -793,6 +795,13 @@ app.get('/api/channels/pending', authenticateToken, async (req, res) => {
             matchQuery.subscriber_count = {};
             if (minSubs > 0) matchQuery.subscriber_count.$gte = minSubs;
             if (maxSubs) matchQuery.subscriber_count.$lte = maxSubs;
+        }
+        
+        // Add video count filters if specified
+        if (minVideos > 0 || maxVideos) {
+            matchQuery.video_count = {};
+            if (minVideos > 0) matchQuery.video_count.$gte = minVideos;
+            if (maxVideos) matchQuery.video_count.$lte = maxVideos;
         }
         
         // Helper function to get sort field and direction

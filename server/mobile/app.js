@@ -248,6 +248,52 @@ class ViewHuntApp {
                 }
             });
         }
+
+        // Videos range slider
+        const videosSliderMin = document.getElementById('videos-slider-min');
+        const videosSliderMax = document.getElementById('videos-slider-max');
+        const minVideosInput = document.getElementById('min-videos');
+        const maxVideosInput = document.getElementById('max-videos');
+
+        if (videosSliderMin && videosSliderMax && minVideosInput && maxVideosInput) {
+            // Update input when slider changes (no real-time filtering)
+            videosSliderMin.addEventListener('input', () => {
+                const value = parseInt(videosSliderMin.value);
+                minVideosInput.value = value;
+                
+                // Ensure min doesn't exceed max
+                if (value > parseInt(videosSliderMax.value)) {
+                    videosSliderMax.value = value;
+                    maxVideosInput.value = value;
+                }
+            });
+
+            videosSliderMax.addEventListener('input', () => {
+                const value = parseInt(videosSliderMax.value);
+                maxVideosInput.value = value;
+                
+                // Ensure max doesn't go below min
+                if (value < parseInt(videosSliderMin.value)) {
+                    videosSliderMin.value = value;
+                    minVideosInput.value = value;
+                }
+            });
+
+            // Update slider when input changes
+            minVideosInput.addEventListener('input', () => {
+                const value = parseInt(minVideosInput.value) || 0;
+                if (value >= 0 && value <= 1000) {
+                    videosSliderMin.value = value;
+                }
+            });
+
+            maxVideosInput.addEventListener('input', () => {
+                const value = parseInt(maxVideosInput.value) || 1000;
+                if (value >= 0 && value <= 1000) {
+                    videosSliderMax.value = value;
+                }
+            });
+        }
     }
 
     // Helper function to parse formatted numbers (e.g., "1.5M" -> 1500000)
@@ -385,6 +431,8 @@ class ViewHuntApp {
             const maxViews = document.getElementById('max-views').value ? parseInt(document.getElementById('max-views').value.replace(/,/g, '')) : null;
             const minSubs = parseInt(document.getElementById('min-subs').value.replace(/,/g, '')) || 0;
             const maxSubs = document.getElementById('max-subs').value ? parseInt(document.getElementById('max-subs').value.replace(/,/g, '')) : null;
+            const minVideos = parseInt(document.getElementById('min-videos').value.replace(/,/g, '')) || 0;
+            const maxVideos = document.getElementById('max-videos').value ? parseInt(document.getElementById('max-videos').value.replace(/,/g, '')) : null;
 
             // Build query parameters
             const params = new URLSearchParams({
@@ -399,6 +447,8 @@ class ViewHuntApp {
             if (maxViews) params.append('maxViews', maxViews.toString());
             if (minSubs > 0) params.append('minSubs', minSubs.toString());
             if (maxSubs) params.append('maxSubs', maxSubs.toString());
+            if (minVideos > 0) params.append('minVideos', minVideos.toString());
+            if (maxVideos) params.append('maxVideos', maxVideos.toString());
 
             const response = await this.fetchWithAuth(`${this.apiBase}/channels/pending?${params}`);
             
