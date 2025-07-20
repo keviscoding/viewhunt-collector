@@ -72,6 +72,8 @@ class ViewHuntApp {
         document.getElementById('primary-sort').addEventListener('change', () => {
             if (this.currentView === 'pending') {
                 this.loadPendingChannels(1); // Reset to page 1 when filters change
+            } else if (this.currentView === 'approved') {
+                this.loadApprovedChannels(); // Reload with new filters
             } else {
                 this.applyFilters();
             }
@@ -80,6 +82,8 @@ class ViewHuntApp {
         document.getElementById('secondary-sort').addEventListener('change', () => {
             if (this.currentView === 'pending') {
                 this.loadPendingChannels(1); // Reset to page 1 when filters change
+            } else if (this.currentView === 'approved') {
+                this.loadApprovedChannels(); // Reload with new filters
             } else {
                 this.applyFilters();
             }
@@ -89,6 +93,8 @@ class ViewHuntApp {
         document.getElementById('apply-filters-btn').addEventListener('click', () => {
             if (this.currentView === 'pending') {
                 this.loadPendingChannels(1);
+            } else if (this.currentView === 'approved') {
+                this.loadApprovedChannels(); // Reload with new filters
             } else {
                 this.applyFilters();
             }
@@ -515,7 +521,32 @@ class ViewHuntApp {
                 return;
             }
 
-            const response = await this.fetchWithAuth(`${this.apiBase}/channels/approved`);
+            // Build query parameters for admin filtering
+            let url = `${this.apiBase}/channels/approved`;
+            if (this.user && (this.user.email === 'nwalikelv@gmail.com' || this.user.email === 'kevis@viewhunt.com')) {
+                const params = new URLSearchParams();
+                
+                // Get filter values
+                const primarySort = document.getElementById('primary-sort')?.value || 'approval-time-desc';
+                const minViews = this.parseFormattedNumber(document.getElementById('min-views')?.value || '0');
+                const maxViews = document.getElementById('max-views')?.value ? this.parseFormattedNumber(document.getElementById('max-views').value) : null;
+                const minSubs = this.parseFormattedNumber(document.getElementById('min-subs')?.value || '0');
+                const maxSubs = document.getElementById('max-subs')?.value ? this.parseFormattedNumber(document.getElementById('max-subs').value) : null;
+                const minVideos = parseInt(document.getElementById('min-videos')?.value || '0');
+                const maxVideos = document.getElementById('max-videos')?.value ? parseInt(document.getElementById('max-videos').value) : null;
+
+                params.append('sortBy', primarySort);
+                if (minViews > 0) params.append('minViews', minViews.toString());
+                if (maxViews) params.append('maxViews', maxViews.toString());
+                if (minSubs > 0) params.append('minSubs', minSubs.toString());
+                if (maxSubs) params.append('maxSubs', maxSubs.toString());
+                if (minVideos > 0) params.append('minVideos', minVideos.toString());
+                if (maxVideos) params.append('maxVideos', maxVideos.toString());
+
+                url += `?${params}`;
+            }
+
+            const response = await this.fetchWithAuth(url);
             
             if (!response.ok) {
                 if (response.status === 401) {
@@ -685,6 +716,28 @@ class ViewHuntApp {
         const subCount = formatNumber(channel.subscriber_count || 0);
         const ratio = channel.view_to_sub_ratio ? channel.view_to_sub_ratio.toFixed(2) : 'N/A';
 
+        // Create approval info for approved channels
+        let approvalInfo = '';
+        let communityBadge = '';
+        
+        if (this.currentView === 'approved') {
+            // Show approval timestamp
+            const approvalTime = channel.first_approval_time || channel.approved_at || channel.updated_at;
+            if (approvalTime) {
+                approvalInfo = `<small class="approval-time">Approved ${this.getTimeAgo(new Date(approvalTime))}</small>`;
+            }
+            
+            // Show community badge if not approved by admin
+            if (channel.admin_approved === false) {
+                communityBadge = '<span class="community-badge">👥 Community</span>';
+            }
+            
+            // Show approval count if available
+            if (channel.approval_count && channel.approval_count > 1) {
+                approvalInfo += `<small class="approval-count">${channel.approval_count} approvals</small>`;
+            }
+        }
+
         // Create avatar HTML - use real avatar if available, fallback to letter
         const avatarHtml = channel.avatar_url ? 
             `<img src="${channel.avatar_url}" alt="${this.escapeHtml(channel.channel_name)}" class="channel-avatar-img">` :
@@ -694,9 +747,10 @@ class ViewHuntApp {
             <div class="channel-header">
                 <div class="channel-avatar">${avatarHtml}</div>
                 <div class="channel-info">
-                    <h3>${this.escapeHtml(channel.channel_name)}</h3>
+                    <h3>${this.escapeHtml(channel.channel_name)} ${communityBadge}</h3>
                     <p>${this.escapeHtml(channel.video_title || 'No video title')}</p>
                     <small class="video-count">${videoCount > 0 ? videoCount.toLocaleString() : 'N/A'} videos</small>
+                    ${approvalInfo}
                 </div>
             </div>
             

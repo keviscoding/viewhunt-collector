@@ -715,8 +715,28 @@ app.get('/api/channels/approved', authenticateToken, async (req, res) => {
                             }
                         }
                     },
-                    { $sort: { approval_count: -1, recent_approvals: -1 } },
-                    { $limit: 100 }
+                    {
+                        $addFields: {
+                            first_approval_time: { $min: '$approvals.created_at' },
+                            latest_approval_time: { $max: '$approvals.created_at' },
+                            admin_approved: {
+                                $anyElementTrue: {
+                                    $map: {
+                                        input: '$approvals',
+                                        as: 'approval',
+                                        in: {
+                                            $or: [
+                                                { $eq: ['$$approval.user_email', 'nwalikelv@gmail.com'] },
+                                                { $eq: ['$$approval.user_email', 'kevis@viewhunt.com'] }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    { $sort: { first_approval_time: -1, approval_count: -1 } },
+                    { $limit: 200 }
                 ])
                 .toArray();
             
