@@ -2242,3 +2242,25 @@ vis Admin Styles */
     }
 }
 }
+/
+* Toast notifications - mobile optimization */
+@media (max-width: 768px) {
+    /* Mobile-specific toast positioning and styling */
+    .toast-mobile {
+        position: fixed !important;
+        top: 10px !important;
+        left: 10px !important;
+        right: 10px !important;
+        max-width: none !important;
+        font-size: 13px !important;
+        padding: 10px 16px !important;
+        text-align: center !important;
+        background: #1a1a1a !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+        -webkit-font-smoothing: antialiased !important;
+        -moz-osx-font-smoothing: grayscale !important;
+        transform: translateY(-100%) !important;
+        transition: transform 0.3s ease !important;
+    }
+}

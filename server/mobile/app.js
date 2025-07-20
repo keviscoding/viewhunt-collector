@@ -991,31 +991,77 @@ class ViewHuntApp {
     showToast(message) {
         // Create toast element
         const toast = document.createElement('div');
-        toast.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 12px 20px;
-            border-radius: 8px;
-            font-size: 14px;
-            z-index: 1000;
-            transform: translateX(100%);
-            transition: transform 0.3s ease;
-        `;
-        toast.textContent = message;
         
+        // Check if mobile device
+        const isMobile = window.innerWidth <= 768;
+        
+        if (isMobile) {
+            // Mobile-optimized toast
+            toast.className = 'toast-mobile';
+            toast.style.cssText = `
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                right: 10px;
+                background: #1a1a1a;
+                color: white;
+                padding: 10px 16px;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: 500;
+                z-index: 10000;
+                transform: translateY(-100%);
+                transition: transform 0.3s ease;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                text-align: center;
+                word-wrap: break-word;
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            `;
+        } else {
+            // Desktop toast
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #1a1a1a;
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 500;
+                z-index: 10000;
+                transform: translateX(100%);
+                transition: transform 0.3s ease;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                max-width: 300px;
+                word-wrap: break-word;
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            `;
+        }
+        
+        toast.textContent = message;
         document.body.appendChild(toast);
         
         // Animate in
         setTimeout(() => {
-            toast.style.transform = 'translateX(0)';
+            if (isMobile) {
+                toast.style.transform = 'translateY(0)';
+            } else {
+                toast.style.transform = 'translateX(0)';
+            }
         }, 100);
         
         // Remove after 3 seconds
         setTimeout(() => {
-            toast.style.transform = 'translateX(100%)';
+            if (isMobile) {
+                toast.style.transform = 'translateY(-100%)';
+            } else {
+                toast.style.transform = 'translateX(100%)';
+            }
             setTimeout(() => toast.remove(), 300);
         }, 3000);
     }
