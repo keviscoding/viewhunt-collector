@@ -398,13 +398,28 @@ class ViewHuntApp {
 
     async loadStats() {
         try {
-            const response = await fetch(`${this.apiBase}/stats`);
+            if (!this.authToken) {
+                // If not authenticated, show default stats
+                document.getElementById('pending-count').textContent = '0';
+                document.getElementById('approved-count').textContent = '0';
+                return;
+            }
+
+            const response = await this.fetchWithAuth(`${this.apiBase}/stats`);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
             const stats = await response.json();
             
             document.getElementById('pending-count').textContent = stats.pending || 0;
             document.getElementById('approved-count').textContent = stats.approved || 0;
         } catch (error) {
             console.error('Error loading stats:', error);
+            // Show default values on error
+            document.getElementById('pending-count').textContent = '0';
+            document.getElementById('approved-count').textContent = '0';
         }
     }
 

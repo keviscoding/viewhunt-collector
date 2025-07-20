@@ -1021,14 +1021,29 @@ app.get('/api/channels/trending', async (req, res) => {
     }
 });
 
-// Get stats
-app.get('/api/stats', async (req, res) => {
+// Get stats - user-specific for regular users, global for admin
+app.get('/api/stats', authenticateToken, async (req, res) => {
     try {
-        const [pending, approved, rejected] = await Promise.all([
-            db.collection('channels').countDocuments({ status: 'pending' }),
-            db.collection('channels').countDocuments({ status: 'approved' }),
-            db.collection('channels').countDocuments({ status: 'rejected' })
-        ]);
+        const userId = new ObjectId(req.user.userId);
+        const isAdmin = req.user.email === 'nwalikelv@gmail.com' || req.user.email === 'kevis@viewhunt.com';
+
+        // Get pending count (same for everyone)
+        const pending = await db.collection('channels').countDocuments({ status: 'pending' });
+
+        let approved;
+        if (isAdmin) {
+            // Admin sees total approved channels by everyone
+            approved = await db.collection('user_channel_actions').countDocuments({ action: 'approved' });
+        } else {
+            // Regular users see their own approved count
+            approved = await db.collection('user_channel_actions').countDocuments({ 
+                user_id: userId, 
+                action: 'approved' 
+            });
+        }
+
+        // Rejected count (global for now, can be made user-specific if needed)
+        const rejected = await db.collection('channels').countDocuments({ status: 'rejected' });
 
         res.json({
             pending,
