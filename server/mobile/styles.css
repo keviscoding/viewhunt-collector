@@ -2032,6 +2032,7 @@ vis Admin Styles */
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.9);
+    color: var(--text-primary);
     font-size: 0.8rem;
     text-align: center;
     min-width: 0; /* Prevents flex items from overflowing */
@@ -2043,6 +2044,16 @@ vis Admin Styles */
     color: rgba(255, 255, 255, 0.8);
     font-size: 0.9rem;
     font-weight: 500;
+}
+
+/* Light mode: make range text visible */
+:root .range-separator {
+    color: var(--text-secondary);
+}
+
+/* Dark mode: keep existing white text */
+[data-theme="dark"] .range-separator {
+    color: rgba(255, 255, 255, 0.8);
 }
 
 .range-slider {
