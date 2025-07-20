@@ -2089,13 +2089,23 @@ vis Admin Styles */
     pointer-events: auto; /* Enable pointer events for interaction */
 }
 
-/* Ensure both sliders can be interacted with */
+/* Dual slider interaction fix */
 .slider:first-child {
     z-index: 1;
 }
 
 .slider:last-child {
-    z-index: 2;
+    z-index: 1;
+}
+
+/* When min slider thumb is at low values, prioritize it */
+.slider:first-child:focus {
+    z-index: 3;
+}
+
+/* When max slider thumb is at high values, prioritize it */  
+.slider:last-child:focus {
+    z-index: 3;
 }
 
 .slider::-webkit-slider-track {
