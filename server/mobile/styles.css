@@ -2089,13 +2089,24 @@ vis Admin Styles */
     pointer-events: auto; /* Enable pointer events for interaction */
 }
 
+/* Ensure both sliders can be interacted with */
+.slider:first-child {
+    z-index: 1;
+}
+
+.slider:last-child {
+    z-index: 2;
+}
+
 .slider::-webkit-slider-track {
     background: transparent;
+    cursor: pointer;
 }
 
 .slider::-moz-range-track {
     background: transparent;
     border: none;
+    cursor: pointer;
 }
 
 .slider::-webkit-slider-thumb {
@@ -2170,6 +2181,16 @@ vis Admin Styles */
     display: flex;
     justify-content: space-between;
     font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* Light mode: make range labels visible */
+:root .range-labels {
+    color: var(--text-secondary);
+}
+
+/* Dark mode: keep existing white text */
+[data-theme="dark"] .range-labels {
     color: rgba(255, 255, 255, 0.7);
 }
 
