@@ -2086,7 +2086,7 @@ vis Admin Styles */
     -webkit-appearance: none;
     appearance: none;
     cursor: pointer;
-    pointer-events: none; /* Disable pointer events on track */
+    pointer-events: auto; /* Enable pointer events for interaction */
 }
 
 .slider::-webkit-slider-track {
