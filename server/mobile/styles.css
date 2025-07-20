@@ -7,15 +7,13 @@
 /* Light/Dark Mode Variables */
 :root {
     --bg-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --bg-card: rgba(255, 255, 255, 0.98);
-    --bg-header: rgba(255, 255, 255, 0.95);
+    --bg-card: rgba(255, 255, 255, 0.95);
+    --bg-header: rgba(255, 255, 255, 0.75);
     --text-primary: #1a1a1a;
     --text-secondary: #4a4a4a;
-    --border-color: rgba(102, 126, 234, 0.3);
-    --shadow-light: rgba(0, 0, 0, 0.12);
-    --shadow-medium: rgba(0, 0, 0, 0.2);
-    --input-bg: rgba(255, 255, 255, 0.9);
-    --input-border: rgba(102, 126, 234, 0.4);
+    --border-color: rgba(255, 255, 255, 0.2);
+    --shadow-light: rgba(0, 0, 0, 0.08);
+    --shadow-medium: rgba(0, 0, 0, 0.15);
 }
 
 [data-theme="dark"] {
@@ -27,8 +25,6 @@
     --border-color: rgba(255, 255, 255, 0.1);
     --shadow-light: rgba(0, 0, 0, 0.3);
     --shadow-medium: rgba(0, 0, 0, 0.4);
-    --input-bg: rgba(30, 30, 40, 0.95);
-    --input-border: rgba(255, 255, 255, 0.1);
 }
 
 body {
@@ -251,13 +247,6 @@ body {
     box-shadow: 0 4px 20px var(--shadow-light);
 }
 
-/* Light mode specific filter improvements */
-:root .filters {
-    background: rgba(255, 255, 255, 0.98);
-    border: 1px solid rgba(102, 126, 234, 0.2);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-}
-
 .filter-group {
     display: flex;
     flex-direction: column;
@@ -270,38 +259,17 @@ body {
     color: var(--text-primary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-/* Light mode specific improvements */
-:root .filter-group label {
-    color: #2d3748;
-    font-weight: 700;
-}
-
-:root .filter-select,
-:root .filter-input {
-    border: 2px solid rgba(102, 126, 234, 0.5);
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-:root .filter-select:focus,
-:root .filter-input:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2), 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .filter-select,
 .filter-input {
     padding: 0.75rem;
-    border: 2px solid var(--input-border);
+    border: 2px solid var(--border-color);
     border-radius: 12px;
     font-size: 0.875rem;
-    background: var(--input-bg);
+    background: var(--bg-card);
     color: var(--text-primary);
     transition: all 0.2s ease;
-    backdrop-filter: blur(10px);
 }
 
 .filter-select:focus,
