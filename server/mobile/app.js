@@ -354,6 +354,10 @@ class ViewHuntApp {
                     return new Date(b.created_at || 0) - new Date(a.created_at || 0);
                 case 'oldest':
                     return new Date(a.created_at || 0) - new Date(b.created_at || 0);
+                case 'approval-time-desc':
+                    return new Date(b.first_approval_time || b.approved_at || 0) - new Date(a.first_approval_time || a.approved_at || 0);
+                case 'approval-time-asc':
+                    return new Date(a.first_approval_time || a.approved_at || 0) - new Date(b.first_approval_time || b.approved_at || 0);
                 default:
                     return (b.view_to_sub_ratio || 0) - (a.view_to_sub_ratio || 0);
             }
@@ -916,13 +920,46 @@ class ViewHuntApp {
             // Show channels view (pending/approved)
             if (channelGrid) channelGrid.style.display = 'grid';
             
-            if (view === 'pending') {
+            if (view === 'pending' || view === 'approved') {
                 if (filters) filters.style.display = 'grid';
-                // Pagination will be shown by updatePaginationControls() when data loads
+                
+                // Show/hide approval time sorting options based on view
+                this.updateSortingOptions(view);
+                
+                // Pagination will be shown by updatePaginationControls() when data loads for pending
             }
 
             // Load channels for the selected view
             this.loadChannels();
+        }
+    }
+
+    updateSortingOptions(view) {
+        const primarySort = document.getElementById('primary-sort');
+        if (!primarySort) return;
+
+        // Get approval time options
+        const approvalTimeDesc = primarySort.querySelector('option[value="approval-time-desc"]');
+        const approvalTimeAsc = primarySort.querySelector('option[value="approval-time-asc"]');
+
+        if (view === 'approved') {
+            // Show approval time options for approved view
+            if (approvalTimeDesc) approvalTimeDesc.style.display = 'block';
+            if (approvalTimeAsc) approvalTimeAsc.style.display = 'block';
+            
+            // Set default to recently approved for admin users
+            if (this.user && (this.user.email === 'nwalikelv@gmail.com' || this.user.email === 'kevis@viewhunt.com')) {
+                primarySort.value = 'approval-time-desc';
+            }
+        } else {
+            // Hide approval time options for other views
+            if (approvalTimeDesc) approvalTimeDesc.style.display = 'none';
+            if (approvalTimeAsc) approvalTimeAsc.style.display = 'none';
+            
+            // Reset to default sorting if currently on approval time
+            if (primarySort.value === 'approval-time-desc' || primarySort.value === 'approval-time-asc') {
+                primarySort.value = 'ratio-desc';
+            }
         }
     }
 

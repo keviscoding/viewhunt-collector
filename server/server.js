@@ -724,12 +724,7 @@ app.get('/api/channels/approved', authenticateToken, async (req, res) => {
                                     $map: {
                                         input: '$approvals',
                                         as: 'approval',
-                                        in: {
-                                            $or: [
-                                                { $eq: ['$$approval.user_email', 'nwalikelv@gmail.com'] },
-                                                { $eq: ['$$approval.user_email', 'kevis@viewhunt.com'] }
-                                            ]
-                                        }
+                                        in: { $eq: ['$$approval.user_id', userId] }
                                     }
                                 }
                             }
