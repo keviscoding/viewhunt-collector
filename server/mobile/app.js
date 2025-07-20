@@ -181,9 +181,6 @@ class ViewHuntApp {
                     viewsSliderMax.value = value;
                     maxViewsInput.value = formatNumber(value);
                 }
-                
-                // Adjust z-index based on values
-                this.updateSliderZIndex(viewsSliderMin, viewsSliderMax);
             });
 
             viewsSliderMax.addEventListener('input', () => {
@@ -196,9 +193,6 @@ class ViewHuntApp {
                     viewsSliderMin.value = value;
                     minViewsInput.value = formatNumber(value);
                 }
-                
-                // Adjust z-index based on values
-                this.updateSliderZIndex(viewsSliderMin, viewsSliderMax);
             });
 
             // Update slider when input changes
@@ -206,7 +200,6 @@ class ViewHuntApp {
                 const value = this.parseFormattedNumber(minViewsInput.value);
                 if (value >= 0 && value <= 10000000) {
                     viewsSliderMin.value = value;
-                    this.updateSliderZIndex(viewsSliderMin, viewsSliderMax);
                 }
             });
 
@@ -214,12 +207,8 @@ class ViewHuntApp {
                 const value = this.parseFormattedNumber(maxViewsInput.value);
                 if (value >= 0 && value <= 10000000) {
                     viewsSliderMax.value = value;
-                    this.updateSliderZIndex(viewsSliderMin, viewsSliderMax);
                 }
             });
-            
-            // Initialize z-index
-            this.updateSliderZIndex(viewsSliderMin, viewsSliderMax);
         }
 
         // Subs range slider
@@ -240,9 +229,6 @@ class ViewHuntApp {
                     subsSliderMax.value = value;
                     maxSubsInput.value = formatNumber(value);
                 }
-                
-                // Adjust z-index based on values
-                this.updateSliderZIndex(subsSliderMin, subsSliderMax);
             });
 
             subsSliderMax.addEventListener('input', () => {
@@ -255,9 +241,6 @@ class ViewHuntApp {
                     subsSliderMin.value = value;
                     minSubsInput.value = formatNumber(value);
                 }
-                
-                // Adjust z-index based on values
-                this.updateSliderZIndex(subsSliderMin, subsSliderMax);
             });
 
             // Update slider when input changes
@@ -265,7 +248,6 @@ class ViewHuntApp {
                 const value = this.parseFormattedNumber(minSubsInput.value);
                 if (value >= 0 && value <= 5000000) {
                     subsSliderMin.value = value;
-                    this.updateSliderZIndex(subsSliderMin, subsSliderMax);
                 }
             });
 
@@ -273,12 +255,8 @@ class ViewHuntApp {
                 const value = this.parseFormattedNumber(maxSubsInput.value);
                 if (value >= 0 && value <= 5000000) {
                     subsSliderMax.value = value;
-                    this.updateSliderZIndex(subsSliderMin, subsSliderMax);
                 }
             });
-            
-            // Initialize z-index
-            this.updateSliderZIndex(subsSliderMin, subsSliderMax);
         }
 
         // Videos range slider
@@ -298,9 +276,6 @@ class ViewHuntApp {
                     videosSliderMax.value = value;
                     maxVideosInput.value = value;
                 }
-                
-                // Adjust z-index based on values
-                this.updateSliderZIndex(videosSliderMin, videosSliderMax);
             });
 
             videosSliderMax.addEventListener('input', () => {
@@ -312,9 +287,6 @@ class ViewHuntApp {
                     videosSliderMin.value = value;
                     minVideosInput.value = value;
                 }
-                
-                // Adjust z-index based on values
-                this.updateSliderZIndex(videosSliderMin, videosSliderMax);
             });
 
             // Update slider when input changes
@@ -322,7 +294,6 @@ class ViewHuntApp {
                 const value = parseInt(minVideosInput.value) || 0;
                 if (value >= 0 && value <= 1000) {
                     videosSliderMin.value = value;
-                    this.updateSliderZIndex(videosSliderMin, videosSliderMax);
                 }
             });
 
@@ -330,43 +301,12 @@ class ViewHuntApp {
                 const value = parseInt(maxVideosInput.value) || 1000;
                 if (value >= 0 && value <= 1000) {
                     videosSliderMax.value = value;
-                    this.updateSliderZIndex(videosSliderMin, videosSliderMax);
                 }
             });
-            
-            // Initialize z-index
-            this.updateSliderZIndex(videosSliderMin, videosSliderMax);
         }
     }
 
-    // Helper function to manage dual slider z-index for better interaction
-    updateSliderZIndex(minSlider, maxSlider) {
-        const minValue = parseInt(minSlider.value);
-        const maxValue = parseInt(maxSlider.value);
-        const minMax = parseInt(minSlider.max);
-        
-        // Calculate relative positions (0-1)
-        const minPos = minValue / minMax;
-        const maxPos = maxValue / minMax;
-        
-        // If sliders are close together, prioritize based on which one was moved
-        const gap = Math.abs(maxValue - minValue) / minMax;
-        
-        if (gap < 0.1) { // If sliders are very close (within 10% of range)
-            // Keep current z-index arrangement, but ensure active one is on top
-            minSlider.style.zIndex = '2';
-            maxSlider.style.zIndex = '1';
-        } else {
-            // Normal case: min slider on top when at low values, max slider on top when at high values
-            if (minPos < 0.5) {
-                minSlider.style.zIndex = '2';
-                maxSlider.style.zIndex = '1';
-            } else {
-                minSlider.style.zIndex = '1';
-                maxSlider.style.zIndex = '2';
-            }
-        }
-    }
+
 
     // Helper function to parse formatted numbers (e.g., "1.5M" -> 1500000)
     parseFormattedNumber(str) {

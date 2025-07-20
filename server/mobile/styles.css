@@ -2089,22 +2089,34 @@ vis Admin Styles */
     pointer-events: auto; /* Enable pointer events for interaction */
 }
 
-/* Dual slider interaction fix - min slider should be on top when values are close */
+/* Dual slider positioning - separate interaction zones */
 .slider:first-child {
-    z-index: 2;
-}
-
-.slider:last-child {
     z-index: 1;
 }
 
-/* When interacting, bring the active slider to front */
-.slider:active {
-    z-index: 3;
+.slider:last-child {
+    z-index: 2;
 }
 
-.slider:focus {
-    z-index: 3;
+/* When actively being used, bring to front */
+.slider:active {
+    z-index: 10;
+}
+
+/* Improve thumb interaction area */
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s ease;
+    pointer-events: auto;
+    position: relative;
+    z-index: 10;
 }
 
 .slider::-webkit-slider-track {
