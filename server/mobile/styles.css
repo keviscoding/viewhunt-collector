@@ -2089,13 +2089,13 @@ vis Admin Styles */
     pointer-events: auto; /* Enable pointer events for interaction */
 }
 
-/* Dual slider positioning - separate interaction zones */
+/* Dual slider positioning - min slider on top for better interaction */
 .slider:first-child {
-    z-index: 1;
+    z-index: 2;
 }
 
 .slider:last-child {
-    z-index: 2;
+    z-index: 1;
 }
 
 /* When actively being used, bring to front */
