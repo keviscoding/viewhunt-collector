@@ -2055,6 +2055,17 @@ vis Admin Styles */
     align-items: center;
 }
 
+/* Light mode: make slider track visible */
+:root .range-slider {
+    background: rgba(102, 126, 234, 0.2);
+    border: 1px solid rgba(102, 126, 234, 0.3);
+}
+
+/* Dark mode: keep existing style */
+[data-theme="dark"] .range-slider {
+    background: rgba(255, 255, 255, 0.2);
+}
+
 .slider {
     position: absolute;
     width: 100%;
