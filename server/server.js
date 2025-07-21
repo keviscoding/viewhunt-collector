@@ -1061,12 +1061,11 @@ app.get('/auth/google/callback/test', (req, res) => {
     });
 });
 
-// Simple callback route for testing
-app.all('/auth/google/callback', (req, res, next) => {
+// Google OAuth callback logging middleware
+app.use('/auth/google/callback', (req, res, next) => {
     console.log('=== GOOGLE OAUTH CALLBACK HIT ===');
     console.log('Method:', req.method);
     console.log('Query:', req.query);
-    console.log('Headers:', req.headers);
     console.log('================================');
     next();
 });
