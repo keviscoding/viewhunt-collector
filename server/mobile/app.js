@@ -528,9 +528,18 @@ class ViewHuntApp {
         } catch (error) {
             console.error('Error loading channels:', error);
             loading.style.display = 'none';
-            emptyState.style.display = 'block';
-            emptyState.querySelector('h2').textContent = 'Error Loading Channels';
-            emptyState.querySelector('p').textContent = 'Please try again or check your connection.';
+            
+            // Check if this is a subscription error
+            if (error.message.includes('subscription') || 
+                (this.subscriptionStatus && !this.subscriptionStatus.hasAccess && 
+                 this.subscriptionStatus.type !== 'admin' && 
+                 this.subscriptionStatus.type !== 'beta')) {
+                this.showSubscriptionGate();
+            } else {
+                emptyState.style.display = 'block';
+                emptyState.querySelector('h2').textContent = 'Error Loading Channels';
+                emptyState.querySelector('p').textContent = 'Please try again or check your connection.';
+            }
         } finally {
             this.isLoadingBatch = false;
         }
@@ -619,7 +628,18 @@ class ViewHuntApp {
         } catch (error) {
             console.error('Error loading approved channels:', error);
             loading.style.display = 'none';
-            emptyState.style.display = 'block';
+            
+            // Check if this is a subscription error
+            if (error.message.includes('subscription') || 
+                (this.subscriptionStatus && !this.subscriptionStatus.hasAccess && 
+                 this.subscriptionStatus.type !== 'admin' && 
+                 this.subscriptionStatus.type !== 'beta')) {
+                this.showSubscriptionGate();
+            } else {
+                emptyState.style.display = 'block';
+                emptyState.querySelector('h2').textContent = 'Error Loading Channels';
+                emptyState.querySelector('p').textContent = 'Please try again or check your connection.';
+            }
         }
     }
 
@@ -926,8 +946,11 @@ class ViewHuntApp {
     }
 
     switchView(view) {
-        // Check subscription access for restricted views
-        if ((view === 'approved' || view === 'trending') && this.subscriptionStatus && !this.subscriptionStatus.hasAccess) {
+        // Check subscription access for restricted views (but allow admin and beta users)
+        if ((view === 'approved' || view === 'trending') && this.subscriptionStatus && 
+            !this.subscriptionStatus.hasAccess && 
+            this.subscriptionStatus.type !== 'admin' && 
+            this.subscriptionStatus.type !== 'beta') {
             this.showSubscriptionGate();
             // Update active nav button to show locked state but don't switch
             document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -1153,13 +1176,19 @@ class ViewHuntApp {
     }
 
     updateSubscriptionUI() {
-        const tabs = document.querySelectorAll('.tab-button');
+        const tabs = document.querySelectorAll('.nav-btn'); // Changed from .tab-button to .nav-btn
         const subscriptionGate = document.getElementById('subscription-gate');
         
         // Update user menu subscription info
         this.updateUserMenuSubscriptionInfo();
         
-        if (!this.subscriptionStatus || !this.subscriptionStatus.hasAccess) {
+        // Check if user needs subscription (exclude admin and beta users)
+        const needsSubscription = !this.subscriptionStatus || 
+            (!this.subscriptionStatus.hasAccess && 
+             this.subscriptionStatus.type !== 'admin' && 
+             this.subscriptionStatus.type !== 'beta');
+        
+        if (needsSubscription) {
             // Show subscription gate for restricted tabs
             tabs.forEach(tab => {
                 if (tab.dataset.view === 'approved' || tab.dataset.view === 'trending') {
@@ -1933,8 +1962,10 @@ class ViewHuntApp {
         content.innerHTML = '<div class="social-loading">Loading Kevis\'s picks...</div>';
         
         try {
-            // Check subscription access first
-            if (!this.subscriptionStatus || !this.subscriptionStatus.hasAccess) {
+            // Check subscription access first (but allow admin and beta users)
+            if (!this.subscriptionStatus || (!this.subscriptionStatus.hasAccess && 
+                this.subscriptionStatus.type !== 'admin' && 
+                this.subscriptionStatus.type !== 'beta')) {
                 content.innerHTML = `
                     <div class="subscription-required">
                         <div class="lock-icon">🔒</div>
@@ -2017,8 +2048,10 @@ class ViewHuntApp {
         content.innerHTML = '<div class="social-loading">Loading trending channels...</div>';
         
         try {
-            // Check subscription access first
-            if (!this.subscriptionStatus || !this.subscriptionStatus.hasAccess) {
+            // Check subscription access first (but allow admin and beta users)
+            if (!this.subscriptionStatus || (!this.subscriptionStatus.hasAccess && 
+                this.subscriptionStatus.type !== 'admin' && 
+                this.subscriptionStatus.type !== 'beta')) {
                 content.innerHTML = `
                     <div class="subscription-required">
                         <div class="lock-icon">🔒</div>

@@ -993,37 +993,77 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Determine user type and access level
-        const BETA_CUTOFF_DATE = new Date('2025-01-01');
+        // Determine subscription status
+        const BETA_CUTOFF_DATE = new Date('2025-07-21');
         const userCreatedAt = new Date(user.created_at);
         
-        let userType = 'unknown';
-        let hasAccess = false;
-        let subscriptionStatus = null;
-        
-        if (user.migrated_from_v1) {
-            userType = 'v1_migrated';
-            hasAccess = user.subscription && user.subscription.stripeSubscriptionId;
-        } else if (userCreatedAt < BETA_CUTOFF_DATE) {
-            userType = 'v2_beta';
-            hasAccess = true; // Grandfathered access
-        } else {
-            userType = 'new_v2';
-            hasAccess = user.subscription && user.subscription.stripeSubscriptionId;
+        let subscriptionStatus = {
+            hasAccess: false,
+            type: 'none',
+            status: 'inactive',
+            reason: 'No subscription'
+        };
+
+        // Admin always has access
+        if (user.email === process.env.ADMIN_EMAIL) {
+            subscriptionStatus = {
+                hasAccess: true,
+                type: 'admin',
+                status: 'active',
+                reason: 'Admin access'
+            };
         }
-        
-        // Get subscription details if available
-        if (user.subscription && user.subscription.stripeSubscriptionId && stripe) {
-            try {
-                const subscription = await stripe.subscriptions.retrieve(user.subscription.stripeSubscriptionId);
-                subscriptionStatus = {
-                    status: subscription.status,
-                    current_period_end: subscription.current_period_end,
-                    cancel_at_period_end: subscription.cancel_at_period_end,
-                    plan: user.subscription.plan || 'pro'
-                };
-            } catch (error) {
-                console.error('Error fetching subscription details:', error);
+        // V2 Beta users (created before cutoff) get free access
+        else if (!user.migrated_from_v1 && userCreatedAt < BETA_CUTOFF_DATE) {
+            subscriptionStatus = {
+                hasAccess: true,
+                type: 'beta',
+                status: 'active',
+                reason: 'Beta tester access'
+            };
+        }
+        // V1 migrated users need active subscription
+        else if (user.migrated_from_v1) {
+            if (user.subscription && user.subscription.stripeSubscriptionId && stripe) {
+                try {
+                    const subscription = await stripe.subscriptions.retrieve(user.subscription.stripeSubscriptionId);
+                    subscriptionStatus = {
+                        hasAccess: subscription.status === 'active',
+                        type: 'stripe',
+                        status: subscription.status,
+                        reason: subscription.status === 'active' ? 'Active subscription' : `Subscription ${subscription.status}`,
+                        stripeSubscriptionId: subscription.id,
+                        currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+                        cancelAtPeriodEnd: subscription.cancel_at_period_end
+                    };
+                } catch (stripeError) {
+                    console.error('Stripe subscription check failed:', stripeError);
+                    subscriptionStatus.reason = 'Subscription verification failed';
+                }
+            } else {
+                subscriptionStatus.reason = 'Subscription required';
+            }
+        }
+        // New V2 users need subscription
+        else {
+            if (user.subscription && user.subscription.stripeSubscriptionId && stripe) {
+                try {
+                    const subscription = await stripe.subscriptions.retrieve(user.subscription.stripeSubscriptionId);
+                    subscriptionStatus = {
+                        hasAccess: subscription.status === 'active',
+                        type: 'stripe',
+                        status: subscription.status,
+                        reason: subscription.status === 'active' ? 'Active subscription' : `Subscription ${subscription.status}`,
+                        stripeSubscriptionId: subscription.id,
+                        currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+                        cancelAtPeriodEnd: subscription.cancel_at_period_end
+                    };
+                } catch (stripeError) {
+                    console.error('Stripe subscription check failed:', stripeError);
+                    subscriptionStatus.reason = 'Subscription verification failed';
+                }
+            } else {
+                subscriptionStatus.reason = 'Subscription required for new users';
             }
         }
 
@@ -1033,8 +1073,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
             display_name: user.display_name,
             profilePicture: user.profilePicture,
             created_at: user.created_at,
-            userType: userType,
-            hasAccess: hasAccess,
+            migrated_from_v1: user.migrated_from_v1 || false,
             subscription: subscriptionStatus,
             stats: user.stats || { channels_approved: 0, channels_rejected: 0, total_reviews: 0 }
         });
