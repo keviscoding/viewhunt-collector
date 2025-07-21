@@ -1741,6 +1741,10 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
                 case 'videos-asc': return ['video_count', 1];
                 case 'newest': return ['created_at', -1];
                 case 'oldest': return ['created_at', 1];
+                case 'approval-time-desc': return ['first_approval_time', -1];
+                case 'approval-time-asc': return ['first_approval_time', 1];
+                case 'approvals-desc': return ['approval_count', -1];
+                case 'approvals-asc': return ['approval_count', 1];
                 default: return ['view_to_sub_ratio', -1];
             }
         };

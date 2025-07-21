@@ -370,6 +370,10 @@ class ViewHuntApp {
                     return new Date(b.first_approval_time || b.approved_at || 0) - new Date(a.first_approval_time || a.approved_at || 0);
                 case 'approval-time-asc':
                     return new Date(a.first_approval_time || a.approved_at || 0) - new Date(b.first_approval_time || b.approved_at || 0);
+                case 'approvals-desc':
+                    return (b.approval_count || 0) - (a.approval_count || 0);
+                case 'approvals-asc':
+                    return (a.approval_count || 0) - (b.approval_count || 0);
                 default:
                     return (b.view_to_sub_ratio || 0) - (a.view_to_sub_ratio || 0);
             }
@@ -1020,26 +1024,33 @@ class ViewHuntApp {
         const primarySort = document.getElementById('primary-sort');
         if (!primarySort) return;
 
-        // Get approval time options
+        // Get approval time and approvals count options
         const approvalTimeDesc = primarySort.querySelector('option[value="approval-time-desc"]');
         const approvalTimeAsc = primarySort.querySelector('option[value="approval-time-asc"]');
+        const approvalsDesc = primarySort.querySelector('option[value="approvals-desc"]');
+        const approvalsAsc = primarySort.querySelector('option[value="approvals-asc"]');
 
         if (view === 'approved') {
-            // Show approval time options for approved view
+            // Show approval time and approvals count options for approved view
             if (approvalTimeDesc) approvalTimeDesc.style.display = 'block';
             if (approvalTimeAsc) approvalTimeAsc.style.display = 'block';
+            if (approvalsDesc) approvalsDesc.style.display = 'block';
+            if (approvalsAsc) approvalsAsc.style.display = 'block';
             
             // Set default to recently approved for admin users
             if (this.user && (this.user.email === 'nwalikelv@gmail.com' || this.user.email === 'kevis@viewhunt.com')) {
                 primarySort.value = 'approval-time-desc';
             }
         } else {
-            // Hide approval time options for other views
+            // Hide approval time and approvals count options for other views
             if (approvalTimeDesc) approvalTimeDesc.style.display = 'none';
             if (approvalTimeAsc) approvalTimeAsc.style.display = 'none';
+            if (approvalsDesc) approvalsDesc.style.display = 'none';
+            if (approvalsAsc) approvalsAsc.style.display = 'none';
             
-            // Reset to default sorting if currently on approval time
-            if (primarySort.value === 'approval-time-desc' || primarySort.value === 'approval-time-asc') {
+            // Reset to default sorting if currently on approval time or approvals count
+            if (primarySort.value === 'approval-time-desc' || primarySort.value === 'approval-time-asc' || 
+                primarySort.value === 'approvals-desc' || primarySort.value === 'approvals-asc') {
                 primarySort.value = 'ratio-desc';
             }
         }
