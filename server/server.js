@@ -120,8 +120,70 @@ app.get('/pricing', (req, res) => {
 });
 
 // Subscription success page
-app.get('/subscription-success', (req, res) => {
-    res.redirect('/app?success=subscription_activated');
+app.get('/subscription-success', async (req, res) => {
+    try {
+        const { session_id } = req.query;
+        
+        if (!session_id) {
+            console.error('No session_id provided');
+            return res.redirect('/app?error=invalid_session');
+        }
+        
+        console.log('Processing subscription success for session:', session_id);
+        
+        // Check if Stripe is configured
+        if (!stripe) {
+            console.error('Stripe not configured');
+            return res.redirect('/app?error=payment_system_not_configured');
+        }
+        
+        // Retrieve the session from Stripe
+        const session = await stripe.checkout.sessions.retrieve(session_id);
+        console.log('Stripe session retrieved:', session.payment_status, session.customer);
+        
+        if (session.payment_status === 'paid') {
+            // Update user subscription status
+            const subscription = await stripe.subscriptions.retrieve(session.subscription);
+            const customer = await stripe.customers.retrieve(session.customer);
+            
+            console.log('Processing subscription for customer:', customer.email);
+            
+            // Find user by email
+            const user = await db.collection('users').findOne({ email: customer.email });
+            
+            if (user) {
+                console.log('Updating subscription for user:', user.email);
+                
+                await db.collection('users').updateOne(
+                    { _id: user._id },
+                    {
+                        $set: {
+                            'subscription.status': 'active',
+                            'subscription.plan': 'pro',
+                            'subscription.stripeSubscriptionId': subscription.id,
+                            'subscription.stripeCustomerId': customer.id,
+                            'subscription.startDate': new Date(subscription.current_period_start * 1000),
+                            'subscription.endDate': new Date(subscription.current_period_end * 1000),
+                            updated_at: new Date()
+                        }
+                    }
+                );
+                
+                console.log('Subscription updated successfully for:', user.email);
+                res.redirect('/app?success=subscription_activated');
+            } else {
+                console.error('User not found for email:', customer.email);
+                res.redirect('/app?error=user_not_found');
+            }
+        } else {
+            console.error('Payment not completed:', session.payment_status);
+            res.redirect('/app?error=payment_failed');
+        }
+        
+    } catch (error) {
+        console.error('Error handling subscription success:', error);
+        res.redirect('/app?error=processing_failed');
+    }
 });
 
 // Serve mobile app for /app path
@@ -2246,6 +2308,77 @@ app.post('/api/subscription/reactivate', authenticateToken, async (req, res) => 
     } catch (error) {
         console.error('Reactivate subscription error:', error);
         res.status(500).json({ error: 'Failed to reactivate subscription' });
+    }
+});
+
+// Fix subscription for paid user (admin only)
+app.post('/api/subscription/fix-user', authenticateToken, async (req, res) => {
+    try {
+        const { userEmail } = req.body;
+        
+        // Check if user is admin
+        if (req.user.email !== process.env.ADMIN_EMAIL) {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        
+        if (!userEmail) {
+            return res.status(400).json({ error: 'User email required' });
+        }
+        
+        // Find user
+        const user = await db.collection('users').findOne({ email: userEmail });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        // Get their Stripe customer
+        const customers = await stripe.customers.list({ email: userEmail, limit: 1 });
+        
+        if (customers.data.length === 0) {
+            return res.status(404).json({ error: 'No Stripe customer found' });
+        }
+        
+        const customer = customers.data[0];
+        
+        // Get their active subscriptions
+        const subscriptions = await stripe.subscriptions.list({ 
+            customer: customer.id, 
+            status: 'active',
+            limit: 1 
+        });
+        
+        if (subscriptions.data.length === 0) {
+            return res.status(404).json({ error: 'No active subscription found' });
+        }
+        
+        const subscription = subscriptions.data[0];
+        
+        // Update user in database
+        await db.collection('users').updateOne(
+            { _id: user._id },
+            {
+                $set: {
+                    'subscription.status': 'active',
+                    'subscription.plan': 'pro',
+                    'subscription.stripeSubscriptionId': subscription.id,
+                    'subscription.stripeCustomerId': customer.id,
+                    'subscription.startDate': new Date(subscription.current_period_start * 1000),
+                    'subscription.endDate': new Date(subscription.current_period_end * 1000),
+                    updated_at: new Date()
+                }
+            }
+        );
+        
+        res.json({ 
+            success: true, 
+            message: 'User subscription fixed',
+            user: userEmail,
+            subscription: subscription.id
+        });
+        
+    } catch (error) {
+        console.error('Error fixing user subscription:', error);
+        res.status(500).json({ error: 'Failed to fix subscription' });
     }
 });
 
