@@ -301,10 +301,61 @@ const requireSubscription = async (req, res, next) => {
             });
         }
         
-        // V2 Beta users (not migrated from V1) get free access
-        if (!fullUser.migrated_from_v1) {
-            console.log('V2 beta user, granting free access:', user.email);
+        // V2 Beta users (existing users before cutoff date) get free access
+        // New users after a certain date need subscription
+        const BETA_CUTOFF_DATE = new Date('2025-07-21'); // No more free beta access after today
+        const userCreatedAt = new Date(fullUser.created_at);
+        
+        if (!fullUser.migrated_from_v1 && userCreatedAt < BETA_CUTOFF_DATE) {
+            console.log('V2 beta user (grandfathered), granting free access:', user.email);
             return next();
+        }
+        
+        // New V2 users (after cutoff) need subscription
+        if (!fullUser.migrated_from_v1 && userCreatedAt >= BETA_CUTOFF_DATE) {
+            console.log('New V2 user, checking subscription requirement:', user.email);
+            
+            // If Stripe is not configured, allow access for development
+            if (!stripe) {
+                console.warn('Stripe not configured, allowing access for new V2 user');
+                return next();
+            }
+            
+            // Check if user has subscription data
+            if (!fullUser.subscription || !fullUser.subscription.stripeSubscriptionId) {
+                console.log('New V2 user has no subscription data');
+                return res.status(403).json({ 
+                    error: 'Active subscription required',
+                    redirect: '/pricing',
+                    userType: 'new_v2_user'
+                });
+            }
+            
+            // Verify subscription with Stripe for new V2 users
+            try {
+                const subscription = await stripe.subscriptions.retrieve(fullUser.subscription.stripeSubscriptionId);
+                
+                if (subscription.status !== 'active') {
+                    console.log('New V2 user subscription not active:', subscription.status);
+                    return res.status(403).json({ 
+                        error: 'Active subscription required',
+                        redirect: '/pricing',
+                        userType: 'new_v2_user'
+                    });
+                }
+                
+                console.log('New V2 user subscription verified as active');
+                req.subscription = subscription;
+                return next();
+                
+            } catch (stripeError) {
+                console.error('Stripe subscription check failed for new V2 user:', stripeError);
+                return res.status(403).json({ 
+                    error: 'Subscription verification failed',
+                    redirect: '/pricing',
+                    userType: 'new_v2_user'
+                });
+            }
         }
         
         // V1 migrated users need active subscription
@@ -942,16 +993,96 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
+        // Determine user type and access level
+        const BETA_CUTOFF_DATE = new Date('2025-01-01');
+        const userCreatedAt = new Date(user.created_at);
+        
+        let userType = 'unknown';
+        let hasAccess = false;
+        let subscriptionStatus = null;
+        
+        if (user.migrated_from_v1) {
+            userType = 'v1_migrated';
+            hasAccess = user.subscription && user.subscription.stripeSubscriptionId;
+        } else if (userCreatedAt < BETA_CUTOFF_DATE) {
+            userType = 'v2_beta';
+            hasAccess = true; // Grandfathered access
+        } else {
+            userType = 'new_v2';
+            hasAccess = user.subscription && user.subscription.stripeSubscriptionId;
+        }
+        
+        // Get subscription details if available
+        if (user.subscription && user.subscription.stripeSubscriptionId && stripe) {
+            try {
+                const subscription = await stripe.subscriptions.retrieve(user.subscription.stripeSubscriptionId);
+                subscriptionStatus = {
+                    status: subscription.status,
+                    current_period_end: subscription.current_period_end,
+                    cancel_at_period_end: subscription.cancel_at_period_end,
+                    plan: user.subscription.plan || 'pro'
+                };
+            } catch (error) {
+                console.error('Error fetching subscription details:', error);
+            }
+        }
+
         res.json({
             id: user._id,
             email: user.email,
             display_name: user.display_name,
+            profilePicture: user.profilePicture,
             created_at: user.created_at,
+            userType: userType,
+            hasAccess: hasAccess,
+            subscription: subscriptionStatus,
             stats: user.stats || { channels_approved: 0, channels_rejected: 0, total_reviews: 0 }
         });
 
     } catch (error) {
         console.error('Get user error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Get user subscription status (separate endpoint for frequent checks)
+app.get('/api/user/subscription-status', authenticateToken, async (req, res) => {
+    try {
+        const user = await db.collection('users').findOne(
+            { _id: new ObjectId(req.user.userId) },
+            { projection: { subscription: 1, created_at: 1, migrated_from_v1: 1 } }
+        );
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Determine access level
+        const BETA_CUTOFF_DATE = new Date('2025-01-01');
+        const userCreatedAt = new Date(user.created_at);
+        
+        let hasAccess = false;
+        let reason = '';
+        
+        if (user.migrated_from_v1) {
+            hasAccess = user.subscription && user.subscription.stripeSubscriptionId;
+            reason = hasAccess ? 'v1_subscriber' : 'v1_no_subscription';
+        } else if (userCreatedAt < BETA_CUTOFF_DATE) {
+            hasAccess = true;
+            reason = 'v2_beta_access';
+        } else {
+            hasAccess = user.subscription && user.subscription.stripeSubscriptionId;
+            reason = hasAccess ? 'new_v2_subscriber' : 'new_v2_no_subscription';
+        }
+
+        res.json({
+            hasAccess: hasAccess,
+            reason: reason,
+            requiresSubscription: !hasAccess && (user.migrated_from_v1 || userCreatedAt >= BETA_CUTOFF_DATE)
+        });
+
+    } catch (error) {
+        console.error('Get subscription status error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -1981,6 +2112,93 @@ app.post('/api/subscription/create-checkout-session', authenticateToken, async (
             success: false, 
             error: 'Failed to create checkout session' 
         });
+    }
+});
+
+// Cancel subscription
+app.post('/api/subscription/cancel', authenticateToken, async (req, res) => {
+    try {
+        // Check if Stripe is configured
+        if (!stripe) {
+            return res.status(500).json({ error: 'Payment system not configured' });
+        }
+
+        const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        
+        if (!user || !user.subscription || !user.subscription.stripeSubscriptionId) {
+            return res.status(400).json({ error: 'No active subscription found' });
+        }
+
+        // Cancel subscription at period end
+        const subscription = await stripe.subscriptions.update(
+            user.subscription.stripeSubscriptionId,
+            { cancel_at_period_end: true }
+        );
+
+        // Update user record
+        await db.collection('users').updateOne(
+            { _id: new ObjectId(req.user.userId) },
+            {
+                $set: {
+                    'subscription.cancel_at_period_end': true,
+                    'subscription.canceled_at': new Date(),
+                    updated_at: new Date()
+                }
+            }
+        );
+
+        res.json({
+            message: 'Subscription will be canceled at the end of the current billing period',
+            cancelAt: subscription.current_period_end
+        });
+
+    } catch (error) {
+        console.error('Cancel subscription error:', error);
+        res.status(500).json({ error: 'Failed to cancel subscription' });
+    }
+});
+
+// Reactivate subscription
+app.post('/api/subscription/reactivate', authenticateToken, async (req, res) => {
+    try {
+        // Check if Stripe is configured
+        if (!stripe) {
+            return res.status(500).json({ error: 'Payment system not configured' });
+        }
+
+        const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        
+        if (!user || !user.subscription || !user.subscription.stripeSubscriptionId) {
+            return res.status(400).json({ error: 'No subscription found' });
+        }
+
+        // Reactivate subscription
+        const subscription = await stripe.subscriptions.update(
+            user.subscription.stripeSubscriptionId,
+            { cancel_at_period_end: false }
+        );
+
+        // Update user record
+        await db.collection('users').updateOne(
+            { _id: new ObjectId(req.user.userId) },
+            {
+                $set: {
+                    'subscription.cancel_at_period_end': false,
+                    updated_at: new Date()
+                },
+                $unset: {
+                    'subscription.canceled_at': ''
+                }
+            }
+        );
+
+        res.json({
+            message: 'Subscription reactivated successfully'
+        });
+
+    } catch (error) {
+        console.error('Reactivate subscription error:', error);
+        res.status(500).json({ error: 'Failed to reactivate subscription' });
     }
 });
 

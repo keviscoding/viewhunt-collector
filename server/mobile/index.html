@@ -41,6 +41,15 @@
                                 <p><strong id="user-display-name">ChannelHunter</strong></p>
                                 <p><span id="user-approved-count">0</span> approved • <span id="user-rejected-count">0</span> rejected</p>
                             </div>
+                            <div class="subscription-info" id="subscription-info">
+                                <div class="subscription-status">
+                                    <span class="status-indicator" id="status-indicator">●</span>
+                                    <span class="status-text" id="status-text">Loading...</span>
+                                </div>
+                                <div class="subscription-actions" id="subscription-actions" style="display: none;">
+                                    <button class="user-menu-item" onclick="window.app.manageSubscription()">Manage Subscription</button>
+                                </div>
+                            </div>
                             <button class="user-menu-item" onclick="window.app.logout()">Sign Out</button>
                         </div>
                     </div>

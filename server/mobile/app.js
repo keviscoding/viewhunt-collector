@@ -11,6 +11,7 @@ class ViewHuntApp {
         this.authToken = localStorage.getItem('viewhunt_token');
         this.token = this.authToken; // Alias for compatibility
         this.user = null;
+        this.subscriptionStatus = null;
         this.isDarkMode = localStorage.getItem('viewhunt_theme') === 'dark';
         
         this.init();
@@ -20,6 +21,7 @@ class ViewHuntApp {
         this.initTheme();
         this.setupEventListeners();
         await this.checkAuthStatus();
+        await this.checkSubscriptionStatus();
         await this.loadStats();
         await this.loadChannels();
     }
@@ -908,9 +910,23 @@ class ViewHuntApp {
     }
 
     switchView(view) {
+        // Check subscription access for restricted views
+        if ((view === 'approved' || view === 'trending') && this.subscriptionStatus && !this.subscriptionStatus.hasAccess) {
+            this.showSubscriptionGate();
+            // Update active nav button to show locked state but don't switch
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                if (btn.dataset.view === view) {
+                    btn.classList.add('locked');
+                    this.showToast('🔒 Subscription required for ' + (view === 'approved' ? "Kevis' Picks" : 'Trending Today'));
+                }
+            });
+            return;
+        }
+
         // Update active nav button
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.view === view);
+            btn.classList.remove('locked'); // Remove locked state when switching to allowed view
         });
 
         // Show/hide different views
@@ -921,8 +937,9 @@ class ViewHuntApp {
         const emptyState = document.getElementById('empty-state');
         const loading = document.getElementById('loading');
         const paginationControls = document.getElementById('pagination-controls');
+        const subscriptionGate = document.getElementById('subscription-gate');
 
-        // Hide all views first (including pagination)
+        // Hide all views first (including pagination and subscription gate)
         if (filters) filters.style.display = 'none';
         if (channelGrid) channelGrid.style.display = 'none';
         if (collectionsView) collectionsView.style.display = 'none';
@@ -930,6 +947,7 @@ class ViewHuntApp {
         if (emptyState) emptyState.style.display = 'none';
         if (loading) loading.style.display = 'none';
         if (paginationControls) paginationControls.style.display = 'none';
+        if (subscriptionGate) subscriptionGate.style.display = 'none';
 
         this.currentView = view;
 
@@ -1107,6 +1125,80 @@ class ViewHuntApp {
         }
     }
 
+    async checkSubscriptionStatus() {
+        // Subscription status is now included in user data from checkAuthStatus
+        if (this.user && this.user.subscription) {
+            this.subscriptionStatus = this.user.subscription;
+            this.updateSubscriptionUI();
+        }
+    }
+
+    updateSubscriptionUI() {
+        const tabs = document.querySelectorAll('.tab-button');
+        const subscriptionGate = document.getElementById('subscription-gate');
+        
+        // Update user menu subscription info
+        this.updateUserMenuSubscriptionInfo();
+        
+        if (!this.subscriptionStatus || !this.subscriptionStatus.hasAccess) {
+            // Show subscription gate for restricted tabs
+            tabs.forEach(tab => {
+                if (tab.dataset.view === 'approved' || tab.dataset.view === 'trending') {
+                    tab.classList.add('locked');
+                    tab.title = 'Subscription required';
+                }
+            });
+            
+            // Show subscription message if on restricted view
+            if (this.currentView === 'approved' || this.currentView === 'trending') {
+                this.showSubscriptionGate();
+            }
+        } else {
+            // Remove locks if user has access
+            tabs.forEach(tab => {
+                tab.classList.remove('locked');
+                tab.title = '';
+            });
+            
+            // Hide subscription gate
+            if (subscriptionGate) {
+                subscriptionGate.style.display = 'none';
+            }
+        }
+    }
+
+    showSubscriptionGate() {
+        const channelsContainer = document.getElementById('channels-container');
+        const subscriptionGate = document.getElementById('subscription-gate');
+        
+        if (subscriptionGate) {
+            subscriptionGate.style.display = 'block';
+            channelsContainer.style.display = 'none';
+        } else {
+            // Create subscription gate if it doesn't exist
+            const gateHTML = `
+                <div id="subscription-gate" class="subscription-gate">
+                    <div class="gate-content">
+                        <div class="gate-icon">🔒</div>
+                        <h3>Subscription Required</h3>
+                        <p>Access to Kevis' Picks and Trending channels requires an active subscription.</p>
+                        <div class="gate-buttons">
+                            <button class="btn btn-primary" onclick="window.open('/pricing', '_blank')">
+                                Subscribe Now
+                            </button>
+                            <button class="btn btn-secondary" onclick="app.switchView('pending')">
+                                View Pending Channels
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            channelsContainer.insertAdjacentHTML('beforebegin', gateHTML);
+            channelsContainer.style.display = 'none';
+        }
+    }
+
     updateUIForLoggedInUser() {
         document.getElementById('auth-buttons').style.display = 'none';
         document.getElementById('user-info').style.display = 'flex';
@@ -1116,6 +1208,9 @@ class ViewHuntApp {
         document.getElementById('user-display-name').textContent = this.user.display_name;
         document.getElementById('user-approved-count').textContent = this.user.stats.channels_approved;
         document.getElementById('user-rejected-count').textContent = this.user.stats.channels_rejected;
+        
+        // Check subscription status and update UI
+        this.checkSubscriptionStatus();
     }
 
     updateUIForLoggedOutUser() {
@@ -1268,6 +1363,41 @@ class ViewHuntApp {
         if (!menu.contains(event.target) && !menuBtn.contains(event.target)) {
             menu.style.display = 'none';
         }
+    }
+
+    updateUserMenuSubscriptionInfo() {
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+        const subscriptionActions = document.getElementById('subscription-actions');
+        
+        if (!this.subscriptionStatus) {
+            statusText.textContent = 'Loading...';
+            return;
+        }
+        
+        const { hasAccess, type, status, reason } = this.subscriptionStatus;
+        
+        if (hasAccess) {
+            statusIndicator.style.color = '#10b981'; // Green
+            
+            if (type === 'admin') {
+                statusText.textContent = 'Admin Access';
+            } else if (type === 'beta') {
+                statusText.textContent = 'Beta Access';
+            } else if (type === 'stripe') {
+                statusText.textContent = 'Pro Subscription';
+                subscriptionActions.style.display = 'block';
+            }
+        } else {
+            statusIndicator.style.color = '#ef4444'; // Red
+            statusText.textContent = reason || 'Subscription Required';
+            subscriptionActions.style.display = 'none';
+        }
+    }
+
+    manageSubscription() {
+        // Open subscription management
+        window.open('/pricing', '_blank');
     }
 
     logout() {
