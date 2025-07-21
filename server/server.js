@@ -956,6 +956,11 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     }
 });
 
+// Test route to verify OAuth routes are working
+app.get('/auth/test', (req, res) => {
+    res.json({ message: 'OAuth routes are working', timestamp: new Date() });
+});
+
 // Google OAuth initialization route
 app.get('/auth/google', (req, res) => {
     // Check if Google OAuth is configured
@@ -1045,6 +1050,15 @@ app.get('/auth/google/callback', async (req, res) => {
         console.error('Google OAuth callback error:', error);
         res.redirect('/app?error=oauth_failed');
     }
+});
+
+// Fallback route for debugging OAuth callback issues
+app.get('/auth/google/callback/test', (req, res) => {
+    res.json({ 
+        message: 'OAuth callback route is accessible',
+        query: req.query,
+        timestamp: new Date()
+    });
 });
 
 // Helper function to process Google user
