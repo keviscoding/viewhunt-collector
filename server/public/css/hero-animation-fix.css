@@ -1,0 +1,25 @@
+/* Restore subtle hero text animation without causing overlap */
+@media (max-width: 768px) {
+    /* Allow subtle animation on hero title */
+    .hero-title {
+        transform: none !important; /* Initially no transform */
+        margin-bottom: 35px !important; /* Keep increased space between title and subtitle */
+        position: relative !important;
+        z-index: 2 !important; /* Ensure title is on top */
+        transition: transform 0.3s ease !important; /* Smooth transition */
+    }
+    
+    /* Subtitle needs more space to prevent overlap */
+    .hero-subtitle {
+        position: relative !important;
+        z-index: 1 !important;
+        margin-top: 10px !important; /* More space at top */
+        padding-top: 25px !important; /* Add padding to prevent overlap */
+        transform: none !important; /* Prevent any transforms during scroll */
+    }
+    
+    /* Add subtle parallax effect when scrolling */
+    .hero-content:hover .hero-title {
+        transform: translateY(-5px) !important; /* Very subtle movement */
+    }
+} 

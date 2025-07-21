@@ -1,0 +1,1959 @@
+:root {
+    --primary: #6366F1;
+    --primary-dark: #4F46E5;
+    --secondary: #10B981;
+    --dark: #111827;
+    --darker-bg: #0A0F1D;
+    --light: #F9FAFB;
+    --gray: #6B7280;
+    --gray-light: #E5E7EB;
+    --danger: #EF4444;
+    --warning: #F59E0B;
+    --header-bg: rgba(15, 23, 42, 0.75);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+body {
+    background: linear-gradient(to bottom, var(--darker-bg), #1E293B);
+    color: var(--light);
+    line-height: 1.6;
+    position: relative;
+    min-height: 100vh;
+}
+
+/* Starry background */
+.stars-background {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    background-image: radial-gradient(2px 2px at 20px 30px, #eaeaea, rgba(0, 0, 0, 0)),
+                      radial-gradient(2px 2px at 40px 70px, #ffffff, rgba(0, 0, 0, 0)),
+                      radial-gradient(1px 1px at 90px 40px, #ffffff, rgba(0, 0, 0, 0)),
+                      radial-gradient(2px 2px at 160px 120px, #ddd, rgba(0, 0, 0, 0)),
+                      radial-gradient(1px 1px at 230px 190px, #ffffff, rgba(0, 0, 0, 0)),
+                      radial-gradient(1px 1px at 280px 260px, #ffffff, rgba(0, 0, 0, 0)),
+                      radial-gradient(2px 2px at 350px 330px, #eaeaea, rgba(0, 0, 0, 0)),
+                      radial-gradient(1px 1px at 400px 400px, #ffffff, rgba(0, 0, 0, 0)),
+                      radial-gradient(2px 2px at 480px 470px, #ddd, rgba(0, 0, 0, 0)),
+                      radial-gradient(1px 1px at 600px 550px, #ffffff, rgba(0, 0, 0, 0)),
+                      radial-gradient(2px 2px at 700px 600px, #eaeaea, rgba(0, 0, 0, 0)),
+                      radial-gradient(1px 1px at 800px 650px, #ffffff, rgba(0, 0, 0, 0));
+    background-repeat: repeat;
+    background-size: 900px 900px;
+    opacity: 0.4;
+    animation: twinkle 10s infinite alternate;
+}
+
+@keyframes twinkle {
+    0% {
+        opacity: 0.3;
+    }
+    50% {
+        opacity: 0.4;
+    }
+    100% {
+        opacity: 0.35;
+    }
+}
+
+/* Remove shooting stars animation as per request */
+#shooting-stars-container {
+    display: none;
+}
+
+.container {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px;
+}
+
+/* Header & Navigation */
+header {
+    background-color: var(--header-bg);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    padding: 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    transition: all 0.3s ease;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.header-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.logo {
+    font-size: 1.5rem;
+    font-weight: 700;
+    text-decoration: none;
+    color: var(--light);
+    display: flex;
+    align-items: center;
+    margin: -40px 0;
+}
+
+.logo-image {
+    height: 180px;
+    margin-right: 0;
+}
+
+.nav {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+}
+
+.nav-link {
+    color: var(--light);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s;
+}
+
+.nav-link:hover {
+    color: var(--primary);
+}
+
+/* Buttons */
+.btn {
+    display: inline-block;
+    background-color: var(--primary);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.3s;
+    border: none;
+    cursor: pointer;
+}
+
+.btn-lg {
+    padding: 16px 32px;
+    font-size: 18px;
+}
+
+.btn-outline {
+    background-color: transparent;
+    border: 2px solid var(--primary);
+    color: var(--light);
+}
+
+.btn-outline:hover {
+    background-color: var(--primary);
+    color: white;
+}
+
+.btn:hover {
+    background-color: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+}
+
+/* Hero Section */
+.hero {
+    padding: 80px 0;
+    background-color: transparent;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Hero Section - adjust layout for channel list */
+.hero-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 20px;
+    align-items: center;
+}
+
+.hero-content {
+    max-width: 600px;
+    padding-right: 40px;
+}
+
+.hero-title {
+    font-size: 48px;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 24px;
+    color: var(--light);
+}
+
+.hero-subtitle {
+    font-size: 20px;
+    color: var(--light);
+    margin-bottom: 32px;
+}
+
+.hero-highlight {
+    color: var(--primary);
+    font-weight: 700;
+}
+
+.hero-buttons {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 32px;
+}
+
+.hero-image {
+    position: relative;
+}
+
+.hero-image img {
+    width: 100%;
+    border-radius: 12px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+/* Stats Bar */
+.stats-bar {
+    background-color: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    padding: 24px;
+    margin-top: -40px;
+    position: relative;
+    z-index: 10;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    text-align: center;
+}
+
+.stat-item h3 {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 8px;
+}
+
+.stat-item p {
+    color: var(--light);
+    font-size: 16px;
+}
+
+/* Features Section */
+.features {
+    padding: 100px 0;
+    background-color: transparent;
+}
+
+.section-header {
+    text-align: center;
+    max-width: 700px;
+    margin: 0 auto 64px;
+}
+
+.section-title {
+    font-size: 36px;
+    font-weight: 800;
+    color: var(--light);
+    margin-bottom: 16px;
+}
+
+.section-subtitle {
+    font-size: 18px;
+    color: var(--light);
+}
+
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+}
+
+.feature-card {
+    background-color: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 12px;
+    padding: 32px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.feature-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.feature-icon {
+    font-size: 32px;
+    color: var(--primary);
+    margin-bottom: 24px;
+}
+
+.feature-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    color: var(--light);
+}
+
+.feature-description {
+    color: var(--light);
+}
+
+/* Problem Section */
+.problem {
+    padding: 100px 0;
+    background-color: transparent;
+}
+
+.problem-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: center;
+}
+
+.problem-content {
+    max-width: 500px;
+}
+
+.problem-list {
+    margin-top: 32px;
+}
+
+.problem-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.problem-icon {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: var(--danger);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.problem-text h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--light);
+}
+
+.problem-text p {
+    color: var(--light);
+}
+
+.problem-image img, .problem-image video {
+    width: 100%;
+    border-radius: 12px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+    display: block;
+}
+
+/* How It Works */
+.how-it-works {
+    padding: 100px 0;
+    background-color: transparent;
+}
+
+.steps {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 64px;
+    position: relative;
+}
+
+.steps::before {
+    content: "";
+    position: absolute;
+    top: 40px;
+    left: 60px;
+    right: 60px;
+    height: 2px;
+    background-color: var(--gray-light);
+    z-index: 1;
+}
+
+.step {
+    text-align: center;
+    position: relative;
+    z-index: 2;
+    flex: 1;
+}
+
+.step-number {
+    width: 80px;
+    height: 80px;
+    background-color: var(--primary);
+    color: white;
+    font-size: 32px;
+    font-weight: 700;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 24px;
+    transition: all 0.3s ease;
+}
+
+.step:hover .step-number {
+    animation: numberPulse 1.5s infinite;
+    background-color: var(--primary-dark);
+    cursor: pointer;
+}
+
+.step-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: var(--light);
+}
+
+.step-description {
+    max-width: 250px;
+    margin: 0 auto;
+    color: var(--light);
+}
+
+/* Channel list styling - adjusted positioning */
+.channel-list-container {
+    background-color: rgba(15, 23, 42, 0.3);
+    border-radius: 12px;
+    overflow: hidden;
+    width: 100%;
+    height: 350px;
+    position: relative;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    margin-left: auto;
+    mask-image: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 1) 15%, rgba(0, 0, 0, 1) 85%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 1) 15%, rgba(0, 0, 0, 1) 85%, transparent 100%);
+}
+
+.channel-list {
+    position: relative;
+    height: 100%;
+    overflow: hidden;
+}
+
+.channel-item {
+    display: flex;
+    align-items: center;
+    padding: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    background-color: rgba(255, 255, 255, 0.02);
+    height: 115px;
+    position: relative;
+}
+
+.channel-rank {
+    color: #9d55ff;
+    font-size: 22px;
+    font-weight: 700;
+    margin-right: 15px;
+    width: 25px;
+    text-align: center;
+}
+
+.channel-avatar {
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    margin-right: 15px;
+    overflow: hidden;
+    background-color: #f2f2f2;
+}
+
+.channel-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.channel-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+.channel-name {
+    color: var(--light);
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.channel-growth {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+    margin-right: 20px;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.growth-indicator {
+    display: flex;
+    align-items: center;
+    color: #22c55e;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.growth-arrow {
+    margin-right: 4px;
+}
+
+.growth-period {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 12px;
+    margin-left: 4px;
+}
+
+.channel-stats {
+    display: flex;
+    gap: 30px;
+    margin-left: auto;
+}
+
+.stat {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    min-width: 70px;
+}
+
+.stat-label {
+    color: var(--light);
+    font-size: 13px;
+    margin-bottom: 4px;
+}
+
+.stat-value {
+    color: var(--light);
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.views-sub-value {
+    color: #22c55e;
+}
+
+.bookmark-icon {
+    color: #ccc;
+    font-size: 18px;
+    margin-left: 8px;
+}
+
+@keyframes swipeChannels {
+    0%, 25% {
+        transform: translateY(0);
+    }
+    33%, 58% {
+        transform: translateY(-345px);
+    }
+    66%, 91% {
+        transform: translateY(-690px);
+    }
+    100% {
+        transform: translateY(0);
+    }
+}
+
+.channel-list-inner {
+    animation: swipeChannels 15s cubic-bezier(0.4, 0.0, 0.2, 1) infinite;
+    height: auto;
+}
+
+/* Video Demo */
+.video-demo {
+    padding: 70px 0 100px;
+    background-color: transparent;
+}
+
+.demo-video-container {
+    max-width: 900px;
+    margin: 40px auto 0;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+.demo-video {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 12px;
+}
+
+/* Creator stats cards styling */
+.creators {
+    padding: 80px 0;
+    background-color: transparent;
+}
+
+.creator-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 30px;
+    margin-top: 50px;
+}
+
+.creator-stat-card {
+    background-color: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    transition: all 0.3s;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.creator-stat-card:hover {
+    transform: translateY(-10px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-icon {
+    font-size: 40px;
+    margin-bottom: 16px;
+}
+
+.stat-number {
+    font-size: 36px;
+    font-weight: 800;
+    color: var(--primary);
+    margin-bottom: 8px;
+}
+
+.stat-label {
+    font-size: 18px;
+    color: var(--light);
+}
+
+/* Results section */
+.results {
+    padding: 100px 0;
+    background-color: transparent;
+    color: white;
+}
+
+.results .section-title {
+    color: var(--light);
+}
+
+.results .section-subtitle {
+    color: var(--light);
+}
+
+.results-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+    margin-top: 64px;
+}
+
+.result-card {
+    background-color: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 12px;
+    padding: 32px;
+    text-align: center;
+    transition: all 0.3s;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.result-card:hover {
+    transform: translateY(-8px);
+    background-color: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.result-number {
+    font-size: 48px;
+    font-weight: 800;
+    color: var(--primary);
+    margin-bottom: 16px;
+}
+
+.result-text {
+    font-size: 18px;
+    color: var(--light);
+}
+
+/* Pricing section */
+.pricing {
+    padding: 100px 0;
+    background-color: transparent;
+}
+
+.pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+    margin-top: 40px;
+}
+
+.pricing-card {
+    background-color: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 12px;
+    padding: 32px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    text-align: center;
+    position: relative;
+    transition: all 0.3s;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.pricing-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pricing-card.popular {
+    background-color: var(--primary);
+    color: white;
+    transform: scale(1.05);
+    z-index: 2;
+    border: none;
+}
+
+.pricing-card.popular:hover {
+    transform: scale(1.05) translateY(-8px);
+}
+
+.popular-badge {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background-color: var(--warning);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 20px;
+}
+
+.pricing-title {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    color: var(--light);
+}
+
+.pricing-card.popular .pricing-title {
+    color: white;
+}
+
+.pricing-price {
+    font-size: 48px;
+    font-weight: 800;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--light);
+}
+
+.pricing-card.popular .pricing-price {
+    color: white;
+}
+
+.pricing-original {
+    font-size: 24px;
+    text-decoration: line-through;
+    opacity: 0.5;
+}
+
+.pricing-period {
+    font-size: 16px;
+    font-weight: 400;
+    color: var(--light);
+}
+
+.pricing-card.popular .pricing-period {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.pricing-description {
+    color: var(--light);
+    margin-bottom: 24px;
+}
+
+.pricing-card.popular .pricing-description {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.pricing-discount {
+    display: inline-block;
+    background-color: rgba(16, 185, 129, 0.1);
+    color: var(--secondary);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 16px;
+}
+
+.pricing-card.popular .pricing-discount {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.pricing-features {
+    margin: 32px 0;
+    text-align: left;
+}
+
+.pricing-feature {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    color: var(--light);
+}
+
+.pricing-card.popular .pricing-feature {
+    color: white;
+}
+
+.pricing-check {
+    color: var(--secondary);
+}
+
+.pricing-card.popular .pricing-check {
+    color: white;
+}
+
+.pricing-x {
+    color: var(--gray-light);
+}
+
+.pricing-current {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background-color: rgba(99, 102, 241, 0.1);
+    color: var(--primary);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.pricing-card.popular .pricing-current {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+/* CTA Section */
+.cta {
+    padding: 100px 0;
+    background-color: transparent;
+    text-align: center;
+}
+
+.cta-content {
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.guarantee {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 32px;
+    background-color: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.guarantee-icon {
+    font-size: 32px;
+    color: var(--warning);
+}
+
+.guarantee-text {
+    text-align: left;
+}
+
+.guarantee-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: var(--light);
+}
+
+.guarantee-description {
+    font-size: 14px;
+    color: var(--light);
+}
+
+/* Footer */
+footer {
+    background-color: rgba(10, 15, 29, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    color: white;
+    padding: 64px 0 32px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.footer-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 64px;
+    margin-bottom: 64px;
+}
+
+.footer-logo {
+    font-size: 1.5rem;
+    font-weight: 700;
+    text-decoration: none;
+    color: #fff;
+    display: flex;
+    align-items: center;
+}
+
+.footer-logo-image {
+    height: 180px;
+    margin-right: 0;
+}
+
+.footer-description {
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: 24px;
+}
+
+.footer-column h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 24px;
+    color: white;
+}
+
+.footer-links {
+    list-style: none;
+}
+
+.footer-link {
+    margin-bottom: 12px;
+}
+
+.footer-link a {
+    color: rgba(255, 255, 255, 0.7);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.footer-link a:hover {
+    color: white;
+}
+
+.footer-bottom {
+    text-align: center;
+    padding-top: 32px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* Animation */
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes numberPulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 rgba(99, 102, 241, 0.4);
+    }
+    70% {
+        transform: scale(1.1);
+        box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 rgba(99, 102, 241, 0.4);
+    }
+}
+
+.pulse {
+    animation: pulse 2s infinite;
+}
+
+/* Scroll Animations */
+.fade-in {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.fade-in.active {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.fade-in-left {
+    opacity: 0;
+    transform: translateX(-50px);
+    transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.fade-in-left.active {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.fade-in-right {
+    opacity: 0;
+    transform: translateX(50px);
+    transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.fade-in-right.active {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.scale-in {
+    opacity: 0;
+    transform: scale(0.8);
+    transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.scale-in.active {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.stagger-item {
+    transition-delay: calc(var(--item-index, 0) * 0.1s);
+}
+
+/* Responsive adjustments */
+@media (max-width: 992px) {
+    .hero-grid, .problem-grid, .features-grid, .creator-stats-grid, .results-grid, .pricing-grid, .footer-grid {
+        grid-template-columns: 1fr;
+        gap: 40px;
+    }
+    
+    .hero-image, .problem-image {
+        order: -1;
+    }
+    
+    .hero-content {
+        max-width: 100%;
+        padding-right: 0;
+    }
+    
+    .channel-list-container {
+        width: 90%;
+        margin: 0 auto;
+        mask-image: none;
+        -webkit-mask-image: none;
+    }
+    
+    .steps {
+        flex-direction: column;
+        gap: 40px;
+    }
+    
+    .steps::before {
+        display: none;
+    }
+    
+    .pricing-card.popular {
+        transform: scale(1);
+    }
+    
+    .pricing-card.popular:hover {
+        transform: translateY(-8px);
+    }
+    
+    .creator-stats-grid {
+        max-width: 400px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    
+    .nav {
+        display: none;
+    }
+}
+
+@media (max-width: 576px) {
+    .hero {
+        padding: 60px 0 40px;
+    }
+    
+    .hero-title {
+        font-size: 32px;
+    }
+    
+    .hero-subtitle {
+        font-size: 16px;
+    }
+    
+    .channel-list-container {
+        height: 250px;
+        margin: 0 auto;
+        max-width: 100%;
+    }
+    
+    .channel-list-inner {
+        max-width: 100%;
+        margin: 0 auto;
+    }
+    
+    .channel-item {
+        height: 80px;
+        padding: 10px;
+        width: 100%;
+    }
+    
+    .channel-stats {
+        display: none;
+    }
+    
+    .channel-growth {
+        margin-left: auto;
+        margin-right: 0;
+    }
+} /* Title enhancement styles to improve contrast */
+
+/* Main section titles */
+.section-title {
+    font-size: 38px;
+    font-weight: 800;
+    color: white;
+    margin-bottom: 16px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    letter-spacing: -0.02em;
+}
+
+/* Hero section title */
+.hero-title {
+    font-size: 54px;
+    font-weight: 900;
+    line-height: 1.1;
+    margin-bottom: 24px;
+    color: white;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    letter-spacing: -0.02em;
+}
+
+/* Feature titles */
+.feature-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    color: white;
+}
+
+/* Step titles */
+.step-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: white;
+}
+
+/* Subtitle styling */
+.section-subtitle, .hero-subtitle {
+    color: rgba(255, 255, 255, 0.85);
+    line-height: 1.6;
+}
+
+/* Numbers and statistics */
+.stat-number, .result-number {
+    font-size: 48px;
+    font-weight: 900;
+    color: var(--primary);
+    margin-bottom: 8px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Pricing plan titles */
+.pricing-title {
+    font-size: 28px;
+    font-weight: 800;
+    margin-bottom: 16px;
+    color: white;
+}
+
+/* Highlighted text in hero */
+.hero-highlight {
+    color: var(--primary);
+    font-weight: 800;
+    text-shadow: 0 0 10px rgba(99, 102, 241, 0.3);
+}
+
+/* Problem section title enhancements */
+.problem-text h3 {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: white;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .hero-title {
+        font-size: 40px;
+    }
+    
+    .section-title {
+        font-size: 32px;
+    }
+} /* Improved text hierarchy and color differentiation */
+
+/* Color palette enhancement */
+:root {
+    --title-color: #ffffff;
+    --subtitle-color: #a5b4fc;
+    --description-color: rgba(255, 255, 255, 0.7);
+    --highlight-color: #6366F1;
+    --secondary-highlight: #10B981;
+    --title-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+/* Main section titles */
+.section-title {
+    font-size: 42px;
+    font-weight: 900;
+    color: var(--title-color);
+    margin-bottom: 16px;
+    text-shadow: var(--title-shadow);
+    letter-spacing: -0.02em;
+    position: relative;
+    display: inline-block;
+}
+
+.section-title::after {
+    content: "";
+    position: absolute;
+    bottom: -8px;
+    left: 0;
+    width: 80px;
+    height: 3px;
+    background: var(--highlight-color);
+    border-radius: 2px;
+}
+
+/* Center the underline for centered titles */
+.section-header .section-title::after {
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+/* Hero section title */
+.hero-title {
+    font-size: 58px;
+    font-weight: 900;
+    line-height: 1.1;
+    margin-bottom: 28px;
+    color: var(--title-color);
+    text-shadow: var(--title-shadow);
+    letter-spacing: -0.02em;
+}
+
+/* Feature titles */
+.feature-title {
+    font-size: 24px;
+    font-weight: 800;
+    margin-bottom: 16px;
+    color: var(--subtitle-color);
+}
+
+/* Step titles */
+.step-title {
+    font-size: 24px;
+    font-weight: 800;
+    margin-bottom: 14px;
+    color: var(--subtitle-color);
+}
+
+/* Subtitle styling */
+.section-subtitle {
+    color: var(--subtitle-color);
+    font-size: 20px;
+    line-height: 1.6;
+    margin-bottom: 40px;
+}
+
+.hero-subtitle {
+    color: var(--description-color);
+    font-size: 20px;
+    line-height: 1.6;
+    margin-bottom: 40px;
+}
+
+/* Body text and descriptions */
+p, .feature-description, .step-description, .problem-text p {
+    color: var(--description-color);
+    line-height: 1.8;
+    font-size: 16px;
+}
+
+/* Numbers and statistics */
+.stat-number, .result-number {
+    font-size: 52px;
+    font-weight: 900;
+    color: var(--highlight-color);
+    margin-bottom: 10px;
+    text-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+}
+
+/* Secondary stats */
+.stat-item h3 {
+    color: var(--secondary-highlight);
+    font-size: 34px;
+    font-weight: 800;
+}
+
+/* Pricing plan titles */
+.pricing-title {
+    font-size: 30px;
+    font-weight: 800;
+    margin-bottom: 16px;
+    color: var(--subtitle-color);
+}
+
+/* Highlighted text in hero */
+.hero-highlight {
+    color: var(--highlight-color);
+    font-weight: 900;
+    text-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+}
+
+/* Problem section title enhancements */
+.problem-text h3 {
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 10px;
+    color: var(--subtitle-color);
+}
+
+/* Extra spacing for better readability */
+.features-grid, .creator-stats-grid, .results-grid, .pricing-grid {
+    gap: 40px;
+}
+
+.feature-card, .creator-stat-card, .result-card, .pricing-card {
+    padding: 38px 28px;
+}
+
+/* Background accent for cards */
+.feature-card, .creator-stat-card, .result-card {
+    border-top: 3px solid var(--highlight-color);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .hero-title {
+        font-size: 42px;
+    }
+    
+    .section-title {
+        font-size: 34px;
+    }
+    
+    .feature-title, .step-title {
+        font-size: 20px;
+    }
+    
+    .section-subtitle, .hero-subtitle {
+        font-size: 18px;
+    }
+} /* Enhanced emoji styling for problem section */
+
+/* Target the emoji containers */
+.problem-icon {
+    font-size: 32px;
+    display: inline-flex;
+    margin-right: 16px;
+    animation: floatEmoji 3s ease-in-out infinite;
+    filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.4));
+    transform-origin: center;
+}
+
+/* Specific emoji animations */
+@keyframes floatEmoji {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-5px);
+    }
+}
+
+/* For the individual problem items with emojis */
+.problem-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 32px;
+    position: relative;
+}
+
+/* Highlight effect behind emojis */
+.problem-item::before {
+    content: "";
+    position: absolute;
+    width: 48px;
+    height: 48px;
+    left: -12px;
+    top: -12px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.2) 0%, transparent 70%);
+    z-index: -1;
+}
+
+/* Target the emojis directly in this specific section */
+.problem-item:nth-child(1) .problem-icon {
+    color: #ff7e5f; /* Orange-red for "Hours Wasted" */
+}
+
+.problem-item:nth-child(2) .problem-icon {
+    color: #a5b4fc; /* Purple for "Missing Opportunities" */
+}
+
+.problem-item:nth-child(3) .problem-icon {
+    color: #ffc857; /* Yellow for "Panic" */
+} /* Channel list positioning improvements */
+
+/* Adjust the hero grid layout */
+.hero-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 0.8fr;
+    gap: 20px;
+    align-items: center;
+    max-width: 1300px;
+    margin: 0 auto;
+}
+
+/* Hero content alignment and spacing */
+.hero-content {
+    max-width: 600px;
+    padding-right: 60px;
+    text-align: left;
+    padding-left: 20px;
+}
+
+/* Make hero title larger with left alignment */
+.hero-title {
+    font-size: 60px;
+    font-weight: 900;
+    line-height: 1.1;
+    margin-bottom: 30px;
+    color: var(--title-color);
+    text-shadow: var(--title-shadow);
+    letter-spacing: -0.02em;
+    text-align: left;
+}
+
+/* Hero-subtitle text alignment */
+.hero-subtitle {
+    text-align: left;
+    font-size: 22px;
+    margin-bottom: 40px;
+    max-width: 520px;
+}
+
+/* Channel list container positioning */
+.channel-list-container {
+    width: 120%;
+    height: 380px;
+    margin-left: -20%;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    position: relative;
+    overflow: hidden;
+    mask-image: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 1) 10%, rgba(0, 0, 0, 1) 90%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, 1) 10%, rgba(0, 0, 0, 1) 90%, transparent 100%);
+}
+
+/* Enhance the channel list scrolling */
+.channel-list-inner {
+    animation: swipeChannels 18s cubic-bezier(0.4, 0.0, 0.2, 1) infinite;
+}
+
+/* Add right-side outer glow */
+.hero-image::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: -20px;
+    width: 40px;
+    height: 100%;
+    background: radial-gradient(ellipse at right, rgba(99, 102, 241, 0.2), transparent 70%);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+    .channel-list-container {
+        width: 110%;
+        margin-left: -10%;
+    }
+    
+    .hero-title {
+        font-size: 50px;
+    }
+}
+
+@media (max-width: 992px) {
+    .hero-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .hero-content {
+        max-width: 100%;
+        padding-right: 20px;
+        padding-left: 20px;
+        text-align: center;
+    }
+    
+    .hero-title, .hero-subtitle {
+        text-align: center;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    
+    .channel-list-container {
+        width: 90%;
+        margin: 0 auto;
+        mask-image: none;
+        -webkit-mask-image: none;
+    }
+} /* Layout fix for hero section and channel list */
+
+/* Reset and fix the hero grid layout */
+.hero-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    align-items: center;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Fix hero content spacing */
+.hero-content {
+    max-width: 100%;
+    padding-right: 20px;
+    padding-left: 0;
+    text-align: left;
+}
+
+/* Restore hero title proper size and spacing */
+.hero-title {
+    font-size: 54px;
+    font-weight: 900;
+    line-height: 1.15;
+    margin-bottom: 24px;
+    color: white;
+    text-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+    letter-spacing: -0.02em;
+    text-align: left;
+}
+
+/* Fix hero subtitle */
+.hero-subtitle {
+    text-align: left;
+    font-size: 20px;
+    margin-bottom: 32px;
+    max-width: 100%;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* Fix channel list container */
+.channel-list-container {
+    width: 100%;
+    height: 350px;
+    margin-left: 0;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    position: relative;
+    overflow: hidden;
+    mask-image: linear-gradient(to right, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 1) 20%, rgba(0, 0, 0, 1) 80%, rgba(0, 0, 0, 0.95) 100%);
+    -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 1) 20%, rgba(0, 0, 0, 1) 80%, rgba(0, 0, 0, 0.95) 100%);
+}
+
+/* Remove problematic after element */
+.hero-image::after {
+    display: none;
+}
+
+/* Responsive adjustments */
+@media (max-width: 992px) {
+    .hero-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .hero-content {
+        max-width: 100%;
+        padding-right: 20px;
+        padding-left: 20px;
+        text-align: center;
+    }
+    
+    .hero-title, .hero-subtitle {
+        text-align: center;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    
+    .channel-list-container {
+        width: 90%;
+        margin: 0 auto;
+        mask-image: none;
+        -webkit-mask-image: none;
+    }
+} /* Enhanced hero focus with subtle channel list */
+
+/* Increase hero content visibility */
+.hero-content {
+    max-width: 85%;
+    padding-right: 30px;
+    position: relative;
+    z-index: 5;
+}
+
+/* Add subtle highlight to hero title */
+.hero-title {
+    font-size: 58px;
+    font-weight: 900;
+    line-height: 1.15;
+    margin-bottom: 28px;
+    background: linear-gradient(to right, #ffffff, #a5b4fc);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 2px 10px rgba(99, 102, 241, 0.35);
+    letter-spacing: -0.02em;
+    text-align: left;
+    position: relative;
+}
+
+/* Make "YouTube Shorts" stand out */
+.hero-title span {
+    color: var(--highlight-color);
+    display: inline;
+    position: relative;
+    background: linear-gradient(to right, #6366F1, #818cf8);
+    -webkit-background-clip: text;
+    background-clip: text;
+    font-weight: 900;
+}
+
+/* Reduce opacity of channel list to make it recede */
+.channel-list-container {
+    opacity: 0.85;
+    position: relative;
+    z-index: 2;
+    transition: opacity 0.3s ease;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    width: 110%;
+    margin-left: -5%;
+    margin-right: -5%;
+    border: 1px solid rgba(99, 102, 241, 0.1);
+    mask-image: linear-gradient(to right, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.9) 15%, rgba(0, 0, 0, 0.9) 85%, rgba(0, 0, 0, 0.5) 100%);
+    -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.9) 15%, rgba(0, 0, 0, 0.9) 85%, rgba(0, 0, 0, 0.5) 100%);
+}
+
+/* Add hover effect for interactivity */
+.channel-list-container:hover {
+    opacity: 0.95;
+}
+
+/* Add subtle vignette to the hero section */
+.hero::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at center, transparent 30%, rgba(10, 15, 29, 0.4) 100%);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Add hero buttons emphasis */
+.hero-buttons {
+    position: relative;
+    z-index: 5;
+}
+
+.hero-buttons .btn {
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+}
+
+.hero-buttons .btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 15px rgba(99, 102, 241, 0.5);
+}
+
+/* Enhance hero subtitle readability */
+.hero-subtitle {
+    font-size: 20px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.85);
+    line-height: 1.6;
+    max-width: 90%;
+} /* Remove 'CURRENT' badge from free pricing card */
+
+.pricing-card .current,
+.pricing-card .CURRENT,
+.current,
+span.current,
+div.current {
+    display: none !important;
+}
+
+/* Target common badge patterns */
+.pricing-current {
+    display: none !important;
+}
+
+/* Alternative approach if the above doesn't work */
+#free-plan .current,
+.free-plan .current,
+.pricing-card:first-child .current {
+    display: none !important;
+}
+
+/* Ensure proper spacing without the badge */
+.pricing-card:first-child .pricing-title {
+    margin-top: 0 !important;
+} /* Mobile optimization fixes */
+
+/* Improved mobile layout */
+@media (max-width: 768px) {
+    /* Ensure hero content is properly positioned and readable */
+    .hero-content {
+        text-align: center;
+        padding: 30px 20px;
+        max-width: 100%;
+        z-index: 5;
+    }
+    
+    /* Fix hero title visibility */
+    .hero-title {
+        font-size: 40px;
+        font-weight: 900;
+        line-height: 1.15;
+        text-align: center;
+        background: linear-gradient(to right, #ffffff, #a5b4fc);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: white; /* Fallback */
+        text-shadow: 0 2px 8px rgba(99, 102, 241, 0.5);
+        margin-bottom: 20px;
+        opacity: 1;
+    }
+    
+    /* Backup style for gradient text in mobile browsers that don't support it */
+    @supports not (background-clip: text) {
+        .hero-title {
+            color: white;
+            background: none;
+        }
+    }
+    
+    /* Make subtitle more visible */
+    .hero-subtitle {
+        font-size: 18px;
+        color: rgba(255, 255, 255, 0.95);
+        text-align: center;
+        margin: 0 auto 24px;
+        max-width: 100%;
+    }
+    
+    /* Properly position channel list */
+    .channel-list-container {
+        width: 90%;
+        height: auto;
+        max-height: 300px;
+        margin: 0 auto 40px;
+        opacity: 1;
+        mask-image: none;
+        -webkit-mask-image: none;
+    }
+    
+    /* Fix channel item spacing */
+    .channel-item {
+        padding: 12px;
+        height: auto;
+        min-height: 80px;
+    }
+    
+    /* Make channel items more compact */
+    .channel-rank {
+        font-size: 18px;
+        margin-right: 10px;
+    }
+    
+    .channel-avatar {
+        width: 40px;
+        height: 40px;
+    }
+    
+    .channel-name {
+        font-size: 16px;
+    }
+    
+    /* Hide less important stats on mobile */
+    .channel-stats {
+        display: none;
+    }
+    
+    /* Center align buttons */
+    .hero-buttons {
+        justify-content: center;
+        margin-bottom: 30px;
+    }
+    
+    /* Fix problem section layout */
+    .problem-item {
+        align-items: flex-start;
+        margin-bottom: 30px;
+        gap: 15px;
+    }
+    
+    /* Make icons stand out better */
+    .problem-icon {
+        font-size: 30px;
+        margin-right: 10px;
+        min-width: 30px;
+        display: flex;
+        justify-content: center;
+    }
+    
+    /* Fix problem texts */
+    .problem-text h3 {
+        font-size: 22px;
+        margin-bottom: 8px;
+        color: var(--subtitle-color);
+    }
+    
+    .problem-text p {
+        font-size: 16px;
+        line-height: 1.5;
+    }
+    
+    /* Stats cards adjustments */
+    .stats-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    /* Improve spacing in feature sections */
+    .section-header {
+        margin-bottom: 30px;
+        padding: 0 15px;
+    }
+    
+    .section-title {
+        font-size: 32px;
+        margin-bottom: 12px;
+    }
+    
+    .section-subtitle {
+        font-size: 18px;
+    }
+    
+    /* Fix spacing in all sections */
+    .features, .problem, .how-it-works, .creators, .results, .pricing, .cta {
+        padding: 60px 0;
+    }
+    
+    /* Fix stat numbers */
+    .stat-number, .result-number {
+        font-size: 40px;
+    }
+    
+    /* Fix footer layout */
+    .footer-grid {
+        grid-template-columns: 1fr;
+        gap: 30px;
+        text-align: center;
+    }
+    
+    /* Logo centering for mobile */
+    .footer-logo {
+        justify-content: center;
+    }
+}
+
+/* Extra fixes for very small screens */
+@media (max-width: 480px) {
+    .hero-title {
+        font-size: 36px;
+    }
+    
+    .hero-buttons {
+        flex-direction: column;
+        gap: 15px;
+        width: 100%;
+    }
+    
+    .hero-buttons .btn {
+        width: 100%;
+    }
+} 

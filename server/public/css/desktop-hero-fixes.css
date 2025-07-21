@@ -1,0 +1,40 @@
+/* Desktop Hero Section Fixes */
+
+/* Ensure these rules apply only to desktop by overriding potentially 
+   more specific rules or ensuring they are loaded after main styles */
+
+@media (min-width: 993px) { /* Target screens larger than the mobile breakpoint */
+
+    .hero-content {
+        position: relative; /* Ensure positioning context for z-index */
+        z-index: 2; /* Bring text content above the image */
+        padding-right: 0; /* Remove right padding to allow text to use full column width */
+        max-width: none; /* Allow content to expand if grid allows */
+    }
+
+    .hero-image {
+        position: relative; /* Ensure positioning context for z-index */
+        z-index: 1; /* Place image behind the text content */
+        opacity: 0.9; /* Keep slight opacity reduction */
+        /* Apply a radial gradient mask for fade on all sides */
+        mask-image: radial-gradient(ellipse 70% 80% at 50% 50%, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 90%);
+        -webkit-mask-image: radial-gradient(ellipse 70% 80% at 50% 50%, rgba(0,0,0,1) 40%, rgba(0,0,0,0) 90%);
+    }
+    
+    /* Increase the height of the channel list container within the hero image area */
+    .hero-image .channel-list-container {
+        height: 450px !important; /* Make the list container taller */
+    }
+
+    .hero-buttons .btn-lg {
+        padding: 14px 40px !important; /* Make buttons wider: less vertical, more horizontal padding */
+        font-size: 16px !important; /* Slightly smaller font might fit better */
+    }
+    
+    /* Give even more space to the text column */
+    .hero-grid {
+        grid-template-columns: 1.7fr 0.3fr !important; /* Push channel list further right */
+        gap: 20px; /* Reduce gap slightly as columns are very different */
+        align-items: center; /* Vertically center align items in grid rows */
+    }
+} 

@@ -1,0 +1,177 @@
+// Direct Stripe Checkout Handler
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('Direct Stripe checkout script loaded');
+  
+  // Listen for showPricingModal event to trigger pricing popup
+  document.addEventListener("showPricingModal", function() {
+    console.log("Triggering pricing popup...");
+    
+    // Automatically click the Pro button to show pricing
+    const proButton = document.querySelector("[data-plan='pro']");
+    if (proButton) {
+      console.log("Auto-clicking Pro button to show pricing");
+      proButton.click();
+    } else {
+      console.log("Pro button not found");
+    }
+  });
+  
+  // Simple notification system
+  function showMessage(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.style.position = 'fixed';
+    notification.style.top = '50%';
+    notification.style.left = '50%';
+    notification.style.transform = 'translate(-50%, -50%)';
+    notification.style.padding = '20px';
+    notification.style.zIndex = '9999';
+    notification.style.borderRadius = '8px';
+    notification.style.boxShadow = '0 5px 15px rgba(0, 0, 0, 0.3)';
+    notification.style.textAlign = 'center';
+    
+    if (type === 'error') {
+      notification.style.backgroundColor = 'rgba(220, 38, 38, 0.95)';
+    } else if (type === 'success') {
+      notification.style.backgroundColor = 'rgba(16, 185, 129, 0.95)';
+    } else {
+      notification.style.backgroundColor = 'rgba(59, 130, 246, 0.95)';
+    }
+    notification.style.color = 'white';
+    notification.innerHTML = message;
+    
+    document.body.appendChild(notification);
+    setTimeout(() => notification.remove(), 5000);
+  }
+  
+  // Check if user is logged in by looking for user data in window
+  function isLoggedIn() {
+    // Check if there's a user object in the template data
+    return window.userLoggedIn === true || 
+           (typeof user !== 'undefined' && user !== null) || 
+           document.body.classList.contains('user-logged-in');
+  }
+  
+  // Function to redirect to login first, then back to pricing
+  function redirectToLogin() {
+    showMessage(`<h3>Please log in first</h3><p>You'll be redirected to the login page.</p>`);
+    setTimeout(() => {
+      window.location.href = '/login?redirect=' + encodeURIComponent('/pricing');
+    }, 1500);
+  }
+  
+  // Use the standard backend checkout session creation - more reliable than direct links
+  function createCheckoutSession(plan) {
+    showMessage(`<h3>Creating ${plan} checkout session...</h3><p>Please wait.</p>`);
+    
+    return fetch('/subscription/create-checkout-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ plan })
+    })
+    .then(response => response.json())
+    .then(session => {
+      if (session.success && session.url) {
+        window.location.href = session.url;
+      } else {
+        throw new Error(session.message || 'Error creating checkout session');
+      }
+    })
+    .catch(error => {
+      console.error('Error:', error);
+      showMessage(`<h3>Error</h3><p>${error.message || 'Failed to create checkout session'}</p>`, 'error');
+    });
+  }
+  
+  // Generate the return URL for after payment
+  function getSuccessUrl(plan) {
+    // Get the current domain
+    const domain = window.location.origin;
+    // Create a return URL that includes the plan parameter
+    return domain + '/subscription/success?plan=' + plan;
+  }
+  
+  // Get all plan buttons
+  const proButton = document.querySelector('[data-plan="pro"]');
+  const maxButton = document.querySelector('[data-plan="max"]');
+  
+  // Log what we found
+  console.log('Found Pro button:', !!proButton);
+  console.log('Found Max button:', !!maxButton);
+  
+  // Pro button click handler
+  if (proButton) {
+    proButton.addEventListener('click', function(e) {
+      e.preventDefault();
+      
+      // Check if user is logged in
+      if (!isLoggedIn()) {
+        redirectToLogin();
+        return;
+      }
+      
+      // Use direct payment link with success URL parameter
+      // Use backend checkout session creation for Pro plan
+      createCheckoutSession("pro");
+        window.location.href = 'https://buy.stripe.com/fZe00ybm21VpgDKdQS?success_url=' + encodeURIComponent(successUrl);
+      }, 1000);
+    });
+  }
+  
+  // Max button click handler - show ViewMastery modal first
+  if (maxButton) {
+    maxButton.addEventListener('click', function(e) {
+      e.preventDefault();
+      
+      // Check if user is logged in
+      if (!isLoggedIn()) {
+        redirectToLogin();
+        return;
+      }
+      
+      // Show ViewMastery modal instead of directly creating checkout session
+      // Show the ViewMastery modal
+      const viewmasteryModal = document.getElementById("viewmasteryModal");
+      if (viewmasteryModal) {
+        viewmasteryModal.classList.add("active");
+        
+        // Handle What is ViewMastery button
+        const whatIsViewMasteryBtn = document.getElementById("whatIsViewMastery");
+        if (whatIsViewMasteryBtn) {
+          whatIsViewMasteryBtn.onclick = function() {
+            window.open("https://viewmastery.co", "_blank");
+          };
+        }
+        
+        // Handle Continue button
+        const continueToCheckoutBtn = document.getElementById("continueToCheckout");
+        if (continueToCheckoutBtn) {
+          continueToCheckoutBtn.onclick = function() {
+            viewmasteryModal.classList.remove("active");
+            createCheckoutSession("max");
+          };
+        }
+      } else {
+        // Fallback if modal not found
+        createCheckoutSession("max");
+      }
+    });
+  }
+  
+  // Show indicator that the script is working
+  const indicator = document.createElement('div');
+  indicator.style.position = 'fixed';
+  indicator.style.bottom = '10px';
+  indicator.style.right = '10px';
+  indicator.style.padding = '5px 10px';
+  indicator.style.backgroundColor = 'rgba(16, 185, 129, 0.7)';
+  indicator.style.color = 'white';
+  indicator.style.borderRadius = '4px';
+  indicator.style.fontSize = '12px';
+  indicator.textContent = 'Direct checkout enabled';
+  document.body.appendChild(indicator);
+  setTimeout(() => indicator.remove(), 5000);
+
+  // Close modal when clicking outside of it\n  const viewmasteryModal = document.getElementById("viewmasteryModal");\n  if (viewmasteryModal) {\n    viewmasteryModal.addEventListener("click", function(e) {\n      if (e.target === viewmasteryModal) {\n        viewmasteryModal.classList.remove("active");\n      }\n    });\n  }
+}); 

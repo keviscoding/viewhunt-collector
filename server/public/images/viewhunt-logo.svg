@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 650 200">
+  <!-- Magnifying glass handle -->
+  <path d="M112 140c-10 14-30 16-44 6-14-10-16-30-6-44L112 140z" fill="#6366F1" />
+  
+  <!-- Magnifying glass circle -->
+  <circle cx="230" cy="100" r="80" stroke="#6366F1" stroke-width="30" fill="none" />
+  
+  <!-- Eye in center -->
+  <circle cx="230" cy="100" r="25" fill="#6366F1" />
+  
+  <!-- Crosshairs -->
+  <line x1="230" y1="40" x2="230" y2="60" stroke="#6366F1" stroke-width="10" />
+  <line x1="230" y1="140" x2="230" y2="160" stroke="#6366F1" stroke-width="10" />
+  <line x1="170" y1="100" x2="190" y2="100" stroke="#6366F1" stroke-width="10" />
+  <line x1="270" y1="100" x2="290" y2="100" stroke="#6366F1" stroke-width="10" />
+  
+  <!-- Text "ViewHunt" -->
+  <text x="350" y="120" font-family="Arial, sans-serif" font-weight="bold" font-size="80" fill="#6366F1">ViewHunt</text>
+</svg> 

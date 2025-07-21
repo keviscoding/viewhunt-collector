@@ -1,0 +1,10 @@
+/* Simple fix to make the logo slightly bigger on mobile */
+@media (max-width: 768px) {
+    .logo-image {
+        height: auto !important;
+        width: auto !important;
+        transform: scale(1.2) !important; /* Make it slightly bigger */
+        transform-origin: left center !important; /* Scale from the left */
+        margin-left: 5px !important; /* Give some space from the edge */
+    }
+} 

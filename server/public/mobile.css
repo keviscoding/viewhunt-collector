@@ -1,0 +1,214 @@
+/* Mobile optimizations for ViewHunt */
+
+/* Tablet and mobile */
+@media (max-width: 768px) {
+  /* General responsive adjustments */
+  body {
+    padding: 0;
+    font-size: 14px;
+  }
+  
+  .container {
+    width: 100%;
+    padding: 10px;
+    margin: 0;
+  }
+  
+  /* Header & Navigation */
+  header {
+    padding: 8px;
+  }
+  
+  .header-left h1 {
+    font-size: 18px;
+  }
+  
+  .nav-links {
+    gap: 5px;
+  }
+  
+  .nav-link {
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+  
+  /* Channel Cards */
+  .card-container {
+    margin: 10px 0;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  
+  .channel-card {
+    flex-direction: column;
+    padding: 12px;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  
+  .channel-thumb {
+    width: 60px;
+    height: 60px;
+    margin-right: 0;
+    align-self: center;
+  }
+  
+  .channel-info, .channel-stats {
+    width: 100%;
+  }
+  
+  .channel-title {
+    font-size: 16px;
+    margin-bottom: 5px;
+  }
+  
+  .channel-username {
+    font-size: 12px;
+    margin-bottom: 5px;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+  }
+  
+  .stat-value {
+    font-size: 14px;
+  }
+  
+  .stat-label {
+    font-size: 10px;
+  }
+  
+  /* Filters */
+  .filter-container {
+    padding: 10px;
+  }
+  
+  .filter-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .filter-group {
+    width: 100%;
+  }
+  
+  /* Buttons */
+  .button {
+    font-size: 14px;
+    padding: 8px 12px;
+  }
+  
+  .button-lg {
+    font-size: 16px;
+    padding: 10px 15px;
+  }
+  
+  /* Landing Page Specific */
+  .hero {
+    padding: 20px 10px;
+    min-height: auto;
+  }
+  
+  .hero h1 {
+    font-size: 24px;
+    margin-bottom: 10px;
+  }
+  
+  .hero p {
+    font-size: 14px;
+    margin-bottom: 20px;
+  }
+  
+  .features-section {
+    padding: 20px 10px;
+  }
+  
+  .features-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .feature-card {
+    padding: 15px;
+  }
+  
+  .feature-card h3 {
+    font-size: 16px;
+  }
+  
+  /* Choose for Me Modal */
+  .modal-content {
+    width: 90%;
+    max-width: 400px;
+    padding: 15px;
+  }
+  
+  /* Fix for filter range sliders */
+  .range-slider {
+    width: 100%;
+  }
+  
+  /* Fix for range value display */
+  .range-values {
+    font-size: 12px;
+  }
+  
+  /* Tab navigation */
+  .tab-nav {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 5px;
+  }
+  
+  .tab-link {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  
+  /* Footer adjustments */
+  footer {
+    padding: 10px;
+    text-align: center;
+  }
+  
+  /* Pagination */
+  .pagination {
+    gap: 5px;
+  }
+  
+  .pagination a {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+}
+
+/* Small phones */
+@media (max-width: 480px) {
+  .hero h1 {
+    font-size: 20px;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .choose-for-me-btn {
+    width: 100%;
+  }
+  
+  /* Simplify interface for very small screens */
+  .card-actions {
+    flex-direction: column;
+    gap: 5px;
+    align-items: flex-start;
+  }
+  
+  /* Make modal smaller */
+  .modal-content {
+    width: 95%;
+    padding: 10px;
+  }
+}

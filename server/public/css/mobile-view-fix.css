@@ -1,0 +1,70 @@
+/* Fix for mobile view to ensure pricing cards are fully visible */
+
+@media (max-width: 767px) {
+  /* Override any problematic container styles */
+  body {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    height: auto !important;
+    min-height: 100% !important;
+  }
+  
+  /* Make sure the content doesn't get cut off */
+  .container {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    min-height: 100vh !important;
+    padding-bottom: 100px !important;
+  }
+  
+  /* Ensure pricing cards are fully visible */
+  .pricing-grid {
+    overflow: visible !important;
+    padding-bottom: 50px !important;
+    margin-bottom: 50px !important;
+  }
+  
+  /* Ensure each card fits on screen */
+  .pricing-card {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: auto !important;
+    margin-bottom: 30px !important;
+    padding-bottom: 100px !important; /* Give extra space for the button */
+    position: relative !important;
+  }
+  
+  /* Keep button always at bottom of card with proper spacing */
+  .plan-btn {
+    position: absolute !important;
+    bottom: 30px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: calc(100% - 50px) !important;
+    margin-top: 20px !important;
+  }
+  
+  /* Reduce feature list spacing to fit more on screen */
+  .features-list li {
+    padding: 6px 0 !important;
+  }
+  
+  /* Make cards scrollable in worst case */
+  .pricing-card {
+    max-height: 90vh !important;
+    overflow-y: auto !important;
+  }
+  
+  /* Fix any mobile viewport issues */
+  html, body {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+  
+  /* Adjust features list to take less space */
+  .features-list {
+    margin-bottom: 90px !important; /* Space for absolute positioned button */
+  }
+} 

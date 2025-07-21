@@ -1,0 +1,38 @@
+/* Direct fix for the promo code field shown in the screenshot */
+
+/* This targets the specific input field */
+.container > input[type="text"][placeholder="Enter Promo Code (Optional)"],
+input[type="text"][placeholder="Enter Promo Code (Optional)"],
+input[placeholder="Enter Promo Code (Optional)"] {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+}
+
+/* Hides the container of the promo code field */
+.promo-code-container,
+.stripe-payment-form .promo-code,
+.payment-form .promo-code,
+div:has(> input[placeholder="Enter Promo Code (Optional)"]) {
+  display: none !important;
+  height: 0 !important;
+  visibility: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
+/* Hide any field that's the first input in the pricing section */
+.pricing-header + input[type="text"],
+.pricing-header ~ input[type="text"]:first-of-type {
+  display: none !important;
+}
+
+/* Target anything between the header and pricing grid */
+.pricing-header + *:not(.pricing-grid),
+.pricing-header ~ *:not(.pricing-grid):not(.alert) {
+  display: none !important;
+} 

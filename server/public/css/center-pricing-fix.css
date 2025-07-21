@@ -1,0 +1,49 @@
+/* Better centering for two pricing cards */
+
+/* Fixed width container with true centering */
+.pricing-grid {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 30px !important;
+  margin: 50px auto !important;
+  width: 100% !important;
+  max-width: 850px !important;
+}
+
+/* Set exact widths for cards and make them more balanced */
+.pricing-card {
+  flex: 0 0 380px !important;
+  width: 380px !important;
+  max-width: 380px !important;
+  margin: 0 !important;
+}
+
+/* Remove any grid template columns that might be affecting the layout */
+@media (min-width: 768px) {
+  .pricing-grid {
+    grid-template-columns: none !important;
+  }
+
+  /* Make cards truly centered as a pair */
+  .container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  /* Add subtle 3D effect to make cards stand out */
+  .pricing-card {
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2) !important;
+    transform: perspective(1000px) rotateY(0deg) !important;
+    transition: transform 0.5s ease !important;
+  }
+  
+  .pricing-card:hover {
+    transform: perspective(1000px) rotateY(5deg) translateY(-5px) !important;
+  }
+  
+  .pricing-card.popular:hover {
+    transform: perspective(1000px) rotateY(-5deg) translateY(-10px) !important;
+  }
+} 

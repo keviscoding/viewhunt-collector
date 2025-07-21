@@ -1,0 +1,108 @@
+// Direct Stripe Checkout Handler
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('Direct Stripe checkout script loaded');
+  // Listen for showPricingModal event to trigger pricing popup
+  document.addEventListener("showPricingModal", function() {
+    console.log("Triggering pricing popup...");
+    
+    // Automatically click the Pro button to show pricing
+    const proButton = document.querySelector("[data-plan="pro"]");
+    if (proButton) {
+      console.log("Auto-clicking Pro button to show pricing");
+      proButton.click();
+    } else {
+      console.log("Pro button not found");
+    }
+  });
+  
+  // Simple notification system
+  function showMessage(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.style.position = 'fixed';
+    notification.style.top = '50%';
+    notification.style.left = '50%';
+    notification.style.transform = 'translate(-50%, -50%)';
+    notification.style.padding = '20px';
+    notification.style.zIndex = '9999';
+    notification.style.borderRadius = '8px';
+    notification.style.boxShadow = '0 5px 15px rgba(0, 0, 0, 0.3)';
+    notification.style.textAlign = 'center';
+    
+    if (type === 'error') {
+      notification.style.backgroundColor = 'rgba(220, 38, 38, 0.95)';
+    } else if (type === 'success') {
+      notification.style.backgroundColor = 'rgba(16, 185, 129, 0.95)';
+    } else {
+      notification.style.backgroundColor = 'rgba(59, 130, 246, 0.95)';
+    }
+    notification.style.color = 'white';
+    notification.innerHTML = message;
+    
+    document.body.appendChild(notification);
+    setTimeout(() => notification.remove(), 5000);
+  }
+  
+  // Get all plan buttons
+  const proButton = document.querySelector('[data-plan="pro"]');
+  const maxButton = document.querySelector('[data-plan="max"]');
+  const freeButton = document.querySelector('[data-plan="free"]');
+  
+  // Log what we found
+  console.log('Found Pro button:', !!proButton);
+  console.log('Found Max button:', !!maxButton);
+  console.log('Found Free button:', !!freeButton);
+  
+  // Pro button click handler - direct link
+  if (proButton) {
+    proButton.addEventListener('click', function(e) {
+      e.preventDefault();
+      
+      // Show loading message
+      showMessage(`<h3>Redirecting to Pro checkout...</h3><p>Please wait.</p>`);
+      
+      // Redirect to Pro checkout - real Stripe payment link
+      setTimeout(() => {
+        window.location.href = 'https://buy.stripe.com/fZe00ybm21VpgDKdQS';
+      }, 1500);
+    });
+  }
+  
+  // Max button click handler - direct link
+  if (maxButton) {
+    maxButton.addEventListener('click', function(e) {
+      e.preventDefault();
+      
+      // Show loading message
+      showMessage(`<h3>Redirecting to Max checkout...</h3><p>Please wait.</p>`);
+      
+      // Redirect to Max checkout - real Stripe payment link
+      setTimeout(() => {
+        window.location.href = 'https://buy.stripe.com/6oE7t02Pw9nR9bi6or';
+      }, 1500);
+    });
+  }
+  
+  // Free button click handler
+        }
+      })
+      .catch(err => {
+        console.error('Error:', err);
+        showMessage(`<h3>Error</h3><p>Could not activate free plan. Please try again.</p>`, 'error');
+      });
+    });
+  }
+  
+  // Show indicator that the script is working
+  const indicator = document.createElement('div');
+  indicator.style.position = 'fixed';
+  indicator.style.bottom = '10px';
+  indicator.style.right = '10px';
+  indicator.style.padding = '5px 10px';
+  indicator.style.backgroundColor = 'rgba(16, 185, 129, 0.7)';
+  indicator.style.color = 'white';
+  indicator.style.borderRadius = '4px';
+  indicator.style.fontSize = '12px';
+  indicator.textContent = 'Direct checkout enabled';
+  document.body.appendChild(indicator);
+  setTimeout(() => indicator.remove(), 5000);
+}); 

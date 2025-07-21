@@ -1,0 +1,33 @@
+/* Fix for "Everything in X plan" features */
+
+/* ONLY hide "Everything in Free plan" in Pro card but keep "Everything in Pro plan" for Max card */
+
+/* Target specific text with more precise selectors */
+.pricing-card.popular .features-list li:first-of-type,
+.pricing-card:not(.popular) + .pricing-card .features-list li:first-of-type {
+  display: none !important;
+}
+
+/* Landing page selectors */
+.pricing-card.popular .pricing-features .pricing-feature:first-of-type,
+.pricing-card:has(> .pricing-title:contains("Pro")) .pricing-features .pricing-feature:first-of-type {
+  display: none !important;
+}
+
+/* Show Max card first feature */
+.pricing-card:has(> .pricing-title:contains("Max")) .pricing-features .pricing-feature:first-of-type,
+.pricing-card:last-child .pricing-features .pricing-feature:first-of-type {
+  display: flex !important;
+}
+
+/* Specific fixes for odd class arrangements */
+li:has(> i.fas.fa-check + span:contains("Everything in Free plan")),
+.pricing-feature:has(> .pricing-check + span:contains("Everything in Free plan")) {
+  display: none !important;
+}
+
+/* Always show Pro plan features in Max */
+li:has(> i.fas.fa-check + span:contains("Everything in Pro plan")),
+.pricing-feature:has(> .pricing-check + span:contains("Everything in Pro plan")) {
+  display: flex !important;
+} 

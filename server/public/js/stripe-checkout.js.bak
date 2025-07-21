@@ -1,0 +1,270 @@
+// Stripe checkout handler
+document.addEventListener('DOMContentLoaded', function() {
+  // Log that the script has loaded
+  console.log('Stripe checkout script loaded');
+  
+  // Initialize Stripe with the public key
+  const stripePublicKey = 'pk_live_9zgwBZENfXOBCw0JLkYZZ14Y00OWjZLPgX';
+  const stripe = Stripe(stripePublicKey);
+  console.log('Stripe initialized with public key');
+  
+  // Get elements
+  const planButtons = document.querySelectorAll('[data-plan]');
+  const loadingOverlay = document.getElementById('loadingOverlay');
+  
+  // Report what we found
+  console.log(`Found ${planButtons.length} plan buttons on the page`);
+  console.log(`Loading overlay element found: ${loadingOverlay !== null}`);
+  
+  // Notification function to provide feedback to users
+  function showNotification(message, type = 'info') {
+    // If there's an existing notification, remove it
+    const existingNotification = document.querySelector('.stripe-notification');
+    if (existingNotification) {
+      existingNotification.remove();
+    }
+    
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `stripe-notification ${type}`;
+    notification.innerHTML = `
+      <div class="notification-content">
+        <i class="fas ${type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'}"></i>
+        <span>${message}</span>
+      </div>
+      <button class="close-btn"><i class="fas fa-times"></i></button>
+    `;
+    
+    // Add styles
+    notification.style.position = 'fixed';
+    notification.style.top = '20px';
+    notification.style.right = '20px';
+    notification.style.padding = '15px 20px';
+    notification.style.borderRadius = '8px';
+    notification.style.zIndex = '9999';
+    notification.style.minWidth = '300px';
+    notification.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+    notification.style.display = 'flex';
+    notification.style.justifyContent = 'space-between';
+    notification.style.alignItems = 'center';
+    
+    if (type === 'error') {
+      notification.style.backgroundColor = 'rgba(220, 38, 38, 0.95)';
+      notification.style.color = 'white';
+    } else if (type === 'success') {
+      notification.style.backgroundColor = 'rgba(16, 185, 129, 0.95)';
+      notification.style.color = 'white';
+    } else {
+      notification.style.backgroundColor = 'rgba(59, 130, 246, 0.95)';
+      notification.style.color = 'white';
+    }
+    
+    // Add to DOM
+    document.body.appendChild(notification);
+    
+    // Add close button functionality
+    const closeBtn = notification.querySelector('.close-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function() {
+        notification.remove();
+      });
+    }
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+      if (document.body.contains(notification)) {
+        notification.remove();
+      }
+    }, 5000);
+  }
+  
+  // Add click event listeners to plan buttons
+  planButtons.forEach(button => {
+    button.addEventListener('click', async function(e) {
+      e.preventDefault();
+      
+      const plan = this.dataset.plan;
+      console.log(`Plan button clicked: ${plan}`);
+      
+      // Show loading overlay
+      if (loadingOverlay) {
+        loadingOverlay.classList.add('active');
+      }
+      
+      // Show processing message
+      showNotification(`Processing ${plan.toUpperCase()} plan subscription...`, 'info');
+      
+      try {
+        // For free plan, just send the request directly
+        if (plan === 'free') {
+          console.log('Processing free plan activation');
+          const response = await fetch('/subscription/create-checkout-session', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ plan }),
+          });
+          
+          if (!response.ok) {
+            console.error(`Server returned error status: ${response.status}`);
+            throw new Error(`Server returned status ${response.status}`);
+          }
+          
+          const result = await response.json();
+          console.log('Free plan response:', result);
+          
+          if (result.success) {
+            showNotification('Free plan activated successfully!', 'success');
+            setTimeout(() => {
+              window.location.href = result.redirect || '/app';
+            }, 1000);
+          } else {
+            showNotification(`Error: ${result.message || 'Free plan activation failed'}`, 'error');
+            console.error('Free plan activation error:', result);
+            if (loadingOverlay) {
+              loadingOverlay.classList.remove('active');
+            }
+          }
+          
+          return;
+        }
+        
+        // For paid plans, create checkout session
+        console.log(`Creating checkout session for ${plan} plan`);
+        const response = await fetch('/subscription/create-checkout-session', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ plan }),
+        });
+        
+        if (!response.ok) {
+          console.error(`Server returned error status: ${response.status}`);
+          throw new Error(`Server returned status ${response.status}`);
+        }
+        
+        const session = await response.json();
+        console.log('Checkout session response:', session);
+        
+        if (session.success && session.url) {
+          // Redirect to Stripe Checkout
+          console.log(`Redirecting to Stripe checkout page: ${session.url}`);
+          window.location.href = session.url;
+        } else {
+          // Handle error
+          const errorMessage = session.message || 'Something went wrong with payment processing';
+          showNotification(`Error: ${errorMessage}`, 'error');
+          console.error('Checkout session error:', session);
+          if (loadingOverlay) {
+            loadingOverlay.classList.remove('active');
+          }
+        }
+      } catch (error) {
+        const errorMessage = error.message || 'An unexpected error occurred';
+        showNotification(`Error: ${errorMessage}`, 'error');
+        console.error('Payment processing error:', error);
+        if (loadingOverlay) {
+          loadingOverlay.classList.remove('active');
+        }
+      }
+    });
+  });
+  
+  // Handle subscription management
+  const cancelSubscriptionBtn = document.getElementById('cancelSubscription');
+  const resumeSubscriptionBtn = document.getElementById('resumeSubscription');
+  
+  if (cancelSubscriptionBtn) {
+    console.log('Cancel subscription button found');
+    cancelSubscriptionBtn.addEventListener('click', async function(e) {
+      e.preventDefault();
+      
+      if (!confirm('Are you sure you want to cancel your subscription? You will still have access until the end of your billing period.')) {
+        return;
+      }
+      
+      if (loadingOverlay) {
+        loadingOverlay.classList.add('active');
+      }
+      
+      showNotification('Processing cancellation request...', 'info');
+      
+      try {
+        const response = await fetch('/subscription/cancel', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Server returned status ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          showNotification('Your subscription has been canceled and will end at the end of your current billing period.', 'success');
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+        } else {
+          showNotification(`Error: ${result.message || 'Could not cancel subscription'}`, 'error');
+        }
+      } catch (error) {
+        showNotification(`Error: ${error.message || 'An unexpected error occurred'}`, 'error');
+        console.error('Subscription cancellation error:', error);
+      } finally {
+        if (loadingOverlay) {
+          loadingOverlay.classList.remove('active');
+        }
+      }
+    });
+  }
+  
+  if (resumeSubscriptionBtn) {
+    console.log('Resume subscription button found');
+    resumeSubscriptionBtn.addEventListener('click', async function(e) {
+      e.preventDefault();
+      
+      if (loadingOverlay) {
+        loadingOverlay.classList.add('active');
+      }
+      
+      showNotification('Processing subscription resumption...', 'info');
+      
+      try {
+        const response = await fetch('/subscription/resume', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Server returned status ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          showNotification('Your subscription has been resumed successfully.', 'success');
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+        } else {
+          showNotification(`Error: ${result.message || 'Could not resume subscription'}`, 'error');
+        }
+      } catch (error) {
+        showNotification(`Error: ${error.message || 'An unexpected error occurred'}`, 'error');
+        console.error('Subscription resumption error:', error);
+      } finally {
+        if (loadingOverlay) {
+          loadingOverlay.classList.remove('active');
+        }
+      }
+    });
+  }
+}); 

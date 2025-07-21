@@ -1,0 +1,228 @@
+/* Dark starry background */
+:root {
+    --dark-bg: #0F172A;
+    --darker-bg: #0A0F1D;
+    --light-text: #F9FAFB;
+    --muted-text: #94A3B8;
+    --primary: #6366F1;
+    --primary-dark: #4F46E5;
+    --header-bg: rgba(15, 23, 42, 0.75);
+}
+
+body {
+    background: linear-gradient(to bottom, var(--darker-bg), #1E293B);
+    color: var(--light-text);
+    position: relative;
+    min-height: 100vh;
+}
+
+/* Starry background */
+.stars-background {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    background-image: radial-gradient(2px 2px at 20px 30px, #eaeaea, rgba(0, 0, 0, 0)),
+                      radial-gradient(2px 2px at 40px 70px, #ffffff, rgba(0, 0, 0, 0)),
+                      radial-gradient(1px 1px at 90px 40px, #ffffff, rgba(0, 0, 0, 0)),
+                      radial-gradient(2px 2px at 160px 120px, #ddd, rgba(0, 0, 0, 0)),
+                      radial-gradient(1px 1px at 230px 190px, #ffffff, rgba(0, 0, 0, 0));
+    background-repeat: repeat;
+    background-size: 250px 250px;
+    opacity: 0.3;
+}
+
+/* Add shooting stars animation */
+@keyframes shooting-star {
+    0% {
+        transform: translate(0, 0) rotate(45deg) scale(0);
+        opacity: 0;
+    }
+    10% {
+        transform: translate(-20px, 20px) rotate(45deg) scale(1);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(-200px, 200px) rotate(45deg) scale(0.2);
+        opacity: 0;
+    }
+}
+
+.shooting-star {
+    position: absolute;
+    width: 100px;
+    height: 1px;
+    background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.8) 100%);
+    animation: shooting-star 5s linear infinite;
+    opacity: 0;
+}
+
+#shooting-stars-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    overflow: hidden;
+}
+
+/* Header & Navigation - transparent with blur */
+header {
+    background-color: var(--header-bg);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    padding: 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+    transition: all 0.3s ease;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.logo {
+    color: var(--light-text);
+}
+
+.nav-link {
+    color: var(--light-text);
+}
+
+.btn-outline {
+    color: var(--light-text);
+}
+
+/* Hero Section */
+.hero {
+    background-color: transparent;
+}
+
+.hero-title {
+    color: var(--light-text);
+}
+
+.hero-subtitle {
+    color: var(--muted-text);
+}
+
+/* Stats Bar */
+.stats-bar {
+    background-color: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.stat-item p {
+    color: var(--light-text);
+}
+
+/* Features */
+.features {
+    background-color: transparent;
+}
+
+.section-title {
+    color: var(--light-text);
+}
+
+.section-subtitle {
+    color: var(--muted-text);
+}
+
+.feature-card {
+    background-color: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.feature-card:hover {
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.feature-title {
+    color: var(--light-text);
+}
+
+.feature-description {
+    color: var(--muted-text);
+}
+
+/* Problem Section */
+.problem {
+    background-color: transparent;
+}
+
+.problem-text h3 {
+    color: var(--light-text);
+}
+
+.problem-text p {
+    color: var(--muted-text);
+}
+
+/* How It Works */
+.how-it-works {
+    background-color: transparent;
+}
+
+.step-title {
+    color: var(--light-text);
+}
+
+.step-description {
+    color: var(--muted-text);
+}
+
+/* Creators Section */
+.creators {
+    background-color: transparent;
+}
+
+/* Channel List */
+.channel-list-container {
+    background-color: rgba(15, 23, 42, 0.3);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.channel-item {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.channel-name {
+    color: var(--light-text);
+}
+
+.stat-label {
+    color: var(--muted-text);
+}
+
+.stat-value {
+    color: var(--light-text);
+}
+
+/* Mobile optimization */
+@media (max-width: 576px) {
+    .channel-list-container {
+        max-width: 100%;
+    }
+    
+    .channel-list-inner {
+        max-width: 100%;
+        margin: 0 auto;
+    }
+    
+    .channel-item {
+        width: 100%;
+    }
+} 

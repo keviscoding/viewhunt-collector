@@ -1,0 +1,30 @@
+/* Hide Stripe's promocode section*/
+.StripeElement--empty {
+  display: none !important;
+}
+
+/* Hide Stripe elements that contain promo code text */
+.StripeElement iframe[title*="Code"],
+.StripeElement iframe[title*="code"],
+.StripeElement iframe[title*="coupon"],
+.StripeElement iframe[title*="Coupon"] {
+  display: none !important;
+}
+
+/* Remove extra white space after hiding promo code field */
+form:has(.StripeElement--empty) {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+/* In case the promo code is in the container we saw in the image */
+.container > .form-group:first-of-type,
+.container > input[type="text"]:first-of-type {
+  display: none !important;
+}
+
+/* Target the specific promo code field in the pricing page based on the screenshot */
+.container > input[placeholder="Enter Promo Code (Optional)"],
+input[placeholder="Enter Promo Code (Optional)"] {
+  display: none !important;
+} 

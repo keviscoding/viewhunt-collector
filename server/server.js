@@ -6,21 +6,78 @@ const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 require('dotenv').config();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3003;
+
+// Set up EJS template engine
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+
+// Set up EJS templating
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
 
 // Middleware
 app.use(cors());
+
+// Stripe webhook needs raw body (before express.json)
+app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json({ limit: '50mb' })); // Increase payload limit for large datasets
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Serve static files for landing page
+app.use(express.static(path.join(__dirname, 'public')));
+
 // Serve mobile app static files
 app.use('/mobile', express.static(path.join(__dirname, 'mobile')));
-app.use(express.static(path.join(__dirname, 'mobile')));
+app.use('/app', express.static(path.join(__dirname, 'mobile')));
 
-// Serve mobile app at root and at the routed path
+// Landing page route
 app.get('/', (req, res) => {
+    res.render('landing');
+});
+
+// Pricing page route
+app.get('/pricing', (req, res) => {
+    try {
+        const error = req.query.error || null;
+        const success = req.query.success || null;
+        
+        res.render('pricing', {
+            user: null, // Will be populated if user is logged in
+            stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+            error,
+            success
+        });
+    } catch (error) {
+        console.error('Error rendering pricing page:', error);
+        res.status(500).send('Server error');
+    }
+});
+
+// Subscription success page
+app.get('/subscription-success', (req, res) => {
+    res.redirect('/app?success=subscription_activated');
+});
+
+// Pricing page route
+app.get('/pricing', (req, res) => {
+    const error = req.query.error || null;
+    const success = req.query.success || null;
+    
+    res.render('pricing', {
+        user: null, // We'll add user detection later
+        stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+        error,
+        success
+    });
+});
+
+// Serve mobile app for /app path
+app.get('/app', (req, res) => {
     handleMobileApp(req, res);
 });
 
@@ -49,7 +106,7 @@ function handleMobileApp(req, res) {
 }
 
 // MongoDB setup
-const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_URI = process.env.MONGO_URI;
 let db;
 
 // Connect to MongoDB
@@ -129,6 +186,54 @@ async function connectToMongoDB() {
 
 // Initialize MongoDB connection
 connectToMongoDB();
+
+// Subscription middleware
+const requireSubscription = async (req, res, next) => {
+    try {
+        const user = req.user;
+        
+        // Admin always has access
+        if (user.email === process.env.ADMIN_EMAIL) {
+            return next();
+        }
+        
+        // Check if user has subscription data
+        if (!user.subscription || !user.subscription.stripeSubscriptionId) {
+            return res.status(403).json({ 
+                error: 'Active subscription required',
+                redirect: '/pricing'
+            });
+        }
+        
+        // Verify subscription with Stripe
+        try {
+            const subscription = await stripe.subscriptions.retrieve(user.subscription.stripeSubscriptionId);
+            
+            // Check if subscription is active
+            if (subscription.status !== 'active') {
+                return res.status(403).json({ 
+                    error: 'Active subscription required',
+                    redirect: '/pricing'
+                });
+            }
+            
+            // Add subscription info to request
+            req.subscription = subscription;
+            next();
+            
+        } catch (stripeError) {
+            console.error('Stripe subscription check failed:', stripeError);
+            return res.status(403).json({ 
+                error: 'Subscription verification failed',
+                redirect: '/pricing'
+            });
+        }
+        
+    } catch (error) {
+        console.error('Subscription middleware error:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+};
 
 // Helper function to generate public collection HTML
 function generatePublicCollectionHTML(collection, channels, owner) {
@@ -563,7 +668,7 @@ app.post('/api/channels/bulk', async (req, res) => {
 });
 
 // Approve a channel (requires authentication) - User-specific approach
-app.put('/api/channels/:id/approve', authenticateToken, async (req, res) => {
+app.put('/api/channels/:id/approve', authenticateToken, requireSubscription, async (req, res) => {
     const channelId = req.params.id;
     const userId = new ObjectId(req.user.userId);
     
@@ -628,7 +733,7 @@ app.put('/api/channels/:id/approve', authenticateToken, async (req, res) => {
 });
 
 // Reject a channel (requires authentication) - User-specific approach
-app.put('/api/channels/:id/reject', authenticateToken, async (req, res) => {
+app.put('/api/channels/:id/reject', authenticateToken, requireSubscription, async (req, res) => {
     const channelId = req.params.id;
     const userId = new ObjectId(req.user.userId);
     
@@ -678,7 +783,7 @@ app.put('/api/channels/:id/reject', authenticateToken, async (req, res) => {
 });
 
 // Get approved channels - User-specific or Admin view
-app.get('/api/channels/approved', authenticateToken, async (req, res) => {
+app.get('/api/channels/approved', authenticateToken, requireSubscription, async (req, res) => {
     try {
         const userId = new ObjectId(req.user.userId);
         const isAdmin = req.user.email === 'nwalikelv@gmail.com' || req.user.email === 'kevis@viewhunt.com';
@@ -776,7 +881,7 @@ app.get('/api/channels/approved', authenticateToken, async (req, res) => {
 });
 
 // Get pending channels for user (excluding already reviewed) - SIMPLIFIED VERSION
-app.get('/api/channels/pending', authenticateToken, async (req, res) => {
+app.get('/api/channels/pending', authenticateToken, requireSubscription, async (req, res) => {
     try {
         const userId = new ObjectId(req.user.userId);
         
@@ -1452,6 +1557,165 @@ app.delete('/api/collections/:id', authenticateToken, async (req, res) => {
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Subscription Routes
+
+// Create checkout session for Pro subscription
+app.post('/api/subscription/create-checkout-session', authenticateToken, async (req, res) => {
+    try {
+        const user = req.user;
+        
+        // Get or create Stripe customer
+        let customerId = user.subscription?.stripeCustomerId;
+        
+        if (!customerId) {
+            const customer = await stripe.customers.create({
+                email: user.email,
+                name: user.display_name,
+                metadata: {
+                    userId: user._id.toString()
+                }
+            });
+            
+            customerId = customer.id;
+            
+            // Save customer ID to user
+            await db.collection('users').updateOne(
+                { _id: user._id },
+                { 
+                    $set: { 
+                        'subscription.stripeCustomerId': customerId 
+                    } 
+                }
+            );
+        }
+        
+        // Create checkout session
+        const session = await stripe.checkout.sessions.create({
+            customer: customerId,
+            payment_method_types: ['card'],
+            line_items: [
+                {
+                    price: process.env.STRIPE_PRICE_PRO,
+                    quantity: 1,
+                },
+            ],
+            mode: 'subscription',
+            success_url: `${process.env.APP_URL}/subscription-success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.APP_URL}/pricing`,
+            metadata: {
+                userId: user._id.toString(),
+                plan: 'pro'
+            },
+            allow_promotion_codes: true,
+            billing_address_collection: "auto"
+        });
+        
+        res.json({ 
+            success: true, 
+            sessionId: session.id,
+            url: session.url 
+        });
+        
+    } catch (error) {
+        console.error('Error creating checkout session:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to create checkout session' 
+        });
+    }
+});
+
+// Handle subscription success
+app.get('/api/subscription/success', authenticateToken, async (req, res) => {
+    try {
+        const { session_id } = req.query;
+        
+        if (!session_id) {
+            return res.redirect('/pricing?error=invalid_session');
+        }
+        
+        // Retrieve the session from Stripe
+        const session = await stripe.checkout.sessions.retrieve(session_id);
+        
+        if (session.payment_status === 'paid') {
+            // Update user subscription status
+            const subscription = await stripe.subscriptions.retrieve(session.subscription);
+            
+            await db.collection('users').updateOne(
+                { _id: req.user._id },
+                {
+                    $set: {
+                        'subscription.status': 'active',
+                        'subscription.plan': 'pro',
+                        'subscription.stripeSubscriptionId': subscription.id,
+                        'subscription.startDate': new Date(subscription.current_period_start * 1000),
+                        'subscription.endDate': new Date(subscription.current_period_end * 1000)
+                    }
+                }
+            );
+            
+            res.redirect('/app?success=subscription_activated');
+        } else {
+            res.redirect('/pricing?error=payment_failed');
+        }
+        
+    } catch (error) {
+        console.error('Error handling subscription success:', error);
+        res.redirect('/pricing?error=processing_failed');
+    }
+});
+
+// Stripe webhook handler
+app.post('/api/subscription/webhook', async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    let event;
+    
+    try {
+        event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    } catch (err) {
+        console.error('Webhook signature verification failed:', err.message);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+    
+    // Handle the event
+    switch (event.type) {
+        case 'customer.subscription.updated':
+        case 'customer.subscription.deleted':
+            const subscription = event.data.object;
+            
+            // Update user subscription status
+            await db.collection('users').updateOne(
+                { 'subscription.stripeSubscriptionId': subscription.id },
+                {
+                    $set: {
+                        'subscription.status': subscription.status,
+                        'subscription.endDate': new Date(subscription.current_period_end * 1000)
+                    }
+                }
+            );
+            break;
+            
+        case 'invoice.payment_failed':
+            const invoice = event.data.object;
+            
+            // Update user subscription status to past_due
+            await db.collection('users').updateOne(
+                { 'subscription.stripeCustomerId': invoice.customer },
+                {
+                    $set: {
+                        'subscription.status': 'past_due'
+                    }
+                }
+            );
+            break;
+            
+        default:
+            console.log(`Unhandled event type ${event.type}`);
+    }
+    
+    res.json({ received: true });
 });
 
 // Start server

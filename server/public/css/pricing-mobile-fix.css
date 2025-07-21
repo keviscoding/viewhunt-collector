@@ -1,0 +1,76 @@
+/* Mobile-specific improvements for pricing page */
+
+@media (max-width: 767px) {
+  /* Better sizing for mobile cards */
+  .pricing-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 20px !important;
+    padding: 0 15px !important;
+  }
+
+  .pricing-card {
+    width: 100% !important;
+    max-width: 450px !important;
+    margin: 10px 0 !important;
+    padding: 30px 25px !important;
+  }
+
+  /* Highlight the popular card even on mobile */
+  .pricing-card.popular {
+    transform: scale(1.03) !important;
+    border: 1px solid rgba(192, 38, 211, 0.5) !important;
+    box-shadow: 0 10px 25px rgba(145, 92, 182, 0.15) !important;
+  }
+
+  /* Adjust typography for mobile */
+  .pricing-card h3 {
+    font-size: 28px !important;
+  }
+
+  .pricing-card .price {
+    font-size: 40px !important;
+  }
+
+  .pricing-card .period {
+    font-size: 16px !important;
+  }
+
+  .pricing-card .description {
+    font-size: 16px !important;
+    margin-bottom: 20px !important;
+  }
+
+  /* Make buttons more tappable */
+  .plan-btn {
+    padding: 14px 20px !important;
+    font-size: 16px !important;
+    width: 100% !important;
+    margin-top: 15px !important;
+  }
+
+  /* Improve header spacing */
+  .pricing-header {
+    padding: 20px 15px !important;
+    text-align: center !important;
+  }
+
+  .pricing-header h1 {
+    font-size: 28px !important;
+    line-height: 1.3 !important;
+    margin-bottom: 15px !important;
+  }
+
+  .pricing-header p {
+    font-size: 16px !important;
+    line-height: 1.5 !important;
+  }
+
+  /* Reduce comparison table padding */
+  .comparison-table td, 
+  .comparison-table th {
+    padding: 12px 8px !important;
+    font-size: 14px !important;
+  }
+} 

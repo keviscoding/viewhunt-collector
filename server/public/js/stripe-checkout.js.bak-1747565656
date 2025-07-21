@@ -1,0 +1,36 @@
+// Completely rewritten checkout handler script
+document.addEventListener("DOMContentLoaded", function() {
+  // Get plan buttons
+  const proButton = document.querySelector("[data-plan=\"pro\"]");
+  const maxButton = document.querySelector("[data-plan=\"max\"]");
+  function createCheckoutSession(plan) {
+    return fetch("/subscription/create-checkout-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plan })
+    })
+    .then(response => response.json())
+    .then(session => {
+      if (session.success && session.url) {
+        window.location.href = session.url;
+      } else {
+        alert("Error creating checkout session");
+      }
+    })
+    .catch(error => console.error("Error:", error));
+  }
+  // Pro button click handler
+  if (proButton) {
+    proButton.addEventListener("click", function(e) {
+      e.preventDefault();
+      createCheckoutSession("pro");
+    });
+  }
+  // Max button click handler
+  if (maxButton) {
+    maxButton.addEventListener("click", function(e) {
+      e.preventDefault();
+      createCheckoutSession("max");
+    });
+  }
+});

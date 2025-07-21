@@ -1,0 +1,761 @@
+  <style>
+    :root {
+      --primary-gradient: linear-gradient(135deg, #6D28D9, #9333EA, #C026D3);
+      --secondary-gradient: linear-gradient(135deg, #2563EB, #3B82F6, #60A5FA);
+      --accent-color: #F472B6;
+      --dark-bg: #0F172A;
+      --darker-bg: #0A0F1D;
+      --light-text: #F8FAFC;
+      --muted-text: #94A3B8;
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --card-hover: rgba(51, 65, 85, 0.9);
+      --success-color: #10B981;
+      --warning-color: #F59E0B;
+      --danger-color: #EF4444;
+      --animation-timing: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--dark-bg);
+      color: var(--light-text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    
+    .shooting-stars-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -10;
+      pointer-events: none;
+    }
+    
+    .stars-background {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -11;
+      pointer-events: none;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    
+    .nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 25px 0;
+    }
+    
+    .logo {
+      display: flex;
+      align-items: center;
+      font-size: 28px;
+      font-weight: 800;
+      color: white;
+      text-decoration: none;
+    }
+    
+    .logo i {
+      margin-right: 12px;
+      color: var(--accent-color);
+      font-size: 24px;
+    }
+    
+    .logo-highlight {
+      background: var(--primary-gradient);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      font-weight: 800;
+    }
+    
+    .pricing-header {
+      text-align: center;
+      padding: 50px 0;
+    }
+    
+    .pricing-header h1 {
+      font-size: 42px;
+      margin-bottom: 20px;
+      background: var(--primary-gradient);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    
+    .pricing-header p {
+      font-size: 18px;
+      color: var(--muted-text);
+      max-width: 650px;
+      margin: 0 auto;
+    }
+    
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 30px;
+      margin: 50px 0;
+    }
+    
+    .pricing-card {
+      background: var(--card-bg);
+      border-radius: 16px;
+      padding: 40px 30px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      transition: all 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .pricing-card.popular {
+      border-color: rgba(192, 38, 211, 0.5);
+    }
+    
+    .pricing-card.popular::before {
+      content: "MOST POPULAR";
+      position: absolute;
+      top: 12px;
+      right: -30px;
+      transform: rotate(45deg);
+      background: var(--primary-gradient);
+      color: white;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 40px;
+      letter-spacing: 1px;
+    }
+    
+    .pricing-card:hover {
+      transform: translateY(-10px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+      background: var(--card-hover);
+    }
+    
+    .pricing-card h3 {
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+    
+    .pricing-card .price {
+      font-size: 48px;
+      font-weight: 700;
+      margin: 20px 0;
+    }
+    
+    .pricing-card .price .period {
+      font-size: 16px;
+      color: var(--muted-text);
+      font-weight: 400;
+    }
+    
+    .pricing-card .description {
+      color: var(--muted-text);
+      margin-bottom: 25px;
+      font-size: 15px;
+    }
+    
+    .features-list {
+      list-style: none;
+      margin-bottom: 30px;
+    }
+    
+    .features-list li {
+      padding: 8px 0;
+      display: flex;
+      align-items: center;
+    }
+    
+    .features-list li i {
+      margin-right: 10px;
+      color: var(--success-color);
+    }
+    
+    .features-list li.unavailable {
+      color: var(--muted-text);
+    }
+    
+    .features-list li.unavailable i {
+      color: var(--muted-text);
+    }
+    
+    .plan-btn {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      text-align: center;
+      border-radius: 8px;
+      font-weight: 600;
+      transition: all 0.3s;
+      cursor: pointer;
+      text-decoration: none;
+      border: none;
+      font-size: 16px;
+    }
+    
+    .btn-primary {
+      background: var(--primary-gradient);
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      box-shadow: 0 5px 15px rgba(109, 40, 217, 0.4);
+      transform: translateY(-2px);
+    }
+    
+    .btn-outline {
+      background: transparent;
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    .btn-outline:hover {
+      border-color: white;
+      transform: translateY(-2px);
+    }
+    
+    .current-plan-badge {
+      display: inline-block;
+      background: var(--success-color);
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 20px;
+      margin-left: 10px;
+      vertical-align: middle;
+    }
+    
+    .comparison-table {
+      width: 100%;
+      margin: 70px 0;
+      border-collapse: collapse;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+      background: var(--card-bg);
+    }
+    
+    .comparison-table th,
+    .comparison-table td {
+      padding: 15px 20px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .comparison-table th {
+      background-color: rgba(51, 65, 85, 0.5);
+      font-weight: 600;
+    }
+    
+    .comparison-table tr:last-child td {
+      border-bottom: none;
+    }
+    
+    .comparison-table .feature-name {
+      font-weight: 500;
+    }
+    
+    .comparison-table .check {
+      color: var(--success-color);
+      font-size: 18px;
+    }
+    
+    .comparison-table .cross {
+      color: var(--muted-text);
+      font-size: 18px;
+    }
+    
+    .faq-section {
+      margin: 100px 0;
+    }
+    
+    .faq-section h2 {
+      text-align: center;
+      font-size: 32px;
+      margin-bottom: 40px;
+      background: var(--primary-gradient);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    
+    .faq-list {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    
+    .faq-item {
+      background: var(--card-bg);
+      margin-bottom: 15px;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    
+    .faq-question {
+      padding: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.3s;
+    }
+    
+    .faq-question:hover {
+      background: var(--card-hover);
+    }
+    
+    .faq-answer {
+      padding: 0 20px;
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out, padding 0.3s ease;
+      color: var(--muted-text);
+    }
+    
+    .faq-item.active .faq-answer {
+      padding: 5px 20px 20px;
+      max-height: 1000px;
+    }
+    
+    .faq-item.active .faq-toggle i {
+      transform: rotate(180deg);
+    }
+    
+    .faq-toggle {
+      transition: transform 0.3s;
+    }
+    
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(10, 15, 29, 0.8);
+      backdrop-filter: blur(5px);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s;
+    }
+    
+    .loading-overlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+    
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-radius: 50%;
+      border-top-color: #6D28D9;
+      animation: spin 1s ease-in-out infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .alert {
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+      font-weight: 500;
+    }
+    
+    .alert-error {
+      background-color: rgba(239, 68, 68, 0.2);
+      border: 1px solid rgba(239, 68, 68, 0.5);
+      color: #FCA5A5;
+    }
+    
+    .alert-success {
+      background-color: rgba(16, 185, 129, 0.2);
+      border: 1px solid rgba(16, 185, 129, 0.5);
+      color: #6EE7B7;
+    }
+    
+    @media screen and (max-width: 768px) {
+      .pricing-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .comparison-table {
+        display: block;
+        overflow-x: auto;
+      }
+      
+      .pricing-header h1 {
+        font-size: 32px;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/css/pricing-fixes.css">
+  <link rel="stylesheet" href="/css/direct-promo-fix.css">
+  <link rel="stylesheet" href="/css/center-pricing-fix.css">
+  <link rel="stylesheet" href="/css/force-center-fix.css">
+  <link rel="stylesheet" href="/css/pricing-mobile-fix.css">
+  <link rel="stylesheet" href="/css/fix-checkmarks.css">
+  <link rel="stylesheet" href="/css/mobile-view-fix.css">
+  <link rel="stylesheet" href="/css/button-position-fix.css">
+  <link rel="stylesheet" href="/css/mobile-polish.css">
+  <link rel="stylesheet" href="/css/improved-mobile-spacing.css">
+  <link rel="stylesheet" href="/css/pro-feature-fix.css">
+  <script>
+    // Log the HTML structure to help debug the promo code field
+    window.addEventListener("load", function() {
+      setTimeout(function() {
+        const promoFields = document.querySelectorAll("input[placeholder*="Promo Code"]");
+        if (promoFields.length > 0) {
+          console.log("Found promo code fields:", promoFields.length);
+          promoFields.forEach(function(field, index) {
+            console.log(, field.outerHTML);
+            console.log(, field.parentNode.outerHTML);
+          });
+        } else {
+          console.log("No promo code fields found directly");
+        }
+      }, 1000);
+    });
+  </script>
+</head>
+<body>
+  <!-- Shooting stars container -->
+  <div class="shooting-stars-container"></div>
+  
+  <!-- Static stars background -->
+  <div class="stars-background"></div>
+  
+  <!-- Loading overlay -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+  </div>
+
+  <div class="container">
+    <nav class="nav">
+      <a href="/" class="logo">
+        <i class="fas fa-meteor"></i>
+        <span>Niche<span class="logo-highlight">Flix</span></span>
+      </a>
+    </nav>
+    
+    <div class="pricing-header">
+      <h1>Choose the Right Plan for Your Growth</h1>
+      <p>Unlock premium features and get access to the full database of trending YouTube Shorts channels. Find your perfect niche with our tailored subscription plans.</p>
+      
+      <% if (error) { %>
+        <div class="alert alert-error">
+          <%= error %>
+        </div>
+      <% } %>
+      
+      <% if (success) { %>
+        <div class="alert alert-success">
+          <%= success %>
+        </div>
+      <% } %>
+    </div>
+    
+    <div class="pricing-grid">
+      <!-- Pro Plan (Only Plan) -->
+      <div class="pricing-card popular">
+        <h3>
+          Pro
+          <% if (user?.subscription?.plan === 'pro') { %>
+            <span class="current-plan-badge">CURRENT</span>
+          <% } %>
+        </h3>
+        <div class="price">$25<span class="period">/month</span></div>
+        <p class="description">Full access to ViewHunt's channel discovery system</p>
+        
+        <ul class="features-list">
+          <li><i class="fas fa-check"></i> Advanced filtering options</li>
+          <li><i class="fas fa-check"></i> Full channel database access</li>
+          <li><i class="fas fa-check"></i> Channel review and approval system</li>
+          <li><i class="fas fa-check"></i> Personal collections</li>
+          <li><i class="fas fa-check"></i> Data export capabilities</li>
+          <li><i class="fas fa-check"></i> Email support</li>
+        </ul>
+        
+        <% if (user?.subscription?.plan === 'pro') { %>
+          <button class="plan-btn btn-outline" disabled>Current Plan</button>
+        <% } else { %>
+          <button class="plan-btn btn-primary" data-plan="pro">Get Pro Access</button>
+        <% } %>
+      </div>
+    </div>
+    
+    <div class="comparison-table-container">
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Pro</th>
+            <th>Max</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="feature-name">Number of channels</td>
+            <td>Extended</td>
+            <td>Full access</td>
+          </tr>
+          <tr>
+            <td class="feature-name">Advanced filters</td>
+            <td><i class="fas fa-check check"></i></td>
+            <td><i class="fas fa-check check"></i></td>
+          </tr>
+          <tr>
+            <td class="feature-name">Export data</td>
+            <td><i class="fas fa-check check"></i></td>
+            <td><i class="fas fa-check check"></i></td>
+          </tr>
+          <tr>
+            <td class="feature-name">View full channel stats</td>
+            <td><i class="fas fa-check check"></i></td>
+            <td><i class="fas fa-check check"></i></td>
+          </tr>
+          <tr>
+            <td class="feature-name">API access</td>
+            <td><i class="fas fa-times cross"></i></td>
+            <td><i class="fas fa-check check"></i></td>
+          </tr>
+          <tr>
+            <td class="feature-name">Support level</td>
+            <td>Email</td>
+            <td>Priority</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="faq-section">
+      <h2>Frequently Asked Questions</h2>
+      <div class="faq-list">
+        <div class="faq-item">
+          <div class="faq-question">
+            <span>Can I upgrade or downgrade my plan later?</span>
+            <span class="faq-toggle"><i class="fas fa-chevron-down"></i></span>
+          </div>
+          <div class="faq-answer">
+            <p>Yes, you can upgrade or downgrade your plan at any time. When you upgrade, you'll be charged the prorated amount for the remainder of your billing cycle. When you downgrade, your new plan will take effect at the end of your current billing cycle.</p>
+          </div>
+        </div>
+        
+        <div class="faq-item">
+          <div class="faq-question">
+            <span>How does the subscription billing work?</span>
+            <span class="faq-toggle"><i class="fas fa-chevron-down"></i></span>
+          </div>
+          <div class="faq-answer">
+            <p>We bill monthly on the date you initially subscribe. You can cancel at any time, and your subscription will remain active until the end of your current billing period. We accept all major credit cards.</p>
+          </div>
+        </div>
+        
+        <div class="faq-item">
+          <div class="faq-question">
+            <span>Is there a trial period?</span>
+            <span class="faq-toggle"><i class="fas fa-chevron-down"></i></span>
+          </div>
+          <div class="faq-answer">
+            <p>We don't offer a free trial of our paid plans, but you can use our Free plan for as long as you'd like to explore the basic features. Our monthly subscription allows you to test the Pro or Max plans with minimum commitment.</p>
+          </div>
+        </div>
+        
+        <div class="faq-item">
+          <div class="faq-question">
+            <span>How do I cancel my subscription?</span>
+            <span class="faq-toggle"><i class="fas fa-chevron-down"></i></span>
+          </div>
+          <div class="faq-answer">
+            <p>You can cancel your subscription at any time from your account settings page. After cancellation, your plan will remain active until the end of your current billing period.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script src="/shooting-stars.js"></script>
+  <script>
+    // Flag to indicate if user is logged in for JavaScript
+    window.userLoggedIn = <%= typeof user !== "undefined" && user !== null %>;
+  </script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Initialize Stripe
+      const stripe = Stripe('<%= stripePublishableKey %>');
+      const loadingOverlay = document.getElementById('loadingOverlay');
+      
+      // Create the static starry background
+      createStarryBackground();
+      
+      // Initialize shooting stars effect
+      const shootingStars = new ShootingStars({
+        starColor: '#9E00FF',
+        trailColor: '#2EB9DF',
+        minSpeed: 15,
+        maxSpeed: 35,
+        minDelay: 1000,
+        maxDelay: 3000
+      });
+      
+      shootingStars.init();
+      
+      // FAQ Accordion
+      document.querySelectorAll('.faq-question').forEach(question => {
+        question.addEventListener('click', () => {
+          const faqItem = question.parentElement;
+          faqItem.classList.toggle('active');
+        });
+      });
+      
+      // Plan selection buttons
+      document.querySelectorAll('[data-plan]').forEach(button => {
+        button.addEventListener('click', async function() {
+          const plan = this.getAttribute('data-plan');
+          
+          // Show loading overlay
+          loadingOverlay.classList.add('active');
+          
+          try {
+            if (plan === 'free') {
+              // For free plan, just make a direct request
+              const response = await fetch('/api/subscription/create-checkout-session', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ plan: 'free' }),
+              });
+              
+              const result = await response.json();
+              
+              if (result.success) {
+                window.location.href = result.redirect;
+              } else {
+                throw new Error(result.message || 'Error activating free plan');
+              }
+            } else {
+              // For paid plans, create checkout session
+              const response = await fetch('/api/subscription/create-checkout-session', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ plan }),
+              });
+              
+              const session = await response.json();
+              
+              if (session.success) {
+                // Redirect to Stripe checkout
+                window.location.href = session.url;
+              } else {
+                throw new Error(session.message || 'Error creating checkout session');
+              }
+            }
+          } catch (error) {
+            console.error('Error:', error);
+            if (error.message.includes("Not authorized")) { window.location.href = "/login?redirect=/pricing"; } else { alert("Error: " + error.message); }
+            loadingOverlay.classList.remove('active');
+          }
+        });
+      });
+      
+      // Optional: Create the stars background
+      function createStarryBackground() {
+        const starsBackground = document.querySelector('.stars-background');
+        const starsCount = 150;
+        
+        for (let i = 0; i < starsCount; i++) {
+          const star = document.createElement('div');
+          star.classList.add('star');
+          
+          // Random position
+          star.style.left = `${Math.random() * 100}%`;
+          star.style.top = `${Math.random() * 100}%`;
+          
+          // Random size
+          const size = Math.random() * 2 + 1;
+          star.style.width = `${size}px`;
+          star.style.height = `${size}px`;
+          
+          // Random opacity and animation delay
+          star.style.opacity = Math.random() * 0.8 + 0.2;
+          star.style.animationDelay = `${Math.random() * 5}s`;
+          
+          starsBackground.appendChild(star);
+        }
+      }
+    });
+  </script>
+  <style>
+    /* Stars background style */
+    .star {
+      position: absolute;
+      background-color: white;
+      border-radius: 50%;
+      animation: twinkle 5s infinite ease-in-out;
+    }
+    
+    @keyframes twinkle {
+      0%, 100% { opacity: 0.2; }
+      50% { opacity: 1; }
+    }
+  </style>
+<script src="https://js.stripe.com/v3/"></script>
+<script src="/js/stripe-checkout.js"></script>
+<script src="/js/max-features-fix.js"></script>
+  <script>
+    // Script to hide promo code field dynamically
+    document.addEventListener("DOMContentLoaded", function() {
+      // Hide any promo code fields right away
+      hidePromoFields();
+      
+      // Set up a mutation observer to hide any dynamically added promo fields
+      const observer = new MutationObserver(function(mutations) {
+        hidePromoFields();
+      });
+      
+      // Start observing the document for changes
+      observer.observe(document.body, { childList: true, subtree: true });
+      
+      function hidePromoFields() {
+        // Hide elements by placeholder text
+        document.querySelectorAll("input[placeholder*="Promo Code"]").forEach(el => {
+          el.style.display = "none";
+          if (el.parentNode) {
+            el.parentNode.style.display = "none";
+          }
+        });
+        
+        // Hide Stripe-generated promo code fields
+        document.querySelectorAll(".promo-code-wrapper, .StripeElement--empty, [data-testid*="promo"]").forEach(el => {
+          el.style.display = "none";
+        });
+      }
+    });
+  </script>
+</body>
+</html> 

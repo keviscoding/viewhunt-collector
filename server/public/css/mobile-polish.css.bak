@@ -1,0 +1,88 @@
+/* Enhanced mobile polish for pricing cards */
+
+@media (max-width: 767px) {
+  /* Better card spacing and appearance */
+  .pricing-card {
+    padding: 35px 25px 40px !important;
+    margin: 20px 15px !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25) !important;
+    border-radius: 16px !important;
+    max-width: 92% !important;
+  }
+  
+  /* More attractive typography */
+  .pricing-card h3 {
+    font-size: 32px !important;
+    margin-bottom: 15px !important;
+    font-weight: 700 !important;
+  }
+  
+  .pricing-card .price {
+    font-size: 45px !important;
+    margin-bottom: 15px !important;
+    font-weight: 700 !important;
+  }
+  
+  .pricing-card .period {
+    font-size: 16px !important;
+    opacity: 0.8 !important;
+  }
+  
+  .pricing-card .description {
+    font-size: 16px !important;
+    line-height: 1.5 !important;
+    margin-bottom: 25px !important;
+    opacity: 0.85 !important;
+  }
+  
+  /* Better feature list spacing */
+  .features-list {
+    margin-bottom: 30px !important;
+    padding: 0 !important;
+  }
+  
+  .features-list li {
+    padding: 10px 0 !important;
+    margin-bottom: 5px !important;
+    font-size: 15px !important;
+    line-height: 1.4 !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+  
+  .features-list li i {
+    margin-right: 12px !important;
+    font-size: 16px !important;
+  }
+  
+  /* Nicer button */
+  .plan-btn {
+    margin-top: 25px !important;
+    padding: 15px 25px !important;
+    font-size: 17px !important;
+    font-weight: 600 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 5px 15px rgba(106, 90, 205, 0.3) !important;
+    transition: transform 0.2s, box-shadow 0.2s !important;
+  }
+  
+  .plan-btn:active {
+    transform: translateY(2px) !important;
+    box-shadow: 0 2px 8px rgba(106, 90, 205, 0.2) !important;
+  }
+  
+  /* Better container spacing */
+  .pricing-grid {
+    padding: 15px 0 30px !important;
+  }
+  
+  /* Ensure first card has margin at top */
+  .pricing-grid > .pricing-card:first-child {
+    margin-top: 25px !important;
+  }
+  
+  /* Add more space for last card before footer */
+  .pricing-grid > .pricing-card:last-child {
+    margin-bottom: 40px !important;
+  }
+} 
