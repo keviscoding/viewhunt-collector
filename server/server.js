@@ -2091,7 +2091,15 @@ app.post('/api/subscription/create-checkout-session', authenticateToken, async (
             });
         }
 
-        const user = req.user;
+        // Get full user data from database
+        const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        
+        if (!user) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'User not found' 
+            });
+        }
         
         // Get or create Stripe customer
         let customerId = user.subscription?.stripeCustomerId;
