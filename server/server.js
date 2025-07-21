@@ -157,33 +157,38 @@ let db;
 // Connect to MongoDB
 async function connectToMongoDB() {
     try {
+        console.log('Connecting to MongoDB with URI:', MONGODB_URI ? 'URI provided' : 'NO URI PROVIDED');
+        
         const client = new MongoClient(MONGODB_URI);
         await client.connect();
         
-        // List all databases to see what's available
-        const adminDb = client.db().admin();
-        const databases = await adminDb.listDatabases();
-        console.log('Available databases:', databases.databases.map(db => db.name));
+        // Connect to viewhuntv2 database
+        db = client.db('viewhuntv2');
         
-        // Try different possible database names
-        const possibleDbNames = ['viewhuntv2', 'viewhunt', 'viewhunt-v2', 'test'];
-        let foundDb = null;
+        // Check what collections exist
+        const collections = await db.listCollections().toArray();
+        console.log('Available collections:', collections.map(c => c.name));
         
-        for (const dbName of possibleDbNames) {
-            const testDb = client.db(dbName);
-            const channelCount = await testDb.collection('channels').countDocuments();
-            console.log(`Database '${dbName}' has ${channelCount} channels`);
-            
-            if (channelCount > 0 && !foundDb) {
-                foundDb = dbName;
-                console.log(`Using database '${dbName}' with ${channelCount} channels`);
-            }
+        // Check channel count
+        const channelCount = await db.collection('channels').countDocuments();
+        console.log(`viewhuntv2 database has ${channelCount} channels`);
+        
+        // Check if channels collection has any sample data
+        if (channelCount > 0) {
+            const sampleChannel = await db.collection('channels').findOne();
+            console.log('Sample channel:', {
+                name: sampleChannel?.channel_name,
+                url: sampleChannel?.channel_url,
+                status: sampleChannel?.status,
+                created_at: sampleChannel?.created_at
+            });
+        } else {
+            console.log('No channels found in database - this might be a new/empty database');
         }
         
-        // Use the database with channels, or default to viewhuntv2
-        const dbName = foundDb || 'viewhuntv2';
-        db = client.db(dbName);
-        console.log(`Connected to MongoDB database: ${dbName}`);
+        // Check user count
+        const userCount = await db.collection('users').countDocuments();
+        console.log(`Database has ${userCount} users`);
         
         // Create indexes for better performance
         await db.collection('channels').createIndex({ status: 1 });
