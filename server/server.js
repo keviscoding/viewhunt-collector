@@ -159,7 +159,31 @@ async function connectToMongoDB() {
     try {
         const client = new MongoClient(MONGODB_URI);
         await client.connect();
-        db = client.db('viewhuntv2');
+        
+        // List all databases to see what's available
+        const adminDb = client.db().admin();
+        const databases = await adminDb.listDatabases();
+        console.log('Available databases:', databases.databases.map(db => db.name));
+        
+        // Try different possible database names
+        const possibleDbNames = ['viewhuntv2', 'viewhunt', 'viewhunt-v2', 'test'];
+        let foundDb = null;
+        
+        for (const dbName of possibleDbNames) {
+            const testDb = client.db(dbName);
+            const channelCount = await testDb.collection('channels').countDocuments();
+            console.log(`Database '${dbName}' has ${channelCount} channels`);
+            
+            if (channelCount > 0 && !foundDb) {
+                foundDb = dbName;
+                console.log(`Using database '${dbName}' with ${channelCount} channels`);
+            }
+        }
+        
+        // Use the database with channels, or default to viewhuntv2
+        const dbName = foundDb || 'viewhuntv2';
+        db = client.db(dbName);
+        console.log(`Connected to MongoDB database: ${dbName}`);
         
         // Create indexes for better performance
         await db.collection('channels').createIndex({ status: 1 });
