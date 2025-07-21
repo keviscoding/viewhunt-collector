@@ -1483,8 +1483,9 @@ class ViewHuntApp {
     }
 
     async signInWithGoogle() {
-        // Redirect to Google OAuth
-        window.location.href = '/auth/google';
+        // Redirect to Google OAuth using the correct base URL
+        const baseUrl = window.location.origin;
+        window.location.href = `${baseUrl}/auth/google`;
     }
 
     logout() {
