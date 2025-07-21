@@ -154,21 +154,32 @@ function handleMobileApp(req, res) {
 }
 
 // MongoDB setup
-const MONGODB_URI = process.env.MONGO_URI;
-const V2_MONGODB_URI = process.env.V2_MONGO_URI || process.env.MONGO_URI;
-let db;
+const V1_MONGODB_URI = process.env.MONGO_URI; // V1 database (users + subscriptions)
+const V2_MONGODB_URI = process.env.V2_MONGO_URI || process.env.MONGO_URI; // V2 database (channels + beta users)
+let db; // V2 database (primary)
+let v1Db; // V1 database (for user migration)
 
 // Connect to MongoDB
 async function connectToMongoDB() {
     try {
         console.log('Connecting to V2 MongoDB with URI:', V2_MONGODB_URI ? 'V2 URI provided' : 'NO V2 URI PROVIDED');
-        console.log('V1 MongoDB URI:', MONGODB_URI ? 'V1 URI provided' : 'NO V1 URI PROVIDED');
+        console.log('Connecting to V1 MongoDB with URI:', V1_MONGODB_URI ? 'V1 URI provided' : 'NO V1 URI PROVIDED');
         
-        const client = new MongoClient(V2_MONGODB_URI);
-        await client.connect();
+        // Connect to V2 database (primary)
+        const v2Client = new MongoClient(V2_MONGODB_URI);
+        await v2Client.connect();
+        db = v2Client.db('viewhuntv2');
         
-        // Connect to viewhuntv2 database
-        db = client.db('viewhuntv2');
+        // Connect to V1 database (for user migration)
+        if (V1_MONGODB_URI && V1_MONGODB_URI !== V2_MONGODB_URI) {
+            const v1Client = new MongoClient(V1_MONGODB_URI);
+            await v1Client.connect();
+            v1Db = v1Client.db('viewhunt'); // V1 database name
+            console.log('Connected to both V1 and V2 databases');
+        } else {
+            console.log('Using same database for V1 and V2');
+            v1Db = db;
+        }
         
         // Check what collections exist
         const collections = await db.listCollections().toArray();
@@ -276,14 +287,34 @@ const requireSubscription = async (req, res, next) => {
             return next();
         }
         
-        // If Stripe is not configured, allow access for now (development mode)
+        // Get full user data from database to check migration status
+        const fullUser = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        
+        if (!fullUser) {
+            return res.status(403).json({ 
+                error: 'User not found',
+                redirect: '/pricing'
+            });
+        }
+        
+        // V2 Beta users (not migrated from V1) get free access
+        if (!fullUser.migrated_from_v1) {
+            console.log('V2 beta user, granting free access:', user.email);
+            return next();
+        }
+        
+        // V1 migrated users need active subscription
+        console.log('V1 migrated user, checking subscription:', user.email);
+        
+        // If Stripe is not configured, allow access for development
         if (!stripe) {
-            console.warn('Stripe not configured, allowing access');
+            console.warn('Stripe not configured, allowing access for V1 user');
             return next();
         }
         
         // Check if user has subscription data
-        if (!user.subscription || !user.subscription.stripeSubscriptionId) {
+        if (!fullUser.subscription || !fullUser.subscription.stripeSubscriptionId) {
+            console.log('V1 user has no subscription data');
             return res.status(403).json({ 
                 error: 'Active subscription required',
                 redirect: '/pricing'
@@ -292,22 +323,24 @@ const requireSubscription = async (req, res, next) => {
         
         // Verify subscription with Stripe
         try {
-            const subscription = await stripe.subscriptions.retrieve(user.subscription.stripeSubscriptionId);
+            const subscription = await stripe.subscriptions.retrieve(fullUser.subscription.stripeSubscriptionId);
             
             // Check if subscription is active
             if (subscription.status !== 'active') {
+                console.log('V1 user subscription not active:', subscription.status);
                 return res.status(403).json({ 
                     error: 'Active subscription required',
                     redirect: '/pricing'
                 });
             }
             
+            console.log('V1 user subscription verified as active');
             // Add subscription info to request
             req.subscription = subscription;
             next();
             
         } catch (stripeError) {
-            console.error('Stripe subscription check failed:', stripeError);
+            console.error('Stripe subscription check failed for V1 user:', stripeError);
             return res.status(403).json({ 
                 error: 'Subscription verification failed',
                 redirect: '/pricing'
@@ -525,6 +558,45 @@ const validateEmail = (email) => {
     return emailRegex.test(email);
 };
 
+// Helper function to migrate V1 user to V2
+const migrateV1UserToV2 = async (v1User) => {
+    try {
+        console.log('Migrating V1 user to V2:', v1User.email);
+        
+        // Create V2 user structure
+        const v2User = {
+            email: v1User.email.toLowerCase(),
+            password: v1User.password, // Keep same password hash
+            display_name: v1User.display_name || v1User.email.split('@')[0], // Use email prefix if no display name
+            created_at: v1User.created_at || new Date(),
+            updated_at: new Date(),
+            migrated_from_v1: true,
+            v1_user_id: v1User._id,
+            stats: {
+                channels_approved: 0,
+                channels_rejected: 0,
+                total_reviews: 0
+            },
+            // Preserve subscription data if it exists
+            subscription: v1User.subscription || null
+        };
+        
+        // Insert into V2 database
+        const result = await db.collection('users').insertOne(v2User);
+        console.log('V1 user migrated to V2 with ID:', result.insertedId);
+        
+        // Return the migrated user
+        return {
+            ...v2User,
+            _id: result.insertedId
+        };
+        
+    } catch (error) {
+        console.error('Error migrating V1 user:', error);
+        throw error;
+    }
+};
+
 // Authentication Routes
 
 // Register new user
@@ -625,13 +697,30 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
         console.log('Login attempt for email:', email.toLowerCase());
 
-        // Find user
-        const user = await db.collection('users').findOne({ 
+        // Step 1: Try to find user in V2 database first
+        let user = await db.collection('users').findOne({ 
             email: email.toLowerCase() 
         });
 
+        let userSource = 'V2';
+
+        // Step 2: If not found in V2, try V1 database
+        if (!user && v1Db && v1Db !== db) {
+            console.log('User not found in V2, checking V1 database');
+            const v1User = await v1Db.collection('users').findOne({ 
+                email: email.toLowerCase() 
+            });
+
+            if (v1User) {
+                console.log('User found in V1 database, migrating to V2');
+                user = await migrateV1UserToV2(v1User);
+                userSource = 'V1_MIGRATED';
+            }
+        }
+
+        // Step 3: Handle admin user creation if still not found
         if (!user) {
-            console.log('User not found for email:', email.toLowerCase());
+            console.log('User not found in either database');
             
             // Check if this is admin trying to login for the first time
             if (email.toLowerCase() === process.env.ADMIN_EMAIL?.toLowerCase() && process.env.ADMIN_PASSWORD) {
@@ -683,16 +772,16 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
             return res.status(401).json({ error: 'Invalid email or password' });
         }
 
-        console.log('User found, checking password');
+        console.log(`User found in ${userSource}, checking password`);
 
-        // Check password
+        // Step 4: Check password
         const isValidPassword = await bcrypt.compare(password, user.password);
         if (!isValidPassword) {
             console.log('Invalid password for user:', email.toLowerCase());
             return res.status(401).json({ error: 'Invalid email or password' });
         }
 
-        console.log('Login successful for user:', email.toLowerCase());
+        console.log(`Login successful for user: ${email.toLowerCase()} (${userSource})`);
 
         // Generate JWT token
         const token = jwt.sign(
