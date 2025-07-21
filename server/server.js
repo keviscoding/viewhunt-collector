@@ -969,12 +969,13 @@ app.get('/auth/google', (req, res) => {
         return res.redirect('/app?error=google_oauth_not_configured');
     }
     
-    const googleAuthUrl = `https://accounts.google.com/oauth/authorize?` +
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
         `client_id=${process.env.GOOGLE_CLIENT_ID}&` +
         `redirect_uri=${encodeURIComponent(process.env.GOOGLE_CALLBACK_URL)}&` +
         `response_type=code&` +
-        `scope=email profile&` +
-        `access_type=offline`;
+        `scope=${encodeURIComponent('email profile')}&` +
+        `access_type=offline&` +
+        `prompt=consent`;
     
     console.log('Redirecting to Google OAuth:', googleAuthUrl);
     res.redirect(googleAuthUrl);
