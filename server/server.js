@@ -18,6 +18,9 @@ if (process.env.STRIPE_SECRET_KEY) {
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// Trust proxy for DigitalOcean App Platform
+app.set('trust proxy', 1);
+
 // Static file serving (no template engine needed)
 
 // Middleware
@@ -152,14 +155,16 @@ function handleMobileApp(req, res) {
 
 // MongoDB setup
 const MONGODB_URI = process.env.MONGO_URI;
+const V2_MONGODB_URI = process.env.V2_MONGO_URI || process.env.MONGO_URI;
 let db;
 
 // Connect to MongoDB
 async function connectToMongoDB() {
     try {
-        console.log('Connecting to MongoDB with URI:', MONGODB_URI ? 'URI provided' : 'NO URI PROVIDED');
+        console.log('Connecting to V2 MongoDB with URI:', V2_MONGODB_URI ? 'V2 URI provided' : 'NO V2 URI PROVIDED');
+        console.log('V1 MongoDB URI:', MONGODB_URI ? 'V1 URI provided' : 'NO V1 URI PROVIDED');
         
-        const client = new MongoClient(MONGODB_URI);
+        const client = new MongoClient(V2_MONGODB_URI);
         await client.connect();
         
         // Connect to viewhuntv2 database
