@@ -958,6 +958,12 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
 // Google OAuth initialization route
 app.get('/auth/google', (req, res) => {
+    // Check if Google OAuth is configured
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CALLBACK_URL) {
+        console.error('Google OAuth not configured');
+        return res.redirect('/app?error=google_oauth_not_configured');
+    }
+    
     const googleAuthUrl = `https://accounts.google.com/oauth/authorize?` +
         `client_id=${process.env.GOOGLE_CLIENT_ID}&` +
         `redirect_uri=${encodeURIComponent(process.env.GOOGLE_CALLBACK_URL)}&` +
@@ -965,17 +971,35 @@ app.get('/auth/google', (req, res) => {
         `scope=email profile&` +
         `access_type=offline`;
     
+    console.log('Redirecting to Google OAuth:', googleAuthUrl);
     res.redirect(googleAuthUrl);
 });
 
 // Google OAuth callback route
 app.get('/auth/google/callback', async (req, res) => {
     try {
-        const { code } = req.query;
+        console.log('Google OAuth callback received');
+        console.log('Query params:', req.query);
+        
+        const { code, error } = req.query;
+        
+        if (error) {
+            console.error('Google OAuth error:', error);
+            return res.redirect('/app?error=oauth_denied');
+        }
         
         if (!code) {
+            console.error('No authorization code received');
             return res.redirect('/app?error=oauth_failed');
         }
+        
+        // Check if Google OAuth is configured
+        if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+            console.error('Google OAuth credentials not configured');
+            return res.redirect('/app?error=google_oauth_not_configured');
+        }
+        
+        console.log('Exchanging code for tokens...');
         
         // Exchange code for tokens
         const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
