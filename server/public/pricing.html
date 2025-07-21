@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ViewHunt - Pricing</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        header {
+            padding: 20px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            color: white;
+            text-decoration: none;
+        }
+        nav {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        nav a {
+            color: white;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .btn {
+            background: white;
+            color: #764ba2;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+        .pricing-section {
+            padding: 80px 0;
+            text-align: center;
+        }
+        .pricing-section h1 {
+            font-size: 48px;
+            margin-bottom: 40px;
+        }
+        .pricing-card {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 12px;
+            padding: 40px;
+            max-width: 500px;
+            margin: 0 auto;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .popular {
+            position: relative;
+            border: 2px solid rgba(255, 255, 255, 0.6);
+        }
+        .popular::before {
+            content: 'MOST POPULAR';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #764ba2;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+        .price {
+            font-size: 48px;
+            font-weight: 700;
+            margin: 20px 0;
+        }
+        .period {
+            font-size: 18px;
+            opacity: 0.7;
+        }
+        .pricing-card p {
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+        .features-list {
+            list-style: none;
+            margin: 30px 0;
+            text-align: left;
+        }
+        .features-list li {
+            margin-bottom: 10px;
+            padding-left: 25px;
+            position: relative;
+        }
+        .features-list li::before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            color: #4ade80;
+        }
+        .plan-btn {
+            display: inline-block;
+            background: white;
+            color: #764ba2;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .plan-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+        .btn-primary {
+            background: white;
+            color: #764ba2;
+        }
+        footer {
+            padding: 40px 0;
+            text-align: center;
+            opacity: 0.7;
+        }
+        .error-message {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.5);
+            padding: 10px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .success-message {
+            background: rgba(74, 222, 128, 0.2);
+            border: 1px solid rgba(74, 222, 128, 0.5);
+            padding: 10px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        @media (max-width: 768px) {
+            .pricing-section h1 {
+                font-size: 36px;
+            }
+            header {
+                flex-direction: column;
+                gap: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <a href="/" class="logo">ViewHunt</a>
+            <nav>
+                <a href="/">Home</a>
+                <a href="/app" class="btn">Launch App</a>
+            </nav>
+        </div>
+    </header>
+    
+    <section class="pricing-section">
+        <div class="container">
+            <h1>ViewHunt Pricing</h1>
+            <div class="pricing-card popular">
+                <h3>Pro Plan</h3>
+                <div class="price">$25<span class="period">/month</span></div>
+                <p>For serious creators ready to find profitable niches</p>
+                <ul class="features-list">
+                    <li>Advanced filtering options</li>
+                    <li>Expanded channel access</li>
+                    <li>Data export capabilities</li>
+                    <li>Email support</li>
+                </ul>
+                <a href="/app" class="plan-btn btn-primary">Get Started</a>
+            </div>
+        </div>
+    </section>
+    
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 ViewHunt. All rights reserved.</p>
+        </div>
+    </footer>
+</body>
+</html>

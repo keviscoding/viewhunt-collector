@@ -6,18 +6,19 @@ const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 require('dotenv').config();
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
+// Initialize Stripe only if secret key is available
+let stripe;
+if (process.env.STRIPE_SECRET_KEY) {
+    stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+} else {
+    console.warn('STRIPE_SECRET_KEY not found in environment variables');
+}
 
 const app = express();
-const PORT = process.env.PORT || 3003;
+const PORT = process.env.PORT || 8080;
 
-// Set up EJS template engine
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
-
-// Set up EJS templating
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
+// Static file serving (no template engine needed)
 
 // Middleware
 app.use(cors());
@@ -37,43 +38,17 @@ app.use('/app', express.static(path.join(__dirname, 'mobile')));
 
 // Landing page route
 app.get('/', (req, res) => {
-    res.render('landing');
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Pricing page route
 app.get('/pricing', (req, res) => {
-    try {
-        const error = req.query.error || null;
-        const success = req.query.success || null;
-        
-        res.render('pricing', {
-            user: null, // Will be populated if user is logged in
-            stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
-            error,
-            success
-        });
-    } catch (error) {
-        console.error('Error rendering pricing page:', error);
-        res.status(500).send('Server error');
-    }
+    res.sendFile(path.join(__dirname, 'public', 'pricing.html'));
 });
 
 // Subscription success page
 app.get('/subscription-success', (req, res) => {
     res.redirect('/app?success=subscription_activated');
-});
-
-// Pricing page route
-app.get('/pricing', (req, res) => {
-    const error = req.query.error || null;
-    const success = req.query.success || null;
-    
-    res.render('pricing', {
-        user: null, // We'll add user detection later
-        stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
-        error,
-        success
-    });
 });
 
 // Serve mobile app for /app path
@@ -194,6 +169,12 @@ const requireSubscription = async (req, res, next) => {
         
         // Admin always has access
         if (user.email === process.env.ADMIN_EMAIL) {
+            return next();
+        }
+        
+        // If Stripe is not configured, allow access for now (development mode)
+        if (!stripe) {
+            console.warn('Stripe not configured, allowing access');
             return next();
         }
         
@@ -1564,6 +1545,14 @@ app.get('/api/health', (req, res) => {
 // Create checkout session for Pro subscription
 app.post('/api/subscription/create-checkout-session', authenticateToken, async (req, res) => {
     try {
+        // Check if Stripe is configured
+        if (!stripe) {
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Payment system not configured' 
+            });
+        }
+
         const user = req.user;
         
         // Get or create Stripe customer
