@@ -1157,6 +1157,47 @@ body {
     color: white;
 }
 
+.subscription-required {
+    text-align: center;
+    padding: 2rem;
+    background: var(--bg-card);
+    border-radius: 12px;
+    margin: 1rem;
+    border: 1px solid var(--border-color);
+}
+
+.subscription-required .lock-icon {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+}
+
+.subscription-required h4 {
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.subscription-required p {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+}
+
+.subscription-required .btn {
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    border: none;
+    cursor: pointer;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+}
+
+.subscription-required .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
 .auth-buttons {
     display: flex;
     gap: 0.75rem;

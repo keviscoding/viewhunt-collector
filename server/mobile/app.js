@@ -496,6 +496,14 @@ class ViewHuntApp {
                     this.updateUIForLoggedOutUser();
                     throw new Error('Authentication required');
                 }
+                if (response.status === 403) {
+                    // Handle subscription required error
+                    const errorData = await response.json().catch(() => ({}));
+                    if (errorData.error && errorData.error.includes('subscription')) {
+                        this.showSubscriptionGate();
+                        return;
+                    }
+                }
                 throw new Error(`HTTP ${response.status}`);
             }
 
@@ -585,6 +593,14 @@ class ViewHuntApp {
                     this.authToken = null;
                     this.updateUIForLoggedOutUser();
                     throw new Error('Authentication required');
+                }
+                if (response.status === 403) {
+                    // Handle subscription required error
+                    const errorData = await response.json().catch(() => ({}));
+                    if (errorData.error && errorData.error.includes('subscription')) {
+                        this.showSubscriptionGate();
+                        return;
+                    }
                 }
                 throw new Error(`HTTP ${response.status}`);
             }
@@ -1129,7 +1145,10 @@ class ViewHuntApp {
         // Subscription status is now included in user data from checkAuthStatus
         if (this.user && this.user.subscription) {
             this.subscriptionStatus = this.user.subscription;
+            console.log('Subscription status:', this.subscriptionStatus);
             this.updateSubscriptionUI();
+        } else {
+            console.log('No subscription data in user:', this.user);
         }
     }
 
@@ -1914,16 +1933,45 @@ class ViewHuntApp {
         content.innerHTML = '<div class="social-loading">Loading Kevis\'s picks...</div>';
         
         try {
-            // Require authentication to see Kevis's Picks (engagement strategy!)
+            // Check subscription access first
+            if (!this.subscriptionStatus || !this.subscriptionStatus.hasAccess) {
+                content.innerHTML = `
+                    <div class="subscription-required">
+                        <div class="lock-icon">🔒</div>
+                        <h4>Subscription Required</h4>
+                        <p>Kevis's exclusive picks are available to subscribers only.</p>
+                        <button class="btn btn-primary" onclick="window.open('/pricing', '_blank')">
+                            Subscribe Now
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            // Require authentication to see Kevis's Picks
             if (!this.token) {
                 content.innerHTML = '<div class="social-empty">Sign in to see Kevis\'s exclusive picks! 🔐✨</div>';
                 return;
             }
 
-            // Use the public endpoint but with better error handling
-            const response = await fetch(`${this.apiBase}/kevis-picks`);
+            // Use the protected endpoint with authentication
+            const response = await this.fetchWithAuth(`${this.apiBase}/kevis-picks`);
             
             if (!response.ok) {
+                if (response.status === 403) {
+                    // Handle subscription required error
+                    content.innerHTML = `
+                        <div class="subscription-required">
+                            <div class="lock-icon">🔒</div>
+                            <h4>Subscription Required</h4>
+                            <p>Kevis's exclusive picks are available to subscribers only.</p>
+                            <button class="btn btn-primary" onclick="window.open('/pricing', '_blank')">
+                                Subscribe Now
+                            </button>
+                        </div>
+                    `;
+                    return;
+                }
                 console.error('Kevis picks API error:', response.status);
                 content.innerHTML = '<div class="social-empty">No picks yet! 🎯</div>';
                 return;
@@ -1969,15 +2017,43 @@ class ViewHuntApp {
         content.innerHTML = '<div class="social-loading">Loading trending channels...</div>';
         
         try {
-            // Get channels approved in the last 24 hours
-            const response = await fetch(`${this.apiBase}/channels/trending`);
+            // Check subscription access first
+            if (!this.subscriptionStatus || !this.subscriptionStatus.hasAccess) {
+                content.innerHTML = `
+                    <div class="subscription-required">
+                        <div class="lock-icon">🔒</div>
+                        <h4>Subscription Required</h4>
+                        <p>Trending channels are available to subscribers only.</p>
+                        <button class="btn btn-primary" onclick="window.open('/pricing', '_blank')">
+                            Subscribe Now
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            // Get channels approved in the last 24 hours with authentication
+            const response = await this.fetchWithAuth(`${this.apiBase}/channels/trending`);
             let channels;
             
             if (response.ok) {
                 channels = await response.json();
+            } else if (response.status === 403) {
+                // Handle subscription required error
+                content.innerHTML = `
+                    <div class="subscription-required">
+                        <div class="lock-icon">🔒</div>
+                        <h4>Subscription Required</h4>
+                        <p>Trending channels are available to subscribers only.</p>
+                        <button class="btn btn-primary" onclick="window.open('/pricing', '_blank')">
+                            Subscribe Now
+                        </button>
+                    </div>
+                `;
+                return;
             } else {
                 // Fallback to recent approved channels if trending endpoint doesn't exist yet
-                const fallbackResponse = await fetch(`${this.apiBase}/channels/approved`);
+                const fallbackResponse = await this.fetchWithAuth(`${this.apiBase}/channels/approved`);
                 const allChannels = await fallbackResponse.json();
                 
                 // Filter channels approved in last 24 hours

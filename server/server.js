@@ -1497,7 +1497,7 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
 });
 
 // Get trending channels (based on recent approvals from multiple users)
-app.get('/api/channels/trending', async (req, res) => {
+app.get('/api/channels/trending', authenticateToken, requireSubscription, async (req, res) => {
     try {
         // Calculate 24 hours ago
         const yesterday = new Date();
@@ -1643,8 +1643,8 @@ app.get('/api/stats', authenticateToken, async (req, res) => {
 
 // Collections Routes
 
-// Public Kevis's Picks endpoint (no authentication required)
-app.get('/api/kevis-picks', async (req, res) => {
+// Kevis's Picks endpoint (requires subscription)
+app.get('/api/kevis-picks', authenticateToken, requireSubscription, async (req, res) => {
     try {
         // Find Kevis's Picks collection by admin user
         const adminUser = await db.collection('users').findOne({
