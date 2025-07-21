@@ -119,6 +119,11 @@ app.get('/pricing', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'pricing.html'));
 });
 
+// Manage subscription page route
+app.get('/manage-subscription', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'manage-subscription.html'));
+});
+
 // Subscription success page
 app.get('/subscription-success', async (req, res) => {
     try {
