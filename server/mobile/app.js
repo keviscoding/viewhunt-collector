@@ -176,14 +176,11 @@ class ViewHuntApp {
         const maxViewsInput = document.getElementById('max-views');
 
         if (viewsSliderMin && viewsSliderMax && minViewsInput && maxViewsInput) {
-            console.log('Views sliders found and initializing...');
             // Update input when slider changes (no real-time filtering)
             viewsSliderMin.addEventListener('input', () => {
                 const value = parseInt(viewsSliderMin.value);
                 const formattedValue = formatNumber(value);
-                console.log('Views min slider changed:', value, 'formatted:', formattedValue);
                 minViewsInput.value = formattedValue;
-                console.log('Set minViewsInput.value to:', minViewsInput.value);
                 
                 // Ensure min doesn't exceed max
                 if (value > parseInt(viewsSliderMax.value)) {
@@ -195,9 +192,7 @@ class ViewHuntApp {
             viewsSliderMax.addEventListener('input', () => {
                 const value = parseInt(viewsSliderMax.value);
                 const formattedValue = formatNumber(value);
-                console.log('Views max slider changed:', value, 'formatted:', formattedValue);
                 maxViewsInput.value = formattedValue;
-                console.log('Set maxViewsInput.value to:', maxViewsInput.value);
                 
                 // Ensure max doesn't go below min
                 if (value < parseInt(viewsSliderMin.value)) {
@@ -229,14 +224,11 @@ class ViewHuntApp {
         const maxSubsInput = document.getElementById('max-subs');
 
         if (subsSliderMin && subsSliderMax && minSubsInput && maxSubsInput) {
-            console.log('Subs sliders found and initializing...');
             // Update input when slider changes (no real-time filtering)
             subsSliderMin.addEventListener('input', () => {
                 const value = parseInt(subsSliderMin.value);
                 const formattedValue = formatNumber(value);
-                console.log('Subs min slider changed:', value, 'formatted:', formattedValue);
                 minSubsInput.value = formattedValue;
-                console.log('Set minSubsInput.value to:', minSubsInput.value);
                 
                 // Ensure min doesn't exceed max
                 if (value > parseInt(subsSliderMax.value)) {
@@ -248,9 +240,7 @@ class ViewHuntApp {
             subsSliderMax.addEventListener('input', () => {
                 const value = parseInt(subsSliderMax.value);
                 const formattedValue = formatNumber(value);
-                console.log('Subs max slider changed:', value, 'formatted:', formattedValue);
                 maxSubsInput.value = formattedValue;
-                console.log('Set maxSubsInput.value to:', maxSubsInput.value);
                 
                 // Ensure max doesn't go below min
                 if (value < parseInt(subsSliderMin.value)) {
