@@ -721,35 +721,7 @@ body {
     text-align: center;
 }
 
-/* Authentication Modal Improvements */
-#auth-modal {
-    backdrop-filter: blur(10px);
-}
-
-#auth-modal > div {
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-#auth-modal input {
-    transition: all 0.2s ease;
-}
-
-#auth-modal input:focus {
-    outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-#auth-modal button {
-    transition: all 0.2s ease;
-    font-weight: 600;
-}
-
-#auth-modal button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-}
+/* Authentication Modal Improvements - Cleaned up */
 
 /* Loading States */
 .btn.loading {
