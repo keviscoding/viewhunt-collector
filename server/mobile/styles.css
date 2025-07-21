@@ -2262,12 +2262,16 @@ vis Admin Styles */
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.9);
-    color: var(--text-primary);
+    color: #1a1a1a; /* Always dark text for visibility on white background */
     font-size: 0.8rem;
     text-align: center;
     min-width: 0; /* Prevents flex items from overflowing */
     max-width: 80px; /* Limit input width */
     box-sizing: border-box;
+}
+
+.range-input::placeholder {
+    color: #666; /* Dark placeholder text for visibility */
 }
 
 .range-separator {
@@ -2319,41 +2323,51 @@ vis Admin Styles */
     pointer-events: auto; /* Enable pointer events for interaction */
 }
 
-/* Dual slider positioning - stagger slightly to allow both to be accessible */
+/* Dual slider positioning - better separation for accessibility */
 .slider:first-child {
-    z-index: 1;
+    z-index: 2; /* Min slider on top by default */
 }
 
 .slider:last-child {
-    z-index: 2;
-    margin-top: -2px; /* Slight offset to expose min slider */
+    z-index: 1;
+    margin-top: -20px; /* Stack them properly */
 }
 
 /* When actively being used, bring to front */
-.slider:active {
+.slider:active,
+.slider:focus {
     z-index: 10;
 }
 
-/* Ensure thumbs are always accessible */
-.slider::-webkit-slider-thumb {
+/* Better thumb interaction */
+.slider:hover {
     z-index: 5;
-    position: relative;
 }
 
 /* Improve thumb interaction area */
 .slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
     background: linear-gradient(135deg, #667eea, #764ba2);
     border-radius: 50%;
     cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    border: 3px solid white;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
     transition: transform 0.2s ease;
     pointer-events: auto;
     position: relative;
     z-index: 10;
+}
+
+/* Different colors for min/max sliders */
+.slider:first-child::-webkit-slider-thumb {
+    background: linear-gradient(135deg, #10b981, #059669); /* Green for min */
+}
+
+.slider:last-child::-webkit-slider-thumb {
+    background: linear-gradient(135deg, #667eea, #764ba2); /* Blue for max */
 }
 
 .slider::-webkit-slider-track {
