@@ -2137,7 +2137,7 @@ app.post('/api/subscription/create-checkout-session', authenticateToken, async (
                 },
             ],
             mode: 'subscription',
-            success_url: `${process.env.APP_URL}/subscription-success?session_id={CHECKOUT_SESSION_ID}`,
+            success_url: `https://viewhunt-backend-4fur6.ondigitalocean.app/subscription-success?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${process.env.APP_URL}/pricing`,
             metadata: {
                 userId: user._id.toString(),
