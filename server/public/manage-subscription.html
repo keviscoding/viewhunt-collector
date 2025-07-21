@@ -54,6 +54,10 @@
             background: #ef4444;
             color: white;
         }
+        .status-warning {
+            background: #f59e0b;
+            color: white;
+        }
         .subscription-details {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -224,28 +228,84 @@
             document.getElementById('loading').style.display = 'none';
             document.getElementById('subscription-content').style.display = 'block';
 
-            // Update status badge
+            console.log('Subscription data:', subscription); // Debug log
+
+            // Update status badge and text
             const statusBadge = document.getElementById('status-badge');
             const statusText = document.getElementById('subscription-status');
             
-            if (subscription.status === 'active') {
-                statusBadge.textContent = 'Active';
+            // Handle different subscription states
+            if (subscription.type === 'admin') {
+                statusBadge.textContent = 'Admin';
                 statusBadge.className = 'status-badge status-active';
-                statusText.textContent = 'Active';
-                document.getElementById('cancel-btn').style.display = 'inline-block';
-                document.getElementById('reactivate-btn').style.display = 'none';
-            } else {
-                statusBadge.textContent = 'Canceled';
-                statusBadge.className = 'status-badge status-canceled';
-                statusText.textContent = 'Canceled';
+                statusText.textContent = 'Admin Access';
                 document.getElementById('cancel-btn').style.display = 'none';
-                document.getElementById('reactivate-btn').style.display = 'inline-block';
+                document.getElementById('reactivate-btn').style.display = 'none';
+            } else if (subscription.type === 'beta') {
+                statusBadge.textContent = 'Beta';
+                statusBadge.className = 'status-badge status-active';
+                statusText.textContent = 'Beta Access';
+                document.getElementById('cancel-btn').style.display = 'none';
+                document.getElementById('reactivate-btn').style.display = 'none';
+            } else if (subscription.type === 'stripe') {
+                // Handle Stripe subscription states
+                if (subscription.status === 'active') {
+                    if (subscription.cancelAtPeriodEnd) {
+                        statusBadge.textContent = 'Ending Soon';
+                        statusBadge.className = 'status-badge status-warning';
+                        statusText.textContent = 'Canceled (Active until billing period ends)';
+                        document.getElementById('cancel-btn').style.display = 'none';
+                        document.getElementById('reactivate-btn').style.display = 'inline-block';
+                    } else {
+                        statusBadge.textContent = 'Active';
+                        statusBadge.className = 'status-badge status-active';
+                        statusText.textContent = 'Active';
+                        document.getElementById('cancel-btn').style.display = 'inline-block';
+                        document.getElementById('reactivate-btn').style.display = 'none';
+                    }
+                } else {
+                    statusBadge.textContent = 'Inactive';
+                    statusBadge.className = 'status-badge status-canceled';
+                    statusText.textContent = subscription.status || 'Inactive';
+                    document.getElementById('cancel-btn').style.display = 'none';
+                    document.getElementById('reactivate-btn').style.display = 'inline-block';
+                }
+            } else {
+                // No subscription
+                statusBadge.textContent = 'No Subscription';
+                statusBadge.className = 'status-badge status-canceled';
+                statusText.textContent = 'No Active Subscription';
+                document.getElementById('cancel-btn').style.display = 'none';
+                document.getElementById('reactivate-btn').style.display = 'none';
             }
 
             // Update billing date
+            const nextBillingElement = document.getElementById('next-billing');
             if (subscription.currentPeriodEnd) {
                 const date = new Date(subscription.currentPeriodEnd);
-                document.getElementById('next-billing').textContent = date.toLocaleDateString();
+                nextBillingElement.textContent = date.toLocaleDateString();
+            } else if (subscription.type === 'admin' || subscription.type === 'beta') {
+                nextBillingElement.textContent = 'N/A (Free Access)';
+            } else {
+                nextBillingElement.textContent = 'Not Available';
+            }
+
+            // Update plan info based on subscription type
+            const planNameElement = document.getElementById('plan-name');
+            const planPriceElement = document.getElementById('plan-price');
+            
+            if (subscription.type === 'admin') {
+                planNameElement.textContent = 'Admin Access';
+                planPriceElement.textContent = 'Free';
+            } else if (subscription.type === 'beta') {
+                planNameElement.textContent = 'Beta Access';
+                planPriceElement.textContent = 'Free';
+            } else if (subscription.type === 'stripe') {
+                planNameElement.textContent = 'ViewHunt Pro';
+                planPriceElement.textContent = '$25/month';
+            } else {
+                planNameElement.textContent = 'No Plan';
+                planPriceElement.textContent = 'N/A';
             }
         }
 
