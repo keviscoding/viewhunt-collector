@@ -1,31 +1,19 @@
-/* Hide "Everything in Free plan" check mark */
+/* Hide "Everything in Free plan" check mark but show "Everything in Pro plan" */
 
-/* For pricing page */
-.features-list li:contains("Everything in Free plan"),
-.features-list li:first-child {
-  display: none !important;
-}
-
-/* For landing page */
-.pricing-feature:contains("Everything in Free plan"),
-.pricing-features .pricing-feature:first-child {
-  display: none !important;
-}
-
-/* CSS doesn't have a :contains selector, so we'll use alternatives */
+/* Show all pricing features by default */
 .features-list li,
 .pricing-features .pricing-feature {
-  display: flex;
+  display: flex !important;
 }
 
-/* Target specific text with more precise selectors */
-.features-list li:first-of-type,
-.pricing-features .pricing-feature:first-of-type {
+/* Only hide features that specifically contain "Everything in Free plan" text */
+.pricing-feature:has(span:contains("Everything in Free plan")),
+.features-list li:has(span:contains("Everything in Free plan")) {
   display: none !important;
 }
 
-/* Just to be extra sure */
-li:has(> i.fas.fa-check + span:contains("Everything in Free plan")),
-.pricing-feature:has(> .pricing-check + span:contains("Everything in Free plan")) {
-  display: none !important;
+/* Make sure "Everything in Pro plan" is always visible */
+.pricing-feature:has(span:contains("Everything in Pro plan")),
+.features-list li:has(span:contains("Everything in Pro plan")) {
+  display: flex !important;
 } 
