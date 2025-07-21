@@ -1,0 +1,22 @@
+/* Fix for hero text overlapping with subtitle when scrolling */
+@media (max-width: 768px) {
+    /* Fix hero text and subtext overlap when scrolling */
+    .hero-title {
+        margin-bottom: 35px !important; /* Increase space between title and subtitle */
+        position: relative !important;
+        z-index: 2 !important; /* Ensure title is on top */
+        transform: none !important; /* Prevent any transforms during scroll */
+    }
+    
+    .hero-subtitle {
+        position: relative !important;
+        z-index: 1 !important;
+        margin-top: 5px !important; /* Adjust top margin */
+        transform: none !important; /* Prevent any transforms during scroll */
+    }
+    
+    /* Disable parallax effects that might cause the overlap */
+    .hero-content * {
+        transform: none !important; /* Disable any transforms during scroll */
+    }
+} 

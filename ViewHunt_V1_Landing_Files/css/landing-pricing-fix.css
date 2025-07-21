@@ -1,0 +1,79 @@
+/* 
+ * Fixes for the landing page pricing section 
+ * 1. Remove promo code field
+ * 2. Center the pricing cards for desktop
+ */
+
+/* Hide the promo code field on landing page */
+#promo-code-input,
+input[id="promo-code-input"],
+input[placeholder="Enter Promo Code (Optional)"],
+div:has(> #promo-code-input) {
+  display: none !important;
+  height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  visibility: hidden !important;
+}
+
+/* Center pricing cards on landing page */
+@media (min-width: 768px) {
+  /* Fix landing page pricing grid for two cards */
+  .pricing .pricing-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important; 
+    gap: 32px !important;
+    max-width: 900px !important;
+    margin: 40px auto !important;
+  }
+  
+  /* Make grid and card widths better proportioned */
+  .pricing .container {
+    max-width: 1000px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+  
+  .pricing .pricing-card {
+    max-width: 100% !important;
+    transition: transform 0.3s, box-shadow 0.3s !important;
+  }
+  
+  /* Add hover effects */
+  .pricing .pricing-card:hover {
+    transform: translateY(-5px) !important;
+    box-shadow: 0 12px 30px rgba(10, 15, 30, 0.3) !important;
+  }
+  
+  /* Make popular card stand out */
+  .pricing .pricing-card.popular {
+    box-shadow: 0 8px 24px rgba(145, 92, 182, 0.2) !important;
+    border: 1px solid rgba(145, 92, 182, 0.3) !important;
+    transform: scale(1.03) !important;
+  }
+  
+  .pricing .pricing-card.popular:hover {
+    transform: translateY(-5px) scale(1.03) !important;
+    box-shadow: 0 12px 30px rgba(145, 92, 182, 0.3) !important;
+  }
+}
+
+/* Mobile improvements */
+@media (max-width: 767px) {
+  .pricing .pricing-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 20px !important;
+  }
+  
+  .pricing .pricing-card {
+    width: 100% !important;
+    max-width: 450px !important;
+  }
+  
+  .pricing .section-header {
+    text-align: center !important;
+    padding: 0 15px !important;
+  }
+} 

@@ -1,0 +1,24 @@
+/* Desktop Problem Section Fixes */
+
+@media (min-width: 993px) { /* Target screens larger than the mobile breakpoint */
+
+    .problem-grid {
+        display: flex; /* Override display: grid */
+        flex-direction: column; /* Stack items vertically */
+        gap: 40px; /* Adjust gap for vertical stacking */
+        align-items: center; /* Center items horizontally */
+    }
+
+    .problem-image {
+        order: 1; /* Ensure video comes first */
+        width: 100%; /* Allow container to take width */
+        max-width: 900px; /* Set max-width similar to other large elements */
+        margin-bottom: 30px; /* Add space below video */
+    }
+
+    .problem-content {
+        order: 2; /* Ensure text comes second */
+        max-width: 700px; /* Allow text to be reasonably wide, but not full screen */
+        text-align: center; /* Center the text content */
+    }
+} 

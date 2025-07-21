@@ -1,0 +1,11 @@
+/* Restore mobile logo to original size */
+@media (max-width: 768px) {
+    .logo-image {
+        /* Reset all transformations */
+        transform: none !important;
+        height: auto !important;
+        width: auto !important;
+        margin-left: 0 !important;
+        max-height: 90px !important; /* Further increased height for better visibility */
+    }
+} 

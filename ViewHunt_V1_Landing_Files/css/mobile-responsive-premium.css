@@ -1,0 +1,720 @@
+/* Premium Mobile Experience - ViewHunt
+ * Comprehensive mobile optimization focusing on both aesthetics and usability
+ * while maintaining the brand identity
+ */
+
+/* ===== GLOBAL MOBILE IMPROVEMENTS ===== */
+@media (max-width: 768px) {
+    /* Mobile typography system - scaled down but maintaining hierarchy */
+    body {
+        font-size: 14px; 
+        -webkit-text-size-adjust: 100%;
+        letter-spacing: -0.01em;
+    }
+    
+    h1, h2, h3, h4, h5, h6 {
+        letter-spacing: -0.03em;
+    }
+    
+    /* Reduce content padding globally */
+    .container {
+        padding: 0 16px;
+    }
+    
+    /* Enhance touch targets */
+    button, 
+    .btn, 
+    .nav-link,
+    .collapsible-header,
+    .pricing-card a {
+        min-height: 44px; /* Apple's recommended minimum touch target size */
+        padding: 12px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    /* Better spacing between sections */
+    section {
+        margin-bottom: 40px;
+        padding: 40px 0;
+    }
+
+    /* Enhanced mobile scroll experience */
+    html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 80px; /* Account for fixed header */
+    }
+    
+    /* Enhance native scrolling */
+    body {
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Remove desktop hover effects and replace with active states */
+    a:hover, 
+    .btn:hover, 
+    .feature-card:hover, 
+    .pricing-card:hover {
+        transform: none !important;
+        box-shadow: none !important;
+    }
+    
+    /* Add mobile-appropriate active states instead */
+    a:active, 
+    .btn:active, 
+    .feature-card:active, 
+    .pricing-card:active {
+        transform: scale(0.98) !important;
+        transition: transform 0.2s ease;
+    }
+    
+    /* ===== MOBILE NAVIGATION ===== */
+    header {
+        height: 60px;
+    }
+    
+    .header-container {
+        position: relative;
+    }
+    
+    /* Logo optimization */
+    .logo {
+        margin: -20px 0; /* Adjust to vertically center */
+    }
+    
+    .logo-image {
+        height: 50px; /* Smaller for mobile */
+        width: auto;
+    }
+    
+    /* Mobile hamburger menu */
+    .mobile-menu-toggle {
+        display: block;
+        position: absolute;
+        right: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 28px;
+        height: 20px;
+        cursor: pointer;
+        z-index: 200;
+    }
+    
+    .mobile-menu-toggle span {
+        display: block;
+        position: absolute;
+        height: 2px;
+        width: 100%;
+        background: var(--light);
+        border-radius: 2px;
+        opacity: 1;
+        transform: rotate(0deg);
+        transition: .25s ease-in-out;
+    }
+    
+    .mobile-menu-toggle span:nth-child(1) {
+        top: 0px;
+    }
+    
+    .mobile-menu-toggle span:nth-child(2), 
+    .mobile-menu-toggle span:nth-child(3) {
+        top: 9px;
+    }
+    
+    .mobile-menu-toggle span:nth-child(4) {
+        top: 18px;
+    }
+    
+    /* Hamburger animation */
+    .mobile-menu-toggle.open span:nth-child(1) {
+        top: 9px;
+        width: 0%;
+        left: 50%;
+    }
+    
+    .mobile-menu-toggle.open span:nth-child(2) {
+        transform: rotate(45deg);
+    }
+    
+    .mobile-menu-toggle.open span:nth-child(3) {
+        transform: rotate(-45deg);
+    }
+    
+    .mobile-menu-toggle.open span:nth-child(4) {
+        top: 9px;
+        width: 0%;
+        left: 50%;
+    }
+    
+    /* Mobile nav panel */
+    .nav {
+        display: block;
+        position: fixed;
+        top: 0;
+        right: -100%;
+        width: 80%;
+        max-width: 300px;
+        height: 100vh;
+        background: linear-gradient(135deg, #0A0F1D 0%, #1E293B 100%);
+        z-index: 100;
+        padding: 100px 32px 32px;
+        box-shadow: -5px 0 25px rgba(0, 0, 0, 0.15);
+        transition: right 0.3s cubic-bezier(0.77, 0, 0.175, 1);
+        overflow-y: auto;
+    }
+    
+    .nav.open {
+        right: 0;
+    }
+    
+    .nav-link {
+        display: block;
+        padding: 16px 0;
+        font-size: 18px;
+        font-weight: 600;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        width: 100%;
+        text-align: left;
+        justify-content: flex-start;
+    }
+    
+    .nav .btn {
+        margin-top: 24px;
+        width: 100%;
+    }
+    
+    /* Mobile nav backdrop */
+    .mobile-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100vh;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        z-index: 99;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.3s ease;
+    }
+    
+    .mobile-backdrop.visible {
+        opacity: 1;
+        visibility: visible;
+    }
+    
+    /* ===== HERO SECTION ===== */
+    .hero {
+        padding: 40px 0 20px; /* Reduce vertical padding */
+        overflow: hidden;
+    }
+    
+    .hero-grid {
+        grid-template-columns: 1fr;
+        grid-gap: 30px;
+    }
+    
+    .hero-content {
+        text-align: center;
+        max-width: 100%;
+        padding: 0;
+    }
+    
+    .hero-title {
+        font-size: 32px;
+        line-height: 1.2;
+        margin-bottom: 16px;
+        font-weight: 800;
+        background: linear-gradient(to right, #ffffff, #c7d2fe);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        text-fill-color: transparent;
+    }
+    
+    /* Fallback for browsers that don't support background-clip */
+    @supports not (background-clip: text) {
+        .hero-title {
+            background: none;
+            -webkit-text-fill-color: #ffffff;
+            text-fill-color: #ffffff;
+        }
+    }
+    
+    .hero-subtitle {
+        font-size: 16px;
+        margin-bottom: 24px;
+        opacity: 0.9;
+    }
+    
+    .hero-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        width: 100%;
+        margin-bottom: 32px;
+    }
+    
+    .hero-buttons .btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    /* Mobile-optimized channel list */
+    .channel-list-container {
+        height: 220px;
+        width: 100%;
+        margin: 0 auto;
+        overflow: hidden;
+        mask-image: none;
+        -webkit-mask-image: none;
+        border-radius: 12px;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    }
+    
+    .channel-item {
+        height: auto;
+        padding: 10px 12px;
+        display: grid;
+        grid-template-columns: auto auto 1fr auto;
+        grid-template-areas: 
+            "rank avatar name growth"
+            "rank avatar stat growth";
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .channel-rank {
+        grid-area: rank;
+        font-size: 16px;
+        font-weight: 700;
+    }
+    
+    .channel-avatar {
+        grid-area: avatar;
+        width: 40px;
+        height: 40px;
+    }
+    
+    .channel-info {
+        grid-area: name;
+    }
+    
+    .channel-name {
+        font-size: 14px;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .channel-stats {
+        display: none; /* Hide on mobile */
+    }
+    
+    .channel-growth {
+        grid-area: growth;
+        margin-left: auto;
+    }
+    
+    /* Stats bar improvements */
+    .stats-bar {
+        margin-top: 24px;
+        padding: 16px 12px;
+    }
+    
+    .stats-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+    
+    .stat-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    
+    .stat-item h3 {
+        font-size: 24px;
+        margin-bottom: 0;
+    }
+    
+    /* ===== COLLAPSIBLE SECTIONS ===== */
+    .mobile-collapsible {
+        overflow: hidden;
+        transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        max-height: 54px;
+        position: relative;
+        border-radius: 10px;
+        background-color: rgba(15, 23, 42, 0.5);
+        margin-bottom: 16px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    
+    .mobile-collapsible.expanded {
+        max-height: 500px;
+    }
+    
+    .collapsible-header {
+        padding: 16px 20px;
+        font-weight: 700;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        z-index: 2;
+        position: relative;
+        font-size: 16px;
+    }
+    
+    .collapsible-header::after {
+        content: "+";
+        font-size: 20px;
+        color: var(--primary);
+        transition: all 0.3s ease;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background-color: rgba(99, 102, 241, 0.1);
+    }
+    
+    .mobile-collapsible.expanded .collapsible-header::after {
+        content: "-";
+        transform: rotate(180deg);
+    }
+    
+    .collapsible-content {
+        padding: 0 20px 16px;
+        opacity: 0.85;
+    }
+    
+    /* ===== FEATURES SECTION ===== */
+    .features {
+        padding: 50px 0;
+    }
+    
+    .features-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+    
+    .feature-card {
+        padding: 20px;
+        border-radius: 12px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .feature-icon {
+        font-size: 28px;
+        margin-bottom: 16px;
+    }
+    
+    .feature-title {
+        font-size: 18px;
+        margin-bottom: 12px;
+    }
+    
+    .feature-description {
+        font-size: 14px;
+        line-height: 1.5;
+    }
+    
+    /* ===== PROBLEM SECTION ===== */
+    .problem {
+        padding: 50px 0;
+    }
+    
+    .problem-grid {
+        grid-template-columns: 1fr;
+        gap: 40px;
+    }
+    
+    .problem-content {
+        max-width: 100%;
+    }
+    
+    .problem-list {
+        margin-top: 24px;
+    }
+    
+    .problem-item {
+        margin-bottom: 16px;
+        padding: 12px;
+        border-radius: 10px;
+        background-color: rgba(15, 23, 42, 0.3);
+        transition: transform 0.2s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+    
+    .problem-icon {
+        font-size: 24px;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: rgba(239, 68, 68, 0.15);
+        border-radius: 50%;
+        margin-right: 12px;
+    }
+    
+    .problem-text h3 {
+        font-size: 17px;
+        margin-bottom: 8px;
+    }
+    
+    .problem-text p {
+        font-size: 14px;
+        line-height: 1.5;
+        opacity: 0.9;
+    }
+    
+    /* SVG optimizations for mobile */
+    .frustrated-creator-svg {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    /* ===== HOW IT WORKS ===== */
+    .how-it-works {
+        padding: 50px 0;
+    }
+    
+    .steps {
+        flex-direction: column;
+        gap: 32px;
+        margin-top: 40px;
+    }
+    
+    .steps::before {
+        display: none;
+    }
+    
+    .step {
+        position: relative;
+        z-index: 2;
+        flex: none;
+        text-align: left;
+        display: flex;
+        align-items: flex-start;
+        background-color: rgba(15, 23, 42, 0.3);
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+    
+    .step-number {
+        width: 50px;
+        height: 50px;
+        font-size: 20px;
+        margin: 0 16px 0 0;
+        flex-shrink: 0;
+    }
+    
+    .step-content {
+        flex: 1;
+    }
+    
+    .step-title {
+        font-size: 18px;
+        margin-bottom: 8px;
+        text-align: left;
+    }
+    
+    .step-description {
+        font-size: 14px;
+        margin: 0;
+        max-width: none;
+        text-align: left;
+    }
+    
+    /* ===== PRICING SECTION ===== */
+    .pricing {
+        padding: 50px 0;
+    }
+    
+    .pricing-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        margin-top: 32px;
+    }
+    
+    .pricing-card {
+        padding: 24px;
+        border-radius: 16px;
+        transform: none !important;
+        transition: transform 0.2s ease;
+    }
+    
+    .pricing-card.popular {
+        transform: none;
+        order: -1; /* Put the popular plan first */
+        background: linear-gradient(135deg, #4F46E5 0%, #6366F1 100%);
+    }
+    
+    .pricing-title {
+        font-size: 22px;
+        margin-bottom: 12px;
+    }
+    
+    .pricing-price {
+        font-size: 36px;
+        margin-bottom: 12px;
+    }
+    
+    .pricing-period {
+        font-size: 14px;
+    }
+    
+    .pricing-description {
+        font-size: 14px;
+        line-height: 1.5;
+        margin-bottom: 20px;
+    }
+    
+    .pricing-features {
+        margin: 24px 0;
+    }
+    
+    .pricing-feature {
+        margin-bottom: 12px;
+        font-size: 14px;
+    }
+    
+    /* Button styling for pricing */
+    .pricing-card .btn {
+        width: 100%;
+    }
+    
+    /* ===== SWIPE HINTS ===== */
+    /* Add visual hints for horizontal scrollable content */
+    .swipe-hint {
+        position: relative;
+        width: 100px;
+        height: 20px;
+        margin: 0 auto;
+        opacity: 0.6;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding-bottom: 40px;
+    }
+    
+    .swipe-hint::before,
+    .swipe-hint::after {
+        content: "";
+        position: absolute;
+        width: 40px;
+        height: 3px;
+        border-radius: 3px;
+        background-color: rgba(255, 255, 255, 0.5);
+    }
+    
+    .swipe-hint::before {
+        animation: swipeLeft 2s infinite;
+    }
+    
+    .swipe-hint::after {
+        animation: swipeRight 2s infinite;
+    }
+    
+    @keyframes swipeLeft {
+        0%, 100% { transform: translateX(-10px); opacity: 0; }
+        50% { transform: translateX(0); opacity: 1; }
+    }
+    
+    @keyframes swipeRight {
+        0%, 100% { transform: translateX(10px); opacity: 0; }
+        50% { transform: translateX(0); opacity: 1; }
+    }
+    
+    /* ===== FOOTER ===== */
+    footer {
+        padding: 40px 0 24px;
+    }
+    
+    .footer-grid {
+        grid-template-columns: 1fr;
+        gap: 40px;
+        text-align: center;
+    }
+    
+    .footer-logo {
+        justify-content: center;
+    }
+    
+    .footer-logo-image {
+        height: 120px;
+    }
+    
+    .footer-column h3 {
+        margin-bottom: 16px;
+        font-size: 18px;
+    }
+    
+    .footer-link {
+        margin-bottom: 10px;
+    }
+    
+    .footer-link a {
+        font-size: 14px;
+    }
+    
+    .footer-bottom {
+        padding-top: 24px;
+        font-size: 12px;
+    }
+}
+
+/* Extra small screens */
+@media (max-width: 480px) {
+    .hero-title {
+        font-size: 28px;
+    }
+    
+    .section-title {
+        font-size: 24px;
+    }
+    
+    .section-subtitle {
+        font-size: 15px;
+    }
+}
+
+/* Mobile orientations - prevent layout issues in landscape */
+@media (max-height: 480px) and (orientation: landscape) {
+    .hero {
+        padding: 20px 0;
+    }
+    
+    .hero-title {
+        font-size: 24px;
+        margin-bottom: 10px;
+    }
+    
+    .hero-subtitle {
+        font-size: 14px;
+        margin-bottom: 16px;
+    }
+    
+    .hero-buttons {
+        flex-direction: row;
+    }
+    
+    .hero-buttons .btn {
+        padding: 10px 16px;
+    }
+    
+    .stats-bar {
+        margin-top: 16px;
+    }
+} 

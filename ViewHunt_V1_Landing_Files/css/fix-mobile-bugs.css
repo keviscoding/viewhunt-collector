@@ -1,0 +1,30 @@
+/* Fix for scrolling/loading bars bug and pricing card order */
+@media (max-width: 768px) {
+    /* Remove horizontal loading bars */
+    .mobile-scroll-progress {
+        display: none !important;
+    }
+    
+    /* Fix swipe hints that might be causing the loading bars */
+    .swipe-hint, 
+    .swipe-hint::before, 
+    .swipe-hint::after {
+        display: none !important;
+    }
+    
+    /* Fix pricing card order - Free plan first, not Pro */
+    .pricing-grid {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .pricing-card.popular {
+        order: 0 !important; /* Reset any special ordering */
+    }
+    
+    /* Ensure proper order by explicitly setting it */
+    .pricing-grid .pricing-card:nth-child(1) { order: 1; } /* Free plan */
+    .pricing-grid .pricing-card:nth-child(2) { order: 2; } /* Pro plan */
+    .pricing-grid .pricing-card:nth-child(3) { order: 3; } /* Max plan */
+}
+

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Magnifying glass handle -->
+  <path d="M27,73 L40,60" stroke="#6366F1" stroke-width="8" stroke-linecap="round" />
+  
+  <!-- Magnifying glass lens with gradient -->
+  <defs>
+    <linearGradient id="lensGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+  </defs>
+  
+  <circle cx="60" cy="40" r="25" fill="url(#lensGradient)" />
+  <circle cx="60" cy="40" r="20" fill="#191D31" />
+  
+  <!-- Eye -->
+  <circle cx="60" cy="40" r="12" fill="#4F46E5" />
+  <circle cx="60" cy="40" r="8" fill="#3730A3" />
+  <circle cx="64" cy="36" r="4" fill="white" />
+  
+  <!-- Light reflection -->
+  <circle cx="54" cy="44" r="2" fill="rgba(255,255,255,0.7)" />
+  
+  <!-- Glass reflection -->
+  <path d="M40,30 Q50,25 65,30" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" fill="none" />
+  <path d="M45,50 Q55,55 70,48" stroke="rgba(255,255,255,0.2)" stroke-width="1" fill="none" />
+</svg> 
