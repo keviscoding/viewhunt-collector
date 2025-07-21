@@ -174,8 +174,12 @@ async function connectToMongoDB() {
         if (V1_MONGODB_URI && V1_MONGODB_URI !== V2_MONGODB_URI) {
             const v1Client = new MongoClient(V1_MONGODB_URI);
             await v1Client.connect();
-            v1Db = v1Client.db('viewhunt'); // V1 database name
+            v1Db = v1Client.db('youtube-niche-finder'); // Correct V1 database name
             console.log('Connected to both V1 and V2 databases');
+            
+            // Check V1 database contents
+            const v1UserCount = await v1Db.collection('users').countDocuments();
+            console.log(`V1 database has ${v1UserCount} users`);
         } else {
             console.log('Using same database for V1 and V2');
             v1Db = db;
@@ -562,23 +566,31 @@ const validateEmail = (email) => {
 const migrateV1UserToV2 = async (v1User) => {
     try {
         console.log('Migrating V1 user to V2:', v1User.email);
+        console.log('V1 user type:', v1User.googleId ? 'Google OAuth' : 'Email/Password');
         
         // Create V2 user structure
         const v2User = {
             email: v1User.email.toLowerCase(),
-            password: v1User.password, // Keep same password hash
-            display_name: v1User.display_name || v1User.email.split('@')[0], // Use email prefix if no display name
-            created_at: v1User.created_at || new Date(),
+            password: v1User.password || null, // Google users might not have password
+            display_name: v1User.name || v1User.display_name || v1User.email.split('@')[0],
+            created_at: v1User.createdAt || new Date(),
             updated_at: new Date(),
             migrated_from_v1: true,
             v1_user_id: v1User._id,
+            // Preserve Google OAuth data
+            googleId: v1User.googleId || null,
+            profilePicture: v1User.profilePicture || null,
+            firebaseUid: v1User.firebaseUid || null,
             stats: {
                 channels_approved: 0,
                 channels_rejected: 0,
                 total_reviews: 0
             },
             // Preserve subscription data if it exists
-            subscription: v1User.subscription || null
+            subscription: v1User.subscription || null,
+            // Preserve other V1 fields
+            isAdmin: v1User.isAdmin || false,
+            verified: v1User.verified || false
         };
         
         // Insert into V2 database
@@ -775,6 +787,21 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
         console.log(`User found in ${userSource}, checking password`);
 
         // Step 4: Check password
+        // Handle Google OAuth users (they don't have passwords)
+        if (user.googleId && !user.password) {
+            console.log('Google OAuth user detected, but trying to login with password');
+            return res.status(401).json({ 
+                error: 'This account uses Google Sign-In. Please use Google to login.',
+                isGoogleUser: true
+            });
+        }
+        
+        // Regular password check
+        if (!user.password) {
+            console.log('User has no password set:', email.toLowerCase());
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
+        
         const isValidPassword = await bcrypt.compare(password, user.password);
         if (!isValidPassword) {
             console.log('Invalid password for user:', email.toLowerCase());
@@ -807,6 +834,98 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
     } catch (error) {
         console.error('Login error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Google OAuth login route
+app.post('/api/auth/google', async (req, res) => {
+    try {
+        const { email, name, googleId, profilePicture } = req.body;
+
+        if (!email || !googleId) {
+            return res.status(400).json({ error: 'Email and Google ID are required' });
+        }
+
+        console.log('Google OAuth login attempt for:', email.toLowerCase());
+
+        // Step 1: Try to find user in V2 database first
+        let user = await db.collection('users').findOne({ 
+            $or: [
+                { email: email.toLowerCase() },
+                { googleId: googleId }
+            ]
+        });
+
+        let userSource = 'V2';
+
+        // Step 2: If not found in V2, try V1 database
+        if (!user && v1Db && v1Db !== db) {
+            console.log('Google user not found in V2, checking V1 database');
+            const v1User = await v1Db.collection('users').findOne({ 
+                $or: [
+                    { email: email.toLowerCase() },
+                    { googleId: googleId }
+                ]
+            });
+
+            if (v1User) {
+                console.log('Google user found in V1 database, migrating to V2');
+                user = await migrateV1UserToV2(v1User);
+                userSource = 'V1_MIGRATED';
+            }
+        }
+
+        // Step 3: If still not found, create new user
+        if (!user) {
+            console.log('Creating new Google user');
+            const newUser = {
+                email: email.toLowerCase(),
+                display_name: name || email.split('@')[0],
+                googleId: googleId,
+                profilePicture: profilePicture || null,
+                created_at: new Date(),
+                updated_at: new Date(),
+                migrated_from_v1: false, // New V2 user
+                stats: {
+                    channels_approved: 0,
+                    channels_rejected: 0,
+                    total_reviews: 0
+                }
+            };
+
+            const result = await db.collection('users').insertOne(newUser);
+            user = { ...newUser, _id: result.insertedId };
+            userSource = 'NEW_V2';
+        }
+
+        console.log(`Google login successful for: ${email.toLowerCase()} (${userSource})`);
+
+        // Generate JWT token
+        const token = jwt.sign(
+            { 
+                userId: user._id, 
+                email: user.email,
+                display_name: user.display_name
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        res.json({
+            message: 'Google login successful',
+            token,
+            user: {
+                id: user._id,
+                email: user.email,
+                display_name: user.display_name,
+                profilePicture: user.profilePicture,
+                stats: user.stats || { channels_approved: 0, channels_rejected: 0, total_reviews: 0 }
+            }
+        });
+
+    } catch (error) {
+        console.error('Google login error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
