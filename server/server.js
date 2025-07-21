@@ -38,7 +38,77 @@ app.use('/app', express.static(path.join(__dirname, 'mobile')));
 
 // Landing page route
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    const indexPath = path.join(__dirname, 'public', 'index.html');
+    console.log('Serving landing page from:', indexPath);
+    
+    // Check if file exists
+    const fs = require('fs');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        console.error('index.html not found at:', indexPath);
+        // Fallback HTML
+        res.send(`
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>ViewHunt - Find Untapped YouTube Shorts Niches</title>
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        min-height: 100vh;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        padding: 20px;
+                    }
+                    .container {
+                        text-align: center;
+                        max-width: 800px;
+                        padding: 2rem;
+                        background: rgba(255, 255, 255, 0.1);
+                        border-radius: 20px;
+                        backdrop-filter: blur(10px);
+                        border: 1px solid rgba(255, 255, 255, 0.2);
+                    }
+                    h1 { font-size: 2.5rem; margin-bottom: 1rem; }
+                    p { font-size: 1.2rem; margin-bottom: 1.5rem; }
+                    .btn {
+                        display: inline-block;
+                        background: white;
+                        color: #764ba2;
+                        padding: 12px 24px;
+                        border-radius: 8px;
+                        font-weight: 600;
+                        text-decoration: none;
+                        transition: all 0.3s;
+                        margin: 10px;
+                    }
+                    .btn:hover {
+                        transform: translateY(-3px);
+                        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>Welcome to ViewHunt</h1>
+                    <p>Find untapped YouTube Shorts niches with data-driven confidence.</p>
+                    <p>Discover profitable niches before they saturate.</p>
+                    <div>
+                        <a href="/app" class="btn">Launch App</a>
+                        <a href="/pricing" class="btn">View Pricing</a>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `);
+    }
 });
 
 // Pricing page route
@@ -519,20 +589,76 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
             return res.status(400).json({ error: 'Email and password are required' });
         }
 
+        console.log('Login attempt for email:', email.toLowerCase());
+
         // Find user
         const user = await db.collection('users').findOne({ 
             email: email.toLowerCase() 
         });
 
         if (!user) {
+            console.log('User not found for email:', email.toLowerCase());
+            
+            // Check if this is admin trying to login for the first time
+            if (email.toLowerCase() === process.env.ADMIN_EMAIL?.toLowerCase() && process.env.ADMIN_PASSWORD) {
+                console.log('Creating admin user for first time login');
+                
+                // Create admin user
+                const saltRounds = 12;
+                const hashedPassword = await bcrypt.hash(process.env.ADMIN_PASSWORD, saltRounds);
+                
+                const adminUser = {
+                    email: process.env.ADMIN_EMAIL.toLowerCase(),
+                    password: hashedPassword,
+                    display_name: 'Admin',
+                    created_at: new Date(),
+                    updated_at: new Date(),
+                    stats: {
+                        channels_approved: 0,
+                        channels_rejected: 0,
+                        total_reviews: 0
+                    }
+                };
+
+                const result = await db.collection('users').insertOne(adminUser);
+                console.log('Admin user created with ID:', result.insertedId);
+                
+                // Generate JWT token for admin
+                const token = jwt.sign(
+                    { 
+                        userId: result.insertedId, 
+                        email: adminUser.email,
+                        display_name: adminUser.display_name
+                    },
+                    process.env.JWT_SECRET,
+                    { expiresIn: '7d' }
+                );
+
+                return res.json({
+                    message: 'Admin login successful',
+                    token,
+                    user: {
+                        id: result.insertedId,
+                        email: adminUser.email,
+                        display_name: adminUser.display_name,
+                        stats: adminUser.stats
+                    }
+                });
+            }
+            
             return res.status(401).json({ error: 'Invalid email or password' });
         }
+
+        console.log('User found, checking password');
 
         // Check password
         const isValidPassword = await bcrypt.compare(password, user.password);
         if (!isValidPassword) {
+            console.log('Invalid password for user:', email.toLowerCase());
             return res.status(401).json({ error: 'Invalid email or password' });
         }
+
+        console.log('Login successful for user:', email.toLowerCase());
 
         // Generate JWT token
         const token = jwt.sign(
