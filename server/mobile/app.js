@@ -1229,10 +1229,10 @@ class ViewHuntApp {
                     <div class="gate-content">
                         <div class="gate-icon">🔒</div>
                         <h3>Subscription Required</h3>
-                        <p>Access to Kevis' Picks and Trending channels requires an active subscription.</p>
+                        <p>Subscribe to hunt your next viral niche with exclusive access to curated channels and trending discoveries.</p>
                         <div class="gate-buttons">
                             <button class="btn btn-primary" onclick="window.open('/pricing', '_blank')">
-                                Subscribe Now
+                                Subscribe to Hunt Viral Niches
                             </button>
                             <button class="btn btn-secondary" onclick="app.switchView('pending')">
                                 View Pending Channels
@@ -1446,6 +1446,18 @@ class ViewHuntApp {
     manageSubscription() {
         // Open subscription management
         window.open('/pricing', '_blank');
+    }
+
+    async signInWithGoogle() {
+        // For now, show a message that Google Sign-In is coming soon
+        // In production, you'd integrate with Google OAuth
+        this.showToast('Google Sign-In coming soon! Please use email/password for now.');
+        
+        // TODO: Implement Google OAuth flow
+        // 1. Load Google OAuth library
+        // 2. Initialize with client ID
+        // 3. Handle OAuth response
+        // 4. Send to backend /api/auth/google endpoint
     }
 
     logout() {
