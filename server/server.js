@@ -951,7 +951,165 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     }
 });
 
-// Google OAuth login route
+// Google OAuth initialization route
+app.get('/auth/google', (req, res) => {
+    const googleAuthUrl = `https://accounts.google.com/oauth/authorize?` +
+        `client_id=${process.env.GOOGLE_CLIENT_ID}&` +
+        `redirect_uri=${encodeURIComponent(process.env.GOOGLE_CALLBACK_URL)}&` +
+        `response_type=code&` +
+        `scope=email profile&` +
+        `access_type=offline`;
+    
+    res.redirect(googleAuthUrl);
+});
+
+// Google OAuth callback route
+app.get('/auth/google/callback', async (req, res) => {
+    try {
+        const { code } = req.query;
+        
+        if (!code) {
+            return res.redirect('/app?error=oauth_failed');
+        }
+        
+        // Exchange code for tokens
+        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                client_id: process.env.GOOGLE_CLIENT_ID,
+                client_secret: process.env.GOOGLE_CLIENT_SECRET,
+                code: code,
+                grant_type: 'authorization_code',
+                redirect_uri: process.env.GOOGLE_CALLBACK_URL,
+            }),
+        });
+        
+        const tokens = await tokenResponse.json();
+        
+        if (!tokens.access_token) {
+            throw new Error('Failed to get access token');
+        }
+        
+        // Get user info from Google
+        const userResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: {
+                'Authorization': `Bearer ${tokens.access_token}`,
+            },
+        });
+        
+        const googleUser = await userResponse.json();
+        
+        // Process the Google user (same logic as POST endpoint)
+        const result = await processGoogleUser(googleUser);
+        
+        if (result.success) {
+            // Redirect to app with token
+            res.redirect(`/app?token=${result.token}&success=google_login`);
+        } else {
+            res.redirect(`/app?error=${encodeURIComponent(result.error)}`);
+        }
+        
+    } catch (error) {
+        console.error('Google OAuth callback error:', error);
+        res.redirect('/app?error=oauth_failed');
+    }
+});
+
+// Helper function to process Google user
+async function processGoogleUser(googleUser) {
+    try {
+        const { email, name, id: googleId, picture: profilePicture } = googleUser;
+        
+        console.log('Google OAuth login attempt for:', email);
+
+        // Step 1: Try to find user in V2 database first
+        let user = await db.collection('users').findOne({ 
+            $or: [
+                { email: email.toLowerCase() },
+                { googleId: googleId }
+            ]
+        });
+
+        let userSource = 'V2';
+
+        // Step 2: If not found in V2, try V1 database
+        if (!user && v1Db && v1Db !== db) {
+            console.log('Google user not found in V2, checking V1 database');
+            const v1User = await v1Db.collection('users').findOne({ 
+                $or: [
+                    { email: email.toLowerCase() },
+                    { googleId: googleId }
+                ]
+            });
+
+            if (v1User) {
+                console.log('Google user found in V1 database, migrating to V2');
+                user = await migrateV1UserToV2(v1User);
+                userSource = 'V1_MIGRATED';
+            }
+        }
+
+        // Step 3: If still not found, create new user
+        if (!user) {
+            console.log('Creating new Google user');
+            const newUser = {
+                email: email.toLowerCase(),
+                display_name: name || email.split('@')[0],
+                googleId: googleId,
+                profilePicture: profilePicture || null,
+                created_at: new Date(),
+                updated_at: new Date(),
+                migrated_from_v1: false, // New V2 user
+                stats: {
+                    channels_approved: 0,
+                    channels_rejected: 0,
+                    total_reviews: 0
+                }
+            };
+
+            const result = await db.collection('users').insertOne(newUser);
+            user = { ...newUser, _id: result.insertedId };
+            userSource = 'NEW_V2';
+        }
+
+        console.log(`Google login successful for: ${email} (${userSource})`);
+
+        // Generate JWT token
+        const token = jwt.sign(
+            { 
+                userId: user._id, 
+                email: user.email,
+                display_name: user.display_name
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        return {
+            success: true,
+            token: token,
+            user: {
+                id: user._id,
+                email: user.email,
+                display_name: user.display_name,
+                profilePicture: user.profilePicture,
+                stats: user.stats || { channels_approved: 0, channels_rejected: 0, total_reviews: 0 }
+            }
+        };
+
+    } catch (error) {
+        console.error('Google user processing error:', error);
+        return {
+            success: false,
+            error: 'Failed to process Google login'
+        };
+    }
+}
+
+// Google OAuth login route (for API calls)
 app.post('/api/auth/google', async (req, res) => {
     try {
         const { email, name, googleId, profilePicture } = req.body;

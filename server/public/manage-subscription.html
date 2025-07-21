@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Subscription - ViewHunt</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+        .subscription-card {
+            background: rgba(255, 255, 255, 0.95);
+            color: #333;
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+        .status-active {
+            background: #10b981;
+            color: white;
+        }
+        .status-canceled {
+            background: #ef4444;
+            color: white;
+        }
+        .subscription-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .detail-item h3 {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .detail-item p {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .actions {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+        .btn-secondary {
+            background: #f3f4f6;
+            color: #374151;
+            border: 1px solid #d1d5db;
+        }
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        .loading {
+            text-align: center;
+            padding: 2rem;
+        }
+        .error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #dc2626;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        .success {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #059669;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        .back-link {
+            display: inline-block;
+            color: white;
+            text-decoration: none;
+            margin-bottom: 2rem;
+            opacity: 0.8;
+        }
+        .back-link:hover {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/app" class="back-link">← Back to App</a>
+        
+        <header>
+            <h1>Manage Subscription</h1>
+            <p>View and manage your ViewHunt Pro subscription</p>
+        </header>
+
+        <div id="loading" class="loading">
+            <p>Loading subscription details...</p>
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+        <div id="success" class="success" style="display: none;"></div>
+
+        <div id="subscription-content" style="display: none;">
+            <div class="subscription-card">
+                <div class="status-badge" id="status-badge">Active</div>
+                
+                <div class="subscription-details">
+                    <div class="detail-item">
+                        <h3>Plan</h3>
+                        <p id="plan-name">ViewHunt Pro</p>
+                    </div>
+                    <div class="detail-item">
+                        <h3>Price</h3>
+                        <p id="plan-price">$25/month</p>
+                    </div>
+                    <div class="detail-item">
+                        <h3>Next Billing</h3>
+                        <p id="next-billing">Loading...</p>
+                    </div>
+                    <div class="detail-item">
+                        <h3>Status</h3>
+                        <p id="subscription-status">Active</p>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button class="btn btn-secondary" onclick="updateBilling()">Update Billing</button>
+                    <button class="btn btn-danger" id="cancel-btn" onclick="cancelSubscription()">Cancel Subscription</button>
+                    <button class="btn btn-primary" id="reactivate-btn" onclick="reactivateSubscription()" style="display: none;">Reactivate</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let subscriptionData = null;
+
+        async function loadSubscription() {
+            const token = localStorage.getItem('viewhunt_token');
+            if (!token) {
+                window.location.href = '/app';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/auth/me', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load user data');
+                }
+
+                const user = await response.json();
+                subscriptionData = user.subscription;
+
+                if (!subscriptionData || !subscriptionData.hasAccess) {
+                    showError('No active subscription found');
+                    return;
+                }
+
+                displaySubscription(subscriptionData);
+
+            } catch (error) {
+                console.error('Error loading subscription:', error);
+                showError('Failed to load subscription details');
+            }
+        }
+
+        function displaySubscription(subscription) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('subscription-content').style.display = 'block';
+
+            // Update status badge
+            const statusBadge = document.getElementById('status-badge');
+            const statusText = document.getElementById('subscription-status');
+            
+            if (subscription.status === 'active') {
+                statusBadge.textContent = 'Active';
+                statusBadge.className = 'status-badge status-active';
+                statusText.textContent = 'Active';
+                document.getElementById('cancel-btn').style.display = 'inline-block';
+                document.getElementById('reactivate-btn').style.display = 'none';
+            } else {
+                statusBadge.textContent = 'Canceled';
+                statusBadge.className = 'status-badge status-canceled';
+                statusText.textContent = 'Canceled';
+                document.getElementById('cancel-btn').style.display = 'none';
+                document.getElementById('reactivate-btn').style.display = 'inline-block';
+            }
+
+            // Update billing date
+            if (subscription.currentPeriodEnd) {
+                const date = new Date(subscription.currentPeriodEnd);
+                document.getElementById('next-billing').textContent = date.toLocaleDateString();
+            }
+        }
+
+        async function cancelSubscription() {
+            if (!confirm('Are you sure you want to cancel your subscription? You will lose access at the end of your current billing period.')) {
+                return;
+            }
+
+            const token = localStorage.getItem('viewhunt_token');
+            const button = document.getElementById('cancel-btn');
+            button.textContent = 'Canceling...';
+            button.disabled = true;
+
+            try {
+                const response = await fetch('/api/subscription/cancel', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showSuccess('Subscription canceled successfully. You will retain access until the end of your billing period.');
+                    loadSubscription(); // Reload to update UI
+                } else {
+                    throw new Error(data.error || 'Failed to cancel subscription');
+                }
+
+            } catch (error) {
+                console.error('Error canceling subscription:', error);
+                showError('Failed to cancel subscription: ' + error.message);
+                button.textContent = 'Cancel Subscription';
+                button.disabled = false;
+            }
+        }
+
+        async function reactivateSubscription() {
+            const token = localStorage.getItem('viewhunt_token');
+            const button = document.getElementById('reactivate-btn');
+            button.textContent = 'Reactivating...';
+            button.disabled = true;
+
+            try {
+                const response = await fetch('/api/subscription/reactivate', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showSuccess('Subscription reactivated successfully!');
+                    loadSubscription(); // Reload to update UI
+                } else {
+                    throw new Error(data.error || 'Failed to reactivate subscription');
+                }
+
+            } catch (error) {
+                console.error('Error reactivating subscription:', error);
+                showError('Failed to reactivate subscription: ' + error.message);
+                button.textContent = 'Reactivate';
+                button.disabled = false;
+            }
+        }
+
+        function updateBilling() {
+            // This would typically redirect to Stripe customer portal
+            alert('Billing management coming soon! Please contact support for billing changes.');
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            document.getElementById('success').style.display = 'none';
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('success');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+        }
+
+        // Load subscription on page load
+        loadSubscription();
+    </script>
+</body>
+</html>

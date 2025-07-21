@@ -20,6 +20,10 @@ class ViewHuntApp {
     async init() {
         this.initTheme();
         this.setupEventListeners();
+        
+        // Check for OAuth callback parameters
+        this.handleOAuthCallback();
+        
         await this.checkAuthStatus();
         await this.checkSubscriptionStatus();
         await this.loadStats();
@@ -1444,20 +1448,43 @@ class ViewHuntApp {
     }
 
     manageSubscription() {
-        // Open subscription management
-        window.open('/pricing', '_blank');
+        // Open subscription management page
+        window.open('/manage-subscription', '_blank');
+    }
+
+    handleOAuthCallback() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        const success = urlParams.get('success');
+        const error = urlParams.get('error');
+        
+        if (token) {
+            // Store the token and clean up URL
+            localStorage.setItem('viewhunt_token', token);
+            this.token = token;
+            this.authToken = token;
+            
+            // Clean up URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            
+            if (success === 'google_login') {
+                this.showToast('Welcome! Signed in with Google 🎉');
+            }
+        } else if (error) {
+            // Clean up URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            
+            if (error === 'oauth_failed') {
+                this.showToast('Google sign-in failed. Please try again. ❌');
+            } else {
+                this.showToast('Sign-in error: ' + decodeURIComponent(error) + ' ❌');
+            }
+        }
     }
 
     async signInWithGoogle() {
-        // For now, show a message that Google Sign-In is coming soon
-        // In production, you'd integrate with Google OAuth
-        this.showToast('Google Sign-In coming soon! Please use email/password for now.');
-        
-        // TODO: Implement Google OAuth flow
-        // 1. Load Google OAuth library
-        // 2. Initialize with client ID
-        // 3. Handle OAuth response
-        // 4. Send to backend /api/auth/google endpoint
+        // Redirect to Google OAuth
+        window.location.href = '/auth/google';
     }
 
     logout() {
