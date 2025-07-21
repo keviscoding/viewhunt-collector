@@ -1061,6 +1061,16 @@ app.get('/auth/google/callback/test', (req, res) => {
     });
 });
 
+// Simple callback route for testing
+app.all('/auth/google/callback', (req, res, next) => {
+    console.log('=== GOOGLE OAUTH CALLBACK HIT ===');
+    console.log('Method:', req.method);
+    console.log('Query:', req.query);
+    console.log('Headers:', req.headers);
+    console.log('================================');
+    next();
+});
+
 // Helper function to process Google user
 async function processGoogleUser(googleUser) {
     try {
