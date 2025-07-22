@@ -468,10 +468,10 @@ class ViewHuntApp {
             // Get current filter values
             const primarySort = document.getElementById('primary-sort').value;
             const secondarySort = document.getElementById('secondary-sort').value;
-            const minViews = parseInt(document.getElementById('min-views').value.replace(/,/g, '')) || 0;
-            const maxViews = document.getElementById('max-views').value ? parseInt(document.getElementById('max-views').value.replace(/,/g, '')) : null;
-            const minSubs = parseInt(document.getElementById('min-subs').value.replace(/,/g, '')) || 0;
-            const maxSubs = document.getElementById('max-subs').value ? parseInt(document.getElementById('max-subs').value.replace(/,/g, '')) : null;
+            const minViews = this.parseFormattedNumber(document.getElementById('min-views').value) || 0;
+            const maxViews = document.getElementById('max-views').value ? this.parseFormattedNumber(document.getElementById('max-views').value) : null;
+            const minSubs = this.parseFormattedNumber(document.getElementById('min-subs').value) || 0;
+            const maxSubs = document.getElementById('max-subs').value ? this.parseFormattedNumber(document.getElementById('max-subs').value) : null;
             const minVideos = parseInt(document.getElementById('min-videos').value.replace(/,/g, '')) || 0;
             const maxVideos = document.getElementById('max-videos').value ? parseInt(document.getElementById('max-videos').value.replace(/,/g, '')) : null;
 
