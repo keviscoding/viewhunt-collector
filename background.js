@@ -70,7 +70,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         state.keywords = message.keywords; // Array of keywords
         state.addAsterisk = message.addAsterisk;
         state.maxChannels = message.maxChannels; // Add max channels limit
-        state.scrollCount = message.scrollCount || 30; // Add scroll count setting
+        state.scrollCount = message.scrollCount; // Add scroll count setting (can be null for unlimited)
         chrome.storage.local.set({ 
             keywords: message.keywords.join(', '), // Store as string for popup compatibility
             addAsterisk: message.addAsterisk,

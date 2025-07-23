@@ -88,8 +88,8 @@ const loadKeywords = async () => {
             document.getElementById('max-channels').value = result.maxChannels;
         }
         
-        // Load scroll count
-        if (result.scrollCount) {
+        // Load scroll count (only if user has set a custom value)
+        if (result.scrollCount && result.scrollCount !== 30) {
             document.getElementById('scroll-count').value = result.scrollCount;
         }
     } catch (error) {
@@ -144,7 +144,8 @@ const saveKeywords = () => {
     const cleanKeywords = keywords.join(', ');
     const addAsterisk = addAsteriskCheckbox.checked;
     const maxChannels = parseInt(document.getElementById('max-channels').value) || null;
-    const scrollCount = parseInt(document.getElementById('scroll-count').value) || 30;
+    const scrollCountInput = document.getElementById('scroll-count').value.trim();
+    const scrollCount = scrollCountInput ? parseInt(scrollCountInput) : null;
     
     chrome.runtime.sendMessage({ 
         command: 'save-keywords', 
@@ -159,7 +160,7 @@ const saveKeywords = () => {
             keywordsStatus.className = 'keywords-status error';
         } else if (response && response.success) {
             const limitText = maxChannels ? ` (limit: ${maxChannels})` : '';
-            const scrollText = scrollCount !== 30 ? ` (${scrollCount} scrolls)` : '';
+            const scrollText = scrollCount ? ` (${scrollCount} scrolls)` : ' (scroll to bottom)';
             keywordsStatus.textContent = `${keywords.length} keywords saved successfully${limitText}${scrollText}`;
             keywordsStatus.className = 'keywords-status success';
         } else {

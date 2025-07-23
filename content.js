@@ -159,21 +159,36 @@
         
         // Get scroll count from storage (set by user in popup)
         const { scrollCount: userScrollCount } = await chrome.storage.local.get('scrollCount');
-        const scrollCount = userScrollCount || 30;
+        const hasCustomScrollCount = userScrollCount && userScrollCount > 0; // Check if user set a custom value
+        const maxScrollCount = hasCustomScrollCount ? userScrollCount : 200; // Use user value or high safety limit
         const scrollDelay = 1500;
         
-        console.log(`ViewHunt: Using scroll count: ${scrollCount}`);
+        if (hasCustomScrollCount) {
+            console.log(`ViewHunt: Using custom scroll limit: ${userScrollCount}`);
+            sendStatus(`Using custom scroll limit: ${userScrollCount} scrolls`);
+        } else {
+            console.log(`ViewHunt: Scrolling until bottom of page (safety limit: ${maxScrollCount})`);
+            sendStatus("Scrolling until bottom of page...");
+        }
+        
         let lastVideoCount = 0;
         let noNewVideosCount = 0;
+        let scrollCount = 0;
 
-        for (let i = 0; i < scrollCount; i++) {
+        while (scrollCount < maxScrollCount) {
             const { state } = await chrome.storage.local.get('state');
             if (state && state.stopRequested) {
                 sendStatus("Stop detected. Halting scroll.");
                 break;
             }
 
-            sendStatus(`Scrolling (${i + 1}/${scrollCount})...`);
+            scrollCount++;
+            
+            if (hasCustomScrollCount) {
+                sendStatus(`Scrolling (${scrollCount}/${userScrollCount})...`);
+            } else {
+                sendStatus(`Scrolling (${scrollCount}) - looking for more content...`);
+            }
             
             // Scroll to bottom
             window.scrollTo(0, document.documentElement.scrollHeight);
@@ -187,7 +202,7 @@
                 // If no new videos for 3 consecutive scrolls, probably reached the end
                 if (noNewVideosCount >= 3) {
                     console.log("ViewHunt: Likely reached end of results for this keyword.");
-                    sendStatus(`Keyword exhausted - found ${currentVideoCount} videos total.`);
+                    sendStatus(`Reached bottom - found ${currentVideoCount} videos total.`);
                     break;
                 }
             } else {
@@ -197,6 +212,13 @@
             
             lastVideoCount = currentVideoCount;
             await new Promise(resolve => setTimeout(resolve, scrollDelay));
+            
+            // If user set a custom scroll count, respect that limit
+            if (hasCustomScrollCount && scrollCount >= userScrollCount) {
+                console.log(`ViewHunt: Reached custom scroll limit of ${userScrollCount}`);
+                sendStatus(`Reached scroll limit - found ${currentVideoCount} videos total.`);
+                break;
+            }
         }
         
         sendStatus("Scrolling complete. Extracting video data...");
