@@ -124,6 +124,16 @@ app.get('/manage-subscription', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'manage-subscription.html'));
 });
 
+// Privacy Policy page route
+app.get('/privacy-policy', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'privacy-policy.html'));
+});
+
+// Terms of Service page route
+app.get('/terms-of-service', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'terms-of-service.html'));
+});
+
 // Subscription success page
 app.get('/subscription-success', async (req, res) => {
     try {

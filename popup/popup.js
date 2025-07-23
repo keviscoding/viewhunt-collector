@@ -64,7 +64,7 @@ const loadApiKey = async () => {
 // Load saved keywords and settings
 const loadKeywords = async () => {
     try {
-        const result = await chrome.storage.local.get(['keywords', 'addAsterisk', 'maxChannels']);
+        const result = await chrome.storage.local.get(['keywords', 'addAsterisk', 'maxChannels', 'scrollCount']);
         if (result.keywords) {
             keywordsInput.value = result.keywords;
             keywordsStatus.textContent = `${result.keywords.split(',').length} keywords loaded`;
@@ -86,6 +86,11 @@ const loadKeywords = async () => {
         // Load max channels limit
         if (result.maxChannels) {
             document.getElementById('max-channels').value = result.maxChannels;
+        }
+        
+        // Load scroll count
+        if (result.scrollCount) {
+            document.getElementById('scroll-count').value = result.scrollCount;
         }
     } catch (error) {
         console.error('Error loading keywords:', error);
@@ -139,12 +144,14 @@ const saveKeywords = () => {
     const cleanKeywords = keywords.join(', ');
     const addAsterisk = addAsteriskCheckbox.checked;
     const maxChannels = parseInt(document.getElementById('max-channels').value) || null;
+    const scrollCount = parseInt(document.getElementById('scroll-count').value) || 30;
     
     chrome.runtime.sendMessage({ 
         command: 'save-keywords', 
         keywords: keywords, // Send array, not string
         addAsterisk: addAsterisk,
-        maxChannels: maxChannels
+        maxChannels: maxChannels,
+        scrollCount: scrollCount
     }, (response) => {
         if (chrome.runtime.lastError) {
             console.error('Error saving keywords:', chrome.runtime.lastError.message);
@@ -152,7 +159,8 @@ const saveKeywords = () => {
             keywordsStatus.className = 'keywords-status error';
         } else if (response && response.success) {
             const limitText = maxChannels ? ` (limit: ${maxChannels})` : '';
-            keywordsStatus.textContent = `${keywords.length} keywords saved successfully${limitText}`;
+            const scrollText = scrollCount !== 30 ? ` (${scrollCount} scrolls)` : '';
+            keywordsStatus.textContent = `${keywords.length} keywords saved successfully${limitText}${scrollText}`;
             keywordsStatus.className = 'keywords-status success';
         } else {
             keywordsStatus.textContent = 'Failed to save keywords';

@@ -70,10 +70,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         state.keywords = message.keywords; // Array of keywords
         state.addAsterisk = message.addAsterisk;
         state.maxChannels = message.maxChannels; // Add max channels limit
+        state.scrollCount = message.scrollCount || 30; // Add scroll count setting
         chrome.storage.local.set({ 
             keywords: message.keywords.join(', '), // Store as string for popup compatibility
             addAsterisk: message.addAsterisk,
-            maxChannels: message.maxChannels
+            maxChannels: message.maxChannels,
+            scrollCount: message.scrollCount
         });
         sendResponse({ success: true });
     } else if (message.type === 'scraping-complete') {
@@ -172,7 +174,7 @@ async function processNextKeyword() {
     const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(searchKeyword)}`;
     
     try {
-        const tab = await chrome.tabs.create({ url: searchUrl, active: false });
+        const tab = await chrome.tabs.create({ url: searchUrl, active: true });
         state.activeTabId = tab.id;
         
         // Wait for tab to load and inject content script
@@ -485,7 +487,7 @@ async function processBatch(channels) {
 
 // Load saved state on startup
 chrome.runtime.onStartup.addListener(async () => {
-    const result = await chrome.storage.local.get(['state', 'apiKey', 'keywords', 'addAsterisk']);
+    const result = await chrome.storage.local.get(['state', 'apiKey', 'keywords', 'addAsterisk', 'scrollCount']);
     if (result.state) {
         state = { ...state, ...result.state };
         state.isProcessing = false; // Reset processing state on startup
@@ -500,11 +502,14 @@ chrome.runtime.onStartup.addListener(async () => {
     if (result.addAsterisk !== undefined) {
         state.addAsterisk = result.addAsterisk;
     }
+    if (result.scrollCount !== undefined) {
+        state.scrollCount = result.scrollCount;
+    }
 });
 
 // Load saved state on install
 chrome.runtime.onInstalled.addListener(async () => {
-    const result = await chrome.storage.local.get(['apiKey', 'keywords', 'addAsterisk']);
+    const result = await chrome.storage.local.get(['apiKey', 'keywords', 'addAsterisk', 'scrollCount']);
     if (result.apiKey) {
         state.apiKey = result.apiKey;
     }
@@ -514,5 +519,8 @@ chrome.runtime.onInstalled.addListener(async () => {
     }
     if (result.addAsterisk !== undefined) {
         state.addAsterisk = result.addAsterisk;
+    }
+    if (result.scrollCount !== undefined) {
+        state.scrollCount = result.scrollCount;
     }
 });

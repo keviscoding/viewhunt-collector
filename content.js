@@ -157,9 +157,12 @@
             sendStatus("Shorts filter not found. Proceeding with all results...");
         }
         
-        // Reasonable scroll count
-        const scrollCount = 30;
+        // Get scroll count from storage (set by user in popup)
+        const { scrollCount: userScrollCount } = await chrome.storage.local.get('scrollCount');
+        const scrollCount = userScrollCount || 30;
         const scrollDelay = 1500;
+        
+        console.log(`ViewHunt: Using scroll count: ${scrollCount}`);
         let lastVideoCount = 0;
         let noNewVideosCount = 0;
 

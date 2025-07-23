@@ -223,42 +223,46 @@ h1 {
     background-color: #7c3aed; /* violet-600 */
 }
 
-/* Limit Section */
-.limit-section {
-    margin-top: 1rem;
-    padding: 1rem;
-    background: #f8f9fa;
+/* Limit and Scroll Sections */
+.limit-section, .scroll-section {
+    background-color: #374151; /* gray-700 */
+    padding: 12px;
     border-radius: 8px;
-    border: 1px solid #e9ecef;
 }
 
-.limit-title {
-    font-size: 0.75rem;
+.limit-title, .scroll-title {
+    font-size: 11px;
     font-weight: 600;
-    color: #495057;
-    margin-bottom: 0.5rem;
+    color: #9ca3af; /* gray-400 */
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    margin: 0 0 8px 0;
 }
 
-.limit-input {
+.limit-input, .scroll-input {
     width: 100%;
-    padding: 0.75rem;
-    border: 2px solid #dee2e6;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    transition: border-color 0.2s ease;
+    background-color: #1f2937; /* gray-800 */
+    border: 1px solid #4b5563; /* gray-600 */
+    border-radius: 4px;
+    padding: 8px 12px;
+    color: #f9fafb; /* gray-50 */
+    font-size: 13px;
+    box-sizing: border-box;
 }
 
-.limit-input:focus {
+.limit-input:focus, .scroll-input:focus {
     outline: none;
-    border-color: #007bff;
-    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    border-color: #3b82f6; /* blue-500 */
+    box-shadow: 0 0 0 1px #3b82f6;
 }
 
-.limit-help {
-    font-size: 0.75rem;
-    color: #6c757d;
-    margin-top: 0.5rem;
+.limit-input::placeholder, .scroll-input::placeholder {
+    color: #6b7280; /* gray-500 */
+}
+
+.limit-help, .scroll-help {
+    font-size: 12px;
+    color: #9ca3af; /* gray-400 */
+    margin: 8px 0 0 0;
     font-style: italic;
 }
