@@ -24,16 +24,15 @@ const updateUI = (state) => {
     
     statusDisplay.textContent = state.status || 'Idle';
     
-    // Update results count - show queue and total processed
-    const queueSize = state.queueSize || 0;
+    // Update results count - show current batch and total processed
+    const currentBatch = state.currentBatchSize || 0;
     const totalCount = state.totalProcessed || 0;
-    const isProcessing = state.isProcessing || state.isQueueProcessing;
     
-    if (isProcessing && (queueSize > 0 || totalCount > 0)) {
-        if (queueSize > 0 && totalCount > 0) {
-            resultsCount.textContent = `${queueSize} in queue, ${totalCount} processed`;
-        } else if (queueSize > 0) {
-            resultsCount.textContent = `${queueSize} channels in processing queue`;
+    if (state.isProcessing && (currentBatch > 0 || totalCount > 0)) {
+        if (currentBatch > 0 && totalCount > 0) {
+            resultsCount.textContent = `${currentBatch} in current batch, ${totalCount} processed`;
+        } else if (currentBatch > 0) {
+            resultsCount.textContent = `${currentBatch} channels collected`;
         } else {
             resultsCount.textContent = `${totalCount} channels processed`;
         }
@@ -44,14 +43,14 @@ const updateUI = (state) => {
     }
     
     // Update button states
-    if (isProcessing) {
+    if (state.isProcessing) {
         startButton.disabled = true;
         stopButton.disabled = false;
         downloadButton.disabled = true; // Disable download while processing
     } else {
         startButton.disabled = false;
         stopButton.disabled = true;
-        downloadButton.disabled = totalCount === 0; // Enable download based on total processed
+        downloadButton.disabled = (currentBatch + totalCount) === 0; // Enable download if we have any results
     }
 };
 
