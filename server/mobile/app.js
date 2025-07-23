@@ -26,6 +26,10 @@ class ViewHuntApp {
         
         await this.checkAuthStatus();
         await this.checkSubscriptionStatus();
+        
+        // Update sorting options based on user permissions
+        this.updateSortingOptions(this.currentView);
+        
         await this.loadStats();
         await this.loadChannels();
     }
@@ -1022,36 +1026,51 @@ class ViewHuntApp {
 
     updateSortingOptions(view) {
         const primarySort = document.getElementById('primary-sort');
+        const secondarySort = document.getElementById('secondary-sort');
         if (!primarySort) return;
 
-        // Get approval time and approvals count options
+        // Get approval time and approvals count options from primary sort
         const approvalTimeDesc = primarySort.querySelector('option[value="approval-time-desc"]');
         const approvalTimeAsc = primarySort.querySelector('option[value="approval-time-asc"]');
         const approvalsDesc = primarySort.querySelector('option[value="approvals-desc"]');
         const approvalsAsc = primarySort.querySelector('option[value="approvals-asc"]');
 
-        if (view === 'approved') {
-            // Show approval time and approvals count options for approved view
+        // Get approvals count options from secondary sort
+        const secondaryApprovalsDesc = secondarySort ? secondarySort.querySelector('option[value="approvals-desc"]') : null;
+        const secondaryApprovalsAsc = secondarySort ? secondarySort.querySelector('option[value="approvals-asc"]') : null;
+
+        // Check if user is admin
+        const isAdmin = this.user && (this.user.email === 'nwalikelv@gmail.com' || this.user.email === 'kevis@viewhunt.com');
+
+        if (view === 'approved' && isAdmin) {
+            // Show approval time and approvals count options for approved view (admin only)
             if (approvalTimeDesc) approvalTimeDesc.style.display = 'block';
             if (approvalTimeAsc) approvalTimeAsc.style.display = 'block';
             if (approvalsDesc) approvalsDesc.style.display = 'block';
             if (approvalsAsc) approvalsAsc.style.display = 'block';
+            if (secondaryApprovalsDesc) secondaryApprovalsDesc.style.display = 'block';
+            if (secondaryApprovalsAsc) secondaryApprovalsAsc.style.display = 'block';
             
             // Set default to recently approved for admin users
-            if (this.user && (this.user.email === 'nwalikelv@gmail.com' || this.user.email === 'kevis@viewhunt.com')) {
-                primarySort.value = 'approval-time-desc';
-            }
+            primarySort.value = 'approval-time-desc';
         } else {
-            // Hide approval time and approvals count options for other views
+            // Hide approval time and approvals count options for non-admin users or other views
             if (approvalTimeDesc) approvalTimeDesc.style.display = 'none';
             if (approvalTimeAsc) approvalTimeAsc.style.display = 'none';
             if (approvalsDesc) approvalsDesc.style.display = 'none';
             if (approvalsAsc) approvalsAsc.style.display = 'none';
+            if (secondaryApprovalsDesc) secondaryApprovalsDesc.style.display = 'none';
+            if (secondaryApprovalsAsc) secondaryApprovalsAsc.style.display = 'none';
             
             // Reset to default sorting if currently on approval time or approvals count
             if (primarySort.value === 'approval-time-desc' || primarySort.value === 'approval-time-asc' || 
                 primarySort.value === 'approvals-desc' || primarySort.value === 'approvals-asc') {
                 primarySort.value = 'ratio-desc';
+            }
+            
+            // Reset secondary sort if currently on approvals count
+            if (secondarySort && (secondarySort.value === 'approvals-desc' || secondarySort.value === 'approvals-asc')) {
+                secondarySort.value = 'none';
             }
         }
     }
