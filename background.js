@@ -116,12 +116,9 @@ async function stopProcessing() {
     
     await chrome.storage.local.set({ state: state });
     
+    // Keep tabs open - don't close them when stopping
     if (state.activeTabId) {
-        try {
-            await chrome.tabs.remove(state.activeTabId);
-        } catch (e) {
-            console.log('ViewHunt Background: Could not close tab:', e);
-        }
+        console.log('ViewHunt Background: Keeping tab open after stop');
         state.activeTabId = null;
     }
     
@@ -208,10 +205,9 @@ async function processNextKeyword() {
 
 // Move to next keyword
 function moveToNextKeyword() {
+    // Keep tabs open - don't close them when moving to next keyword
     if (state.activeTabId) {
-        chrome.tabs.remove(state.activeTabId).catch(e => 
-            console.log('ViewHunt Background: Could not close tab:', e)
-        );
+        console.log('ViewHunt Background: Keeping tab open, moving to next keyword');
         state.activeTabId = null;
     }
     
