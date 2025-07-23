@@ -24,9 +24,17 @@ const updateUI = (state) => {
     
     statusDisplay.textContent = state.status || 'Idle';
     
-    // Update results count
-    const count = state.results ? state.results.length : 0;
-    resultsCount.textContent = `${count} video${count !== 1 ? 's' : ''} collected`;
+    // Update results count - show both current batch and total processed
+    const currentCount = state.results ? state.results.length : 0;
+    const totalCount = state.totalProcessed || 0;
+    
+    if (state.isProcessing && totalCount > 0) {
+        resultsCount.textContent = `${currentCount} in current batch, ${totalCount + currentCount} total processed`;
+    } else if (totalCount > 0) {
+        resultsCount.textContent = `${totalCount} total channels processed`;
+    } else {
+        resultsCount.textContent = `${currentCount} video${currentCount !== 1 ? 's' : ''} collected`;
+    }
     
     // Update button states
     if (state.isProcessing) {
@@ -36,7 +44,7 @@ const updateUI = (state) => {
     } else {
         startButton.disabled = false;
         stopButton.disabled = true;
-        downloadButton.disabled = count === 0; // Enable download only if we have results
+        downloadButton.disabled = currentCount === 0; // Enable download only if we have results in current batch
     }
 };
 

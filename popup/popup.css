@@ -266,3 +266,18 @@ h1 {
     margin: 8px 0 0 0;
     font-style: italic;
 }
+
+/* Batch Info */
+.batch-info {
+    background-color: #1f2937; /* gray-800 */
+    padding: 8px 12px;
+    border-radius: 6px;
+    border-left: 3px solid #10b981; /* emerald-500 */
+}
+
+.batch-help {
+    font-size: 11px;
+    color: #d1d5db; /* gray-300 */
+    margin: 0;
+    line-height: 1.4;
+}

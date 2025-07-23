@@ -18,18 +18,24 @@ let state = {
     processedChannelUrls: new Set(),
     apiKey: YOUTUBE_API_KEY,
     keywords: DEFAULT_KEYWORDS,
-    addAsterisk: true
+    addAsterisk: true,
+    totalProcessed: 0, // Track total channels processed across all batches
+    batchSize: 2000 // Process in batches of 2000 channels
 };
 
 // Broadcast state to all connected frontend instances
 function broadcastState() {
+    const currentBatchSize = state.results.length;
+    const totalProcessed = state.totalProcessed + currentBatchSize;
+    
     const stateData = {
         status: state.status,
         isProcessing: state.isProcessing,
-        results: state.results
+        results: state.results,
+        totalProcessed: totalProcessed // Include total count across all batches
     };
     
-    console.log(`ViewHunt Background: Broadcasting state - ${stateData.results.length} results`);
+    console.log(`ViewHunt Background: Broadcasting state - ${currentBatchSize} in current batch, ${totalProcessed} total processed`);
     
     chrome.runtime.sendMessage({ 
         type: 'statusUpdate', 
@@ -100,6 +106,7 @@ async function startProcessing() {
     state.currentKeywordIndex = 0;
     state.results = [];
     state.processedChannelUrls.clear();
+    state.totalProcessed = 0; // Reset batch counter
     state.status = 'Starting processing...';
     
     await chrome.storage.local.set({ state: state });
@@ -123,14 +130,15 @@ async function stopProcessing() {
     }
     
     if (state.results.length > 0) {
-        state.status = `Stopped. Processing subscriber data for ${state.results.length} videos...`;
+        state.status = `Stopped. Processing final batch of ${state.results.length} channels...`;
         broadcastState();
-        await processSubscriberData();
+        await processBatchAndSend();
     }
     
     state.isProcessing = false;
-    state.status = state.results.length > 0 ? 
-        `Complete! Found ${state.results.length} videos.` : 
+    const totalChannels = state.totalProcessed;
+    state.status = totalChannels > 0 ? 
+        `Stopped. Processed ${totalChannels} total channels.` : 
         'Stopped. No results found.';
     
     await chrome.storage.local.set({ state: state });
@@ -142,15 +150,17 @@ async function processNextKeyword() {
     if (state.stopRequested || state.currentKeywordIndex >= state.keywords.length) {
         console.log('ViewHunt Background: All keywords processed or stop requested');
         
+        // Process any remaining results in final batch
         if (state.results.length > 0) {
-            state.status = `Processing subscriber data for ${state.results.length} videos...`;
+            state.status = `Processing final batch of ${state.results.length} channels...`;
             broadcastState();
-            await processSubscriberData();
+            await processBatchAndSend();
         }
         
         state.isProcessing = false;
-        state.status = state.results.length > 0 ? 
-            `Complete! Found ${state.results.length} videos.` : 
+        const totalChannels = state.totalProcessed;
+        state.status = totalChannels > 0 ? 
+            `Complete! Processed ${totalChannels} total channels.` : 
             'Complete. No results found.';
         
         await chrome.storage.local.set({ state: state });
@@ -203,6 +213,30 @@ async function processNextKeyword() {
     }
 }
 
+// Process current batch and send to backend to prevent memory overload
+async function processBatchAndSend() {
+    if (state.results.length === 0) return;
+    
+    console.log(`ViewHunt Background: Processing batch of ${state.results.length} channels`);
+    
+    // Process subscriber data for current batch
+    await processSubscriberData();
+    
+    // Send to backend
+    await sendToBackend(state.results);
+    
+    // Update total count and clear current batch
+    state.totalProcessed += state.results.length;
+    console.log(`ViewHunt Background: Batch complete. Total processed so far: ${state.totalProcessed}`);
+    
+    // Clear results to free memory, but keep processedChannelUrls to avoid duplicates
+    state.results = [];
+    
+    // Update status
+    state.status = `Processed ${state.totalProcessed} channels so far. Continuing...`;
+    broadcastState();
+}
+
 // Move to next keyword
 function moveToNextKeyword() {
     // Keep tabs open - don't close them when moving to next keyword
@@ -216,7 +250,7 @@ function moveToNextKeyword() {
 }
 
 // Handle completed scraping data
-function handleScrapingComplete(data) {
+async function handleScrapingComplete(data) {
     console.log(`ViewHunt Background: Received ${data.length} videos from content script`);
     
     // Add new unique videos
@@ -231,6 +265,15 @@ function handleScrapingComplete(data) {
     
     console.log(`ViewHunt Background: Added ${newVideosCount} new unique videos. Total: ${state.results.length}`);
     broadcastState();
+    
+    // Check if we need to process a batch to prevent memory overload
+    if (state.results.length >= state.batchSize) {
+        console.log(`ViewHunt Background: Processing batch of ${state.results.length} channels to prevent memory issues`);
+        state.status = `Processing batch of ${state.results.length} channels...`;
+        broadcastState();
+        
+        await processBatchAndSend();
+    }
     
     // Move to next keyword
     moveToNextKeyword();
