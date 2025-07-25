@@ -1731,6 +1731,9 @@ class ViewHuntApp {
                 <a href="${channel.channel_url}" target="_blank" class="btn btn-primary">
                     🔗 View Channel
                 </a>
+                <button class="btn btn-secondary" onclick="window.app.showSaveToAnotherCollection('${channel._id}')">
+                    📚 Save to Another
+                </button>
                 <button class="btn btn-reject" onclick="window.app.removeFromCollection('${this.currentCollection._id}', '${channel._id}')">
                     🗑️ Remove
                 </button>
@@ -1996,6 +1999,133 @@ class ViewHuntApp {
             }
         });
     }
+
+    // Save to Another Collection functionality (for channels already in a collection)
+    async showSaveToAnotherCollection(channelId) {
+        if (!this.token) {
+            this.showLogin();
+            this.showToast('Please sign in to save channels 🔐');
+            return;
+        }
+
+        // Load collections if not already loaded
+        if (this.collections.length === 0) {
+            await this.loadCollections();
+        }
+
+        // Filter out the current collection from the options
+        const availableCollections = this.collections.filter(collection => 
+            collection._id !== this.currentCollection._id
+        );
+
+        if (availableCollections.length === 0) {
+            this.showToast('No other collections available. Create a new collection first! 📚');
+            return;
+        }
+
+        // Show collection selector modal for other collections
+        this.showAnotherCollectionSelector(channelId, availableCollections);
+    }
+
+    showAnotherCollectionSelector(channelId, availableCollections) {
+        // Create collection selector modal
+        const overlay = document.createElement('div');
+        overlay.className = 'auth-overlay';
+        overlay.style.display = 'flex';
+        overlay.id = 'another-collection-selector-overlay';
+
+        overlay.innerHTML = `
+            <div class="auth-modal">
+                <div class="auth-form">
+                    <h2>Save to Another Collection</h2>
+                    <p class="auth-subtitle">Choose another collection for this channel</p>
+                    
+                    <div class="collection-selector">
+                        ${availableCollections.map(collection => `
+                            <div class="collection-option" data-collection-id="${collection._id}">
+                                <div class="collection-option-icon">📚</div>
+                                <div class="collection-option-info">
+                                    <h4>${this.escapeHtml(collection.name)}</h4>
+                                    <p>${collection.channel_count || 0} channels</p>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                        <button class="auth-btn" onclick="this.closest('.auth-overlay').remove()" style="background: #6b7280;">Cancel</button>
+                        <button class="auth-btn auth-btn-primary" id="save-to-another-collection-btn" disabled>Save to Collection</button>
+                    </div>
+                </div>
+                <button class="auth-close" onclick="this.closest('.auth-overlay').remove()">×</button>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        // Add click handlers for collection options
+        let selectedCollectionId = null;
+        const saveBtn = overlay.querySelector('#save-to-another-collection-btn');
+
+        overlay.querySelectorAll('.collection-option').forEach(option => {
+            option.addEventListener('click', () => {
+                // Remove previous selection
+                overlay.querySelectorAll('.collection-option').forEach(opt => 
+                    opt.classList.remove('selected')
+                );
+                
+                // Select this option
+                option.classList.add('selected');
+                selectedCollectionId = option.dataset.collectionId;
+                saveBtn.disabled = false;
+            });
+        });
+
+        // Save button handler
+        saveBtn.addEventListener('click', async () => {
+            if (!selectedCollectionId) return;
+
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+
+            try {
+                const response = await fetch(`${this.apiBase}/collections/${selectedCollectionId}/channels`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.token}`
+                    },
+                    body: JSON.stringify({ channel_id: channelId })
+                });
+
+                if (response.ok) {
+                    overlay.remove();
+                    this.showToast('Channel saved to another collection! 📚✅');
+                } else {
+                    const data = await response.json();
+                    if (data.error && data.error.includes('already exists')) {
+                        this.showToast('Channel is already in that collection! 📚');
+                    } else {
+                        this.showToast(data.error || 'Error saving channel ❌');
+                    }
+                }
+            } catch (error) {
+                console.error('Error saving to another collection:', error);
+                this.showToast('Error saving channel ❌');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save to Collection';
+            }
+        });
+
+        // Close on overlay click
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+            }
+        });
+    }
+
     // Social Methods
     async loadSocialData() {
         console.log('Loading social data...');
