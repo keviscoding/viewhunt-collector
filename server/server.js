@@ -1435,7 +1435,10 @@ app.post('/api/channels/bulk', async (req, res) => {
                     subscriber_count: channel.subscriberCount || 0,
                     view_to_sub_ratio: channel.viewToSubRatio || 0,
                     avatar_url: channel.avatarUrl || null,
-                    // NEW: Add channel-level statistics
+                    // NEW: Add video and thumbnail data
+                    video_url: channel.videoUrl || null,
+                    thumbnail_url: channel.thumbnailUrl || null,
+                    // Channel-level statistics
                     total_views: channel.totalViews || 0,
                     video_count: channel.videoCount || 0,
                     average_views: channel.averageViews || 0,

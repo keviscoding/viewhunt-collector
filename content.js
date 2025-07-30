@@ -21,6 +21,75 @@
         return Math.round(num);
     };
 
+    // Extract thumbnail URL using Option 2 (DOM scraping) + Option 3 (URL pattern fallback)
+    const extractThumbnailUrl = (videoElement, videoUrl) => {
+        try {
+            // Option 2: Try to find thumbnail image in the DOM
+            const thumbnailSelectors = [
+                'img[src*="ytimg.com/vi/"]',           // Direct video thumbnail
+                'img[src*="i.ytimg.com/vi/"]',         // Alternative thumbnail domain
+                '.ytd-thumbnail img',                   // Thumbnail container
+                '.yt-core-image',                      // Core image element
+                'ytd-thumbnail img',                   // Thumbnail component
+                '.reel-item-thumbnail img',            // Shorts thumbnail
+                'img[loading="lazy"][src*="ytimg"]',   // Lazy loaded thumbnails
+                'img[alt*="thumbnail"]',               // Alt text contains thumbnail
+                'img[src*="/vi/"]'                     // Generic video thumbnail pattern
+            ];
+
+            for (const selector of thumbnailSelectors) {
+                const thumbnailElement = videoElement.querySelector(selector);
+                if (thumbnailElement?.src && thumbnailElement.src.includes('ytimg')) {
+                    console.log(`ViewHunt: Found thumbnail via DOM: ${thumbnailElement.src}`);
+                    return thumbnailElement.src;
+                }
+            }
+
+            // Option 3: Fallback to URL pattern generation
+            if (videoUrl && videoUrl !== 'N/A') {
+                const videoId = extractVideoId(videoUrl);
+                if (videoId) {
+                    const generatedThumbnail = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+                    console.log(`ViewHunt: Generated thumbnail URL: ${generatedThumbnail}`);
+                    return generatedThumbnail;
+                }
+            }
+
+            console.log('ViewHunt: No thumbnail found for video');
+            return null;
+        } catch (error) {
+            console.warn('ViewHunt: Error extracting thumbnail:', error);
+            return null;
+        }
+    };
+
+    // Extract video ID from YouTube URL
+    const extractVideoId = (url) => {
+        try {
+            if (!url || url === 'N/A') return null;
+            
+            // Handle different YouTube URL formats
+            const patterns = [
+                /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+                /\/vi\/([a-zA-Z0-9_-]{11})/,
+                /v=([a-zA-Z0-9_-]{11})/
+            ];
+
+            for (const pattern of patterns) {
+                const match = url.match(pattern);
+                if (match && match[1]) {
+                    return match[1];
+                }
+            }
+
+            console.warn(`ViewHunt: Could not extract video ID from URL: ${url}`);
+            return null;
+        } catch (error) {
+            console.warn('ViewHunt: Error extracting video ID:', error);
+            return null;
+        }
+    };
+
     try {
         sendStatus("Page loaded. Looking for Shorts filter...");
         
@@ -286,6 +355,10 @@
                 const viewCount = parseViews(viewCountText);
                 const avatarUrl = avatarElement?.src || null;
 
+                // Extract video URL and thumbnail (NEW)
+                const videoUrl = titleElement?.href || 'N/A';
+                const thumbnailUrl = extractThumbnailUrl(video, videoUrl);
+
                 if (channelName !== 'N/A' && channelUrl !== 'N/A' && viewCount >= 0) {
                     // Only add unique channels to avoid duplicates
                     if (!processedChannels.has(channelUrl)) {
@@ -296,6 +369,8 @@
                             viewCount,
                             videoTitle,
                             avatarUrl,
+                            videoUrl,
+                            thumbnailUrl,
                         });
                     }
                 }

@@ -818,7 +818,17 @@ class ViewHuntApp {
             `<img src="${channel.avatar_url}" alt="${this.escapeHtml(channel.channel_name)}" class="channel-avatar-img">` :
             `<div class="channel-avatar-letter">${avatarLetter}</div>`;
 
+        // Create thumbnail HTML
+        const thumbnailHtml = channel.thumbnail_url ? 
+            `<div class="video-thumbnail">
+                <img src="${channel.thumbnail_url}" alt="Video thumbnail" class="thumbnail-img" loading="lazy">
+                <div class="thumbnail-overlay">
+                    <span class="play-icon">▶</span>
+                </div>
+            </div>` : '';
+
         card.innerHTML = `
+            ${thumbnailHtml}
             <div class="channel-header">
                 <div class="channel-avatar">${avatarHtml}</div>
                 <div class="channel-info">
