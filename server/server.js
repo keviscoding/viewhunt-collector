@@ -1483,23 +1483,76 @@ app.post('/api/channels/enhanced-analysis', async (req, res) => {
     try {
         console.log(`Enhanced analysis requested for: ${channelName || channelUrl}`);
         
-        // For now, let's simulate the enhanced analysis with mock data
-        // TODO: Replace with actual Apify API call once we have the correct actor name
-        console.log(`Simulating enhanced analysis for: ${channelName}`);
+        // Call Apify API to get recent videos
+        console.log(`Starting Apify run for: ${channelName}`);
         
-        // Mock recent video data (simulating what Apify would return)
-        const videos = [
-            { view_count: 45000, short: false, type: 'video' },
-            { view_count: 38000, short: true, type: 'short' },
-            { view_count: 52000, short: false, type: 'video' },
-            { view_count: 41000, short: true, type: 'short' },
-            { view_count: 47000, short: false, type: 'video' },
-            { view_count: 39000, short: true, type: 'short' },
-            { view_count: 44000, short: false, type: 'video' },
-            { view_count: 48000, short: true, type: 'short' },
-            { view_count: 42000, short: false, type: 'video' },
-            { view_count: 46000, short: true, type: 'short' }
-        ];
+        // Step 1: Start the Apify actor run
+        const runResponse = await fetch('https://api.apify.com/v2/acts/maged~youtube-channel-data-scraper/runs', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.APIFY_TOKEN}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                channel_identifier: channelUrl,
+                max_results: 10, // Get last 10 videos
+                select_types: ["video", "short"], // Include both videos and shorts
+                sleep_interval: 1,
+                max_retries: 2
+            })
+        });
+        
+        if (!runResponse.ok) {
+            const errorText = await runResponse.text();
+            console.error(`Apify run start failed: ${runResponse.status} - ${errorText}`);
+            return res.status(500).json({ error: 'Failed to start channel analysis' });
+        }
+        
+        const runData = await runResponse.json();
+        const runId = runData.data.id;
+        console.log(`Apify run started with ID: ${runId}`);
+        
+        // Step 2: Wait for the run to complete (with timeout)
+        let attempts = 0;
+        const maxAttempts = 30; // 30 seconds timeout
+        let runStatus = 'RUNNING';
+        
+        while (runStatus === 'RUNNING' && attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+            attempts++;
+            
+            const statusResponse = await fetch(`https://api.apify.com/v2/acts/maged~youtube-channel-data-scraper/runs/${runId}`, {
+                headers: {
+                    'Authorization': `Bearer ${process.env.APIFY_TOKEN}`
+                }
+            });
+            
+            if (statusResponse.ok) {
+                const statusData = await statusResponse.json();
+                runStatus = statusData.data.status;
+                console.log(`Apify run status: ${runStatus} (attempt ${attempts})`);
+            }
+        }
+        
+        if (runStatus !== 'SUCCEEDED') {
+            console.error(`Apify run failed or timed out. Status: ${runStatus}`);
+            return res.status(500).json({ error: 'Channel analysis failed or timed out' });
+        }
+        
+        // Step 3: Get the results from the dataset
+        const resultsResponse = await fetch(`https://api.apify.com/v2/acts/maged~youtube-channel-data-scraper/runs/${runId}/dataset/items`, {
+            headers: {
+                'Authorization': `Bearer ${process.env.APIFY_TOKEN}`
+            }
+        });
+        
+        if (!resultsResponse.ok) {
+            console.error(`Failed to fetch results: ${resultsResponse.status}`);
+            return res.status(500).json({ error: 'Failed to fetch analysis results' });
+        }
+        
+        const videos = await resultsResponse.json();
+        console.log(`Retrieved ${videos.length} videos from Apify for ${channelName}`);
         
         if (!Array.isArray(videos) || videos.length === 0) {
             console.log(`No videos found for ${channelName}`);
