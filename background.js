@@ -235,7 +235,10 @@ async function processBatchAndSend() {
     
     // Enhanced analysis (if enabled)
     if (state.enhancedAnalysis) {
+        console.log(`ViewHunt: Enhanced analysis is enabled, processing ${state.results.length} channels`);
         await processEnhancedAnalysis();
+    } else {
+        console.log(`ViewHunt: Enhanced analysis is disabled`);
     }
     
     // Send to backend
@@ -430,9 +433,13 @@ function shouldRunEnhancedAnalysis(channel) {
     
     // PRIMARY FILTER: Only analyze channels with high channel averages (700K+)
     // These are most likely to have misleading historical data
-    if (avgViews < 700000) {
-        return false; // Skip enhanced analysis for channels under 700K average
+    // TEMPORARILY LOWERED TO 1K FOR TESTING
+    if (avgViews < 1000) {
+        console.log(`ViewHunt: Skipping enhanced analysis for ${channel.channelName}: avgViews=${avgViews} < 1000`);
+        return false; // Skip enhanced analysis for channels under 1K average
     }
+    
+    console.log(`ViewHunt: Channel ${channel.channelName} qualifies for enhanced analysis: avgViews=${avgViews}, subs=${subs}, ratio=${ratio}`);
     
     // SECONDARY FILTERS: Tiered filtering based on channel size
     if (subs < 100000) {
