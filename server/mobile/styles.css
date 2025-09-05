@@ -508,6 +508,68 @@ body {
     border: 1px solid rgba(102, 126, 234, 0.2);
 }
 
+.stat-note {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    opacity: 0.8;
+    margin-top: 0.2rem;
+}
+
+/* Enhanced Analysis Comparison */
+.enhanced-comparison {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 8px;
+    padding: 0.75rem;
+    margin: 1rem 0;
+}
+
+.comparison-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.comparison-row:last-of-type {
+    margin-bottom: 0;
+}
+
+.comparison-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.comparison-value {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.enhanced-value {
+    color: #10b981;
+}
+
+.enhanced-badge {
+    font-size: 0.7rem;
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    margin-left: 0.5rem;
+    font-weight: 600;
+}
+
+.viral-warning, .distribution-warning {
+    display: block;
+    font-size: 0.7rem;
+    color: #f59e0b;
+    margin-top: 0.5rem;
+    font-weight: 500;
+}
+
 .channel-stats {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;

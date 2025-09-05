@@ -19,6 +19,7 @@ let state = {
     apiKey: YOUTUBE_API_KEY,
     keywords: DEFAULT_KEYWORDS,
     addAsterisk: true,
+    enhancedAnalysis: true, // Default to enabled
     totalProcessed: 0, // Track total channels processed across all batches
     batchSize: 2000 // Process in batches of 2000 channels
 };
@@ -78,11 +79,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         state.addAsterisk = message.addAsterisk;
         state.maxChannels = message.maxChannels; // Add max channels limit
         state.scrollCount = message.scrollCount; // Add scroll count setting (can be null for unlimited)
+        state.enhancedAnalysis = message.enhancedAnalysis; // Add enhanced analysis setting
         chrome.storage.local.set({ 
             keywords: message.keywords.join(', '), // Store as string for popup compatibility
             addAsterisk: message.addAsterisk,
             maxChannels: message.maxChannels,
-            scrollCount: message.scrollCount
+            scrollCount: message.scrollCount,
+            enhancedAnalysis: message.enhancedAnalysis
+        });
+        sendResponse({ success: true });
+    } else if (message.command === 'save-enhanced-analysis') {
+        state.enhancedAnalysis = message.enhancedAnalysis;
+        chrome.storage.local.set({ 
+            enhancedAnalysis: message.enhancedAnalysis
         });
         sendResponse({ success: true });
     } else if (message.type === 'scraping-complete') {
@@ -224,6 +233,11 @@ async function processBatchAndSend() {
     // Process subscriber data for current batch
     await processSubscriberData();
     
+    // Enhanced analysis (if enabled)
+    if (state.enhancedAnalysis) {
+        await processEnhancedAnalysis();
+    }
+    
     // Send to backend
     await sendToBackend(state.results);
     
@@ -351,6 +365,115 @@ async function processSubscriberData() {
     await sendToBackend(state.results);
     
     broadcastState();
+}
+
+// Enhanced analysis using Apify API for accurate recent performance
+async function processEnhancedAnalysis() {
+    console.log(`ViewHunt Background: Starting enhanced analysis for ${state.results.length} channels`);
+    
+    // Filter channels that should get enhanced analysis
+    const channelsForEnhancement = state.results.filter(channel => {
+        return shouldRunEnhancedAnalysis(channel);
+    });
+    
+    console.log(`ViewHunt Background: ${channelsForEnhancement.length}/${state.results.length} channels qualify for enhanced analysis`);
+    
+    if (channelsForEnhancement.length === 0) {
+        console.log('ViewHunt Background: No channels qualify for enhanced analysis');
+        return;
+    }
+    
+    // Process channels in batches to avoid overwhelming the API
+    const batchSize = 5; // Process 5 channels at a time
+    
+    for (let i = 0; i < channelsForEnhancement.length; i += batchSize) {
+        if (state.stopRequested) break;
+        
+        const batch = channelsForEnhancement.slice(i, i + batchSize);
+        state.status = `Enhanced analysis... (${Math.min(i + batchSize, channelsForEnhancement.length)}/${channelsForEnhancement.length})`;
+        broadcastState();
+        
+        // Process batch in parallel
+        const promises = batch.map(channel => getEnhancedChannelData(channel));
+        const results = await Promise.allSettled(promises);
+        
+        // Update channels with enhanced data
+        results.forEach((result, index) => {
+            if (result.status === 'fulfilled' && result.value) {
+                const channel = batch[index];
+                const enhancedData = result.value;
+                
+                // Find the channel in state.results and update it
+                const channelIndex = state.results.findIndex(c => c.channelUrl === channel.channelUrl);
+                if (channelIndex !== -1) {
+                    state.results[channelIndex] = {
+                        ...state.results[channelIndex],
+                        ...enhancedData,
+                        enhanced: true
+                    };
+                }
+            }
+        });
+        
+        // Small delay between batches
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    console.log(`ViewHunt Background: Enhanced analysis complete`);
+}
+
+// Determine if a channel should get enhanced analysis
+function shouldRunEnhancedAnalysis(channel) {
+    const subs = channel.subscriberCount || 0;
+    const avgViews = channel.averageViews || 0;
+    const ratio = channel.viewToSubRatio || 0;
+    
+    // PRIMARY FILTER: Only analyze channels with high channel averages (700K+)
+    // These are most likely to have misleading historical data
+    if (avgViews < 700000) {
+        return false; // Skip enhanced analysis for channels under 700K average
+    }
+    
+    // SECONDARY FILTERS: Tiered filtering based on channel size
+    if (subs < 100000) {
+        // Small channels with high averages - likely viral outliers
+        return ratio >= 1.0 && avgViews >= 700000;
+    } else if (subs < 1000000) {
+        // Medium channels with high averages - potential declining performance
+        return ratio >= 0.5 && avgViews >= 700000;
+    } else {
+        // Large channels with high averages - consistency analysis
+        return ratio >= 0.1 && avgViews >= 700000;
+    }
+}
+
+// Get enhanced channel data from backend (which calls Apify)
+async function getEnhancedChannelData(channel) {
+    try {
+        const response = await fetch('https://viewhunt-backend-4fur6.ondigitalocean.app/api/channels/enhanced-analysis', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                channelUrl: channel.channelUrl,
+                channelName: channel.channelName
+            })
+        });
+        
+        if (!response.ok) {
+            console.warn(`ViewHunt: Enhanced analysis failed for ${channel.channelName}: ${response.status}`);
+            return null;
+        }
+        
+        const enhancedData = await response.json();
+        console.log(`ViewHunt: Enhanced analysis complete for ${channel.channelName}`);
+        return enhancedData;
+        
+    } catch (error) {
+        console.warn(`ViewHunt: Enhanced analysis error for ${channel.channelName}:`, error);
+        return null;
+    }
 }
 
 // Send results to backend server
@@ -532,7 +655,7 @@ async function processBatch(channels) {
 
 // Load saved state on startup
 chrome.runtime.onStartup.addListener(async () => {
-    const result = await chrome.storage.local.get(['state', 'apiKey', 'keywords', 'addAsterisk', 'scrollCount']);
+    const result = await chrome.storage.local.get(['state', 'apiKey', 'keywords', 'addAsterisk', 'scrollCount', 'enhancedAnalysis']);
     if (result.state) {
         state = { ...state, ...result.state };
         state.isProcessing = false; // Reset processing state on startup
@@ -550,11 +673,14 @@ chrome.runtime.onStartup.addListener(async () => {
     if (result.scrollCount !== undefined) {
         state.scrollCount = result.scrollCount;
     }
+    if (result.enhancedAnalysis !== undefined) {
+        state.enhancedAnalysis = result.enhancedAnalysis;
+    }
 });
 
 // Load saved state on install
 chrome.runtime.onInstalled.addListener(async () => {
-    const result = await chrome.storage.local.get(['apiKey', 'keywords', 'addAsterisk', 'scrollCount']);
+    const result = await chrome.storage.local.get(['apiKey', 'keywords', 'addAsterisk', 'scrollCount', 'enhancedAnalysis']);
     if (result.apiKey) {
         state.apiKey = result.apiKey;
     }
@@ -567,5 +693,8 @@ chrome.runtime.onInstalled.addListener(async () => {
     }
     if (result.scrollCount !== undefined) {
         state.scrollCount = result.scrollCount;
+    }
+    if (result.enhancedAnalysis !== undefined) {
+        state.enhancedAnalysis = result.enhancedAnalysis;
     }
 });

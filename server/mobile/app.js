@@ -780,8 +780,10 @@ class ViewHuntApp {
             return num.toString();
         };
 
-        // Use average views instead of single video views for better niche analysis
-        const averageViews = formatNumber(channel.average_views || channel.view_count || 0);
+        // Channel Average (historical) vs Recent Average (last 10 videos)
+        const channelAverage = formatNumber(channel.average_views || channel.view_count || 0);
+        const recentAverage = channel.enhanced && channel.recentAverage ? 
+            formatNumber(channel.recentAverage) : null;
         const videoCount = channel.video_count || 0;
         
         // Debug: log video count to see what's happening
@@ -841,8 +843,9 @@ class ViewHuntApp {
             
             <div class="channel-stats">
                 <div class="stat-item">
-                    <span class="stat-value">${averageViews}</span>
-                    <span class="stat-label">Avg Views</span>
+                    <span class="stat-value">${recentAverage || channelAverage}</span>
+                    <span class="stat-label">${recentAverage ? 'Recent Avg' : 'Channel Avg'}</span>
+                    ${recentAverage ? `<small class="stat-note">Last 10 videos</small>` : ''}
                 </div>
                 <div class="stat-item">
                     <span class="stat-value">${subCount}</span>
@@ -853,6 +856,22 @@ class ViewHuntApp {
                     <span class="stat-label">Ratio</span>
                 </div>
             </div>
+            
+            ${recentAverage && channelAverage !== recentAverage ? `
+                <div class="enhanced-comparison">
+                    <div class="comparison-row">
+                        <span class="comparison-label">Channel Avg:</span>
+                        <span class="comparison-value">${channelAverage}</span>
+                    </div>
+                    <div class="comparison-row">
+                        <span class="comparison-label">Recent Avg:</span>
+                        <span class="comparison-value enhanced-value">${recentAverage}</span>
+                        <span class="enhanced-badge">✨ Enhanced</span>
+                    </div>
+                    ${channel.hasViralOutlier ? '<small class="viral-warning">⚠️ Has viral outlier</small>' : ''}
+                    ${channel.distributionIssue ? '<small class="distribution-warning">📊 Distribution variance detected</small>' : ''}
+                </div>
+            ` : ''}
             
             <div class="channel-actions">
                 <a href="${channel.channel_url}/shorts" target="_blank" class="btn btn-primary">

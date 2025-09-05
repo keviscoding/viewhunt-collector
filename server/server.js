@@ -1472,6 +1472,160 @@ app.post('/api/channels/bulk', async (req, res) => {
     }
 });
 
+// Enhanced analysis endpoint - calls Apify API for recent video data
+app.post('/api/channels/enhanced-analysis', async (req, res) => {
+    const { channelUrl, channelName } = req.body;
+    
+    if (!channelUrl) {
+        return res.status(400).json({ error: 'Channel URL is required' });
+    }
+    
+    try {
+        console.log(`Enhanced analysis requested for: ${channelName || channelUrl}`);
+        
+        // Call Apify API to get recent videos
+        const apifyResponse = await fetch('https://api.apify.com/v2/acts/maged/youtube-channel-data-scraper/run-sync-get-dataset-items', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.APIFY_TOKEN}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                channel_identifier: channelUrl,
+                max_results: 10, // Get last 10 videos
+                select_types: ["video", "short"], // Include both videos and shorts
+                sleep_interval: 1,
+                max_retries: 2
+            })
+        });
+        
+        if (!apifyResponse.ok) {
+            console.error(`Apify API error: ${apifyResponse.status}`);
+            return res.status(500).json({ error: 'Failed to fetch channel data' });
+        }
+        
+        const videos = await apifyResponse.json();
+        
+        if (!Array.isArray(videos) || videos.length === 0) {
+            console.log(`No videos found for ${channelName}`);
+            return res.json({
+                enhanced: false,
+                reason: 'No recent videos found'
+            });
+        }
+        
+        // Calculate enhanced metrics from recent videos
+        const enhancedMetrics = calculateEnhancedMetrics(videos);
+        
+        console.log(`Enhanced analysis complete for ${channelName}: ${enhancedMetrics.videosAnalyzed} videos analyzed`);
+        
+        res.json({
+            enhanced: true,
+            ...enhancedMetrics,
+            videosAnalyzed: videos.length,
+            lastUpdated: new Date()
+        });
+        
+    } catch (error) {
+        console.error('Enhanced analysis error:', error);
+        res.status(500).json({ 
+            error: 'Enhanced analysis failed',
+            enhanced: false 
+        });
+    }
+});
+
+// Helper function to calculate enhanced metrics from video data
+function calculateEnhancedMetrics(videos) {
+    if (!videos || videos.length === 0) return null;
+    
+    // Get view counts from recent videos (last 7-10)
+    const recentVideos = videos.slice(0, Math.min(10, videos.length));
+    const viewCounts = recentVideos
+        .map(v => v.view_count || 0)
+        .filter(count => count > 0)
+        .sort((a, b) => b - a);
+    
+    if (viewCounts.length === 0) {
+        return {
+            enhanced: false,
+            reason: 'No valid view counts found'
+        };
+    }
+    
+    const mean = viewCounts.reduce((a, b) => a + b) / viewCounts.length;
+    const median = viewCounts[Math.floor(viewCounts.length / 2)];
+    
+    // Trimmed mean (remove highest and lowest to reduce outlier impact)
+    let trimmedMean = mean;
+    if (viewCounts.length >= 3) {
+        const trimmed = viewCounts.slice(1, -1);
+        trimmedMean = trimmed.reduce((a, b) => a + b) / trimmed.length;
+    }
+    
+    // Consistency score (lower coefficient of variation = more consistent)
+    const variance = viewCounts.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / viewCounts.length;
+    const stdDev = Math.sqrt(variance);
+    const coefficientOfVariation = mean > 0 ? stdDev / mean : 0;
+    const consistencyScore = Math.max(0, 100 - (coefficientOfVariation * 100));
+    
+    // Detect viral outliers
+    const maxView = Math.max(...viewCounts);
+    const avgWithoutMax = viewCounts.filter(v => v !== maxView).reduce((a, b) => a + b, 0) / (viewCounts.length - 1);
+    const viralMultiplier = avgWithoutMax > 0 ? maxView / avgWithoutMax : 1;
+    const hasViralOutlier = viralMultiplier > 4;
+    
+    // Performance trend (comparing first half vs second half)
+    const firstHalf = viewCounts.slice(0, Math.ceil(viewCounts.length / 2));
+    const secondHalf = viewCounts.slice(Math.ceil(viewCounts.length / 2));
+    const firstHalfAvg = firstHalf.reduce((a, b) => a + b) / firstHalf.length;
+    const secondHalfAvg = secondHalf.reduce((a, b) => a + b) / secondHalf.length;
+    const trendPercentage = Math.round(((firstHalfAvg - secondHalfAvg) / secondHalfAvg) * 100);
+    
+    let trendDirection = 'STABLE';
+    if (Math.abs(trendPercentage) >= 15) {
+        trendDirection = trendPercentage > 0 ? 'IMPROVING' : 'DECLINING';
+    }
+    
+    // Count shorts vs regular videos
+    const shortsCount = recentVideos.filter(v => v.short === true || v.type === 'short').length;
+    const regularCount = recentVideos.length - shortsCount;
+    
+    return {
+        // RECENT AVERAGE - Distribution-aware metric from last 10 videos
+        recentAverage: hasViralOutlier ? Math.round(trimmedMean) : Math.round(median),
+        
+        // Detailed breakdown for debugging/analysis
+        recentMean: Math.round(mean),
+        recentMedian: Math.round(median),
+        recentTrimmedMean: Math.round(trimmedMean),
+        
+        // Distribution analysis
+        consistencyScore: Math.round(consistencyScore),
+        hasViralOutlier,
+        viralMultiplier: hasViralOutlier ? parseFloat(viralMultiplier.toFixed(1)) : null,
+        
+        // Performance insights
+        trendDirection,
+        trendPercentage,
+        
+        // Content breakdown
+        shortsCount,
+        regularCount,
+        videosAnalyzed: recentVideos.length,
+        
+        // Quality indicators
+        isConsistent: consistencyScore > 70,
+        distributionIssue: Math.abs(mean - median) / mean > 0.3,
+        
+        // View range for context
+        viewRange: {
+            min: Math.min(...viewCounts),
+            max: Math.max(...viewCounts)
+        }
+    };
+}
+
 // Approve a channel (requires authentication) - User-specific approach
 app.put('/api/channels/:id/approve', authenticateToken, requireSubscription, async (req, res) => {
     const channelId = req.params.id;

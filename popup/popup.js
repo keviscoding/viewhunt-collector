@@ -15,6 +15,10 @@ const saveKeywordsButton = document.getElementById('save-keywords');
 const keywordsStatus = document.getElementById('keywords-status');
 const addAsteriskCheckbox = document.getElementById('add-asterisk');
 
+// Enhanced analysis elements
+const enhancedAnalysisCheckbox = document.getElementById('enhanced-analysis');
+const enhancedStatus = document.getElementById('enhanced-status');
+
 // Default keywords for first-time users
 const DEFAULT_KEYWORDS = 'go, why, how, she, did, her, make, get, can, will, new, best, top, easy, quick, simple, first, last, most, good, bad, old, big, small, high, low, fast, slow, hot, cold, yes, no, here, there, when, where, what, who, all, some, many, few, more, less, same, different, right, wrong, true, false, open, close, start, stop, come, take, give, find, know, think, feel, look, see, hear, say, tell, ask, try, use, work, play, help, need, want, like, love, hate, buy, sell, move, stay, live, die, born, grow, learn, teach, read, write, speak, listen, walk, run, jump, sit, stand, sleep, wake, eat, drink, happy, sad, angry, calm, excited, bored, tired, fresh, clean, dirty, safe, dangerous, free, busy, ready, done, young, mature, early, late';
 
@@ -106,6 +110,13 @@ const loadKeywords = async () => {
         if (result.scrollCount && result.scrollCount !== 30) {
             document.getElementById('scroll-count').value = result.scrollCount;
         }
+        
+        // Load enhanced analysis preference
+        if (result.enhancedAnalysis !== undefined) {
+            enhancedAnalysisCheckbox.checked = result.enhancedAnalysis;
+        } else {
+            enhancedAnalysisCheckbox.checked = true; // Default to enabled
+        }
     } catch (error) {
         console.error('Error loading keywords:', error);
         keywordsStatus.textContent = 'Error loading keywords';
@@ -160,13 +171,15 @@ const saveKeywords = () => {
     const maxChannels = parseInt(document.getElementById('max-channels').value) || null;
     const scrollCountInput = document.getElementById('scroll-count').value.trim();
     const scrollCount = scrollCountInput ? parseInt(scrollCountInput) : null;
+    const enhancedAnalysis = enhancedAnalysisCheckbox.checked;
     
     chrome.runtime.sendMessage({ 
         command: 'save-keywords', 
         keywords: keywords, // Send array, not string
         addAsterisk: addAsterisk,
         maxChannels: maxChannels,
-        scrollCount: scrollCount
+        scrollCount: scrollCount,
+        enhancedAnalysis: enhancedAnalysis
     }, (response) => {
         if (chrome.runtime.lastError) {
             console.error('Error saving keywords:', chrome.runtime.lastError.message);
@@ -276,6 +289,35 @@ addAsteriskCheckbox.addEventListener('change', () => {
     if (keywordsInput.value.trim()) {
         saveKeywords();
     }
+});
+
+// Auto-save when enhanced analysis option changes
+enhancedAnalysisCheckbox.addEventListener('change', () => {
+    const enhancedAnalysis = enhancedAnalysisCheckbox.checked;
+    
+    chrome.runtime.sendMessage({ 
+        command: 'save-enhanced-analysis', 
+        enhancedAnalysis: enhancedAnalysis
+    }, (response) => {
+        if (chrome.runtime.lastError) {
+            console.error('Error saving enhanced analysis setting:', chrome.runtime.lastError.message);
+            enhancedStatus.textContent = 'Error saving setting';
+            enhancedStatus.className = 'enhanced-status error';
+        } else if (response && response.success) {
+            enhancedStatus.textContent = enhancedAnalysis ? 
+                '✅ Enhanced analysis enabled - more accurate metrics' : 
+                '⚠️ Enhanced analysis disabled - using basic metrics';
+            enhancedStatus.className = 'enhanced-status success';
+            
+            // Clear status after 3 seconds
+            setTimeout(() => {
+                enhancedStatus.textContent = '';
+            }, 3000);
+        } else {
+            enhancedStatus.textContent = 'Failed to save setting';
+            enhancedStatus.className = 'enhanced-status error';
+        }
+    });
 });
 
 // Listen for status updates from background script
