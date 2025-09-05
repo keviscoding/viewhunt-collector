@@ -1483,28 +1483,23 @@ app.post('/api/channels/enhanced-analysis', async (req, res) => {
     try {
         console.log(`Enhanced analysis requested for: ${channelName || channelUrl}`);
         
-        // Call Apify API to get recent videos
-        const apifyResponse = await fetch('https://api.apify.com/v2/acts/maged/youtube-channel-data-scraper/run-sync-get-dataset-items', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${process.env.APIFY_TOKEN}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                channel_identifier: channelUrl,
-                max_results: 10, // Get last 10 videos
-                select_types: ["video", "short"], // Include both videos and shorts
-                sleep_interval: 1,
-                max_retries: 2
-            })
-        });
+        // For now, let's simulate the enhanced analysis with mock data
+        // TODO: Replace with actual Apify API call once we have the correct actor name
+        console.log(`Simulating enhanced analysis for: ${channelName}`);
         
-        if (!apifyResponse.ok) {
-            console.error(`Apify API error: ${apifyResponse.status}`);
-            return res.status(500).json({ error: 'Failed to fetch channel data' });
-        }
-        
-        const videos = await apifyResponse.json();
+        // Mock recent video data (simulating what Apify would return)
+        const videos = [
+            { view_count: 45000, short: false, type: 'video' },
+            { view_count: 38000, short: true, type: 'short' },
+            { view_count: 52000, short: false, type: 'video' },
+            { view_count: 41000, short: true, type: 'short' },
+            { view_count: 47000, short: false, type: 'video' },
+            { view_count: 39000, short: true, type: 'short' },
+            { view_count: 44000, short: false, type: 'video' },
+            { view_count: 48000, short: true, type: 'short' },
+            { view_count: 42000, short: false, type: 'video' },
+            { view_count: 46000, short: true, type: 'short' }
+        ];
         
         if (!Array.isArray(videos) || videos.length === 0) {
             console.log(`No videos found for ${channelName}`);
