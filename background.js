@@ -431,11 +431,11 @@ function shouldRunEnhancedAnalysis(channel) {
     const avgViews = channel.averageViews || 0;
     const ratio = channel.viewToSubRatio || 0;
     
-    // PRIMARY FILTER: Only analyze channels with high channel averages (700K+)
-    // These are most likely to have misleading historical data
-    if (avgViews < 700000) {
-        console.log(`ViewHunt: Skipping enhanced analysis for ${channel.channelName}: avgViews=${avgViews} < 700K`);
-        return false; // Skip enhanced analysis for channels under 700K average
+    // PRIMARY FILTER: TEMPORARILY LOWERED TO 1K FOR TESTING
+    // Will restore to 700K once we see Recent Avg working
+    if (avgViews < 1000) {
+        console.log(`ViewHunt: Skipping enhanced analysis for ${channel.channelName}: avgViews=${avgViews} < 1K`);
+        return false; // Skip enhanced analysis for channels under 1K average
     }
     
     console.log(`ViewHunt: Channel ${channel.channelName} qualifies for enhanced analysis: avgViews=${avgViews}, subs=${subs}, ratio=${ratio}`);
