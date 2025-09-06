@@ -387,7 +387,7 @@ async function processEnhancedAnalysis() {
     }
     
     // Process channels in batches to avoid overwhelming the API
-    const batchSize = 5; // Process 5 channels at a time
+    const batchSize = 2; // Process 2 channels at a time to reduce server load
     
     for (let i = 0; i < channelsForEnhancement.length; i += batchSize) {
         if (state.stopRequested) break;
@@ -399,6 +399,11 @@ async function processEnhancedAnalysis() {
         // Process batch in parallel
         const promises = batch.map(channel => getEnhancedChannelData(channel));
         const results = await Promise.allSettled(promises);
+        
+        // Add delay between batches to prevent overwhelming the server
+        if (i + batchSize < channelsForEnhancement.length) {
+            await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay between batches
+        }
         
         // Update channels with enhanced data
         results.forEach((result, index) => {
@@ -454,8 +459,20 @@ function shouldRunEnhancedAnalysis(channel) {
 }
 
 // Get enhanced channel data from backend (which calls Apify)
-async function getEnhancedChannelData(channel) {
+async function getEnhancedChannelData(channel, retryCount = 0) {
+    const maxRetries = 2;
+    const baseDelay = 1000; // 1 second base delay
+    
     try {
+        // Add exponential backoff delay for retries
+        if (retryCount > 0) {
+            const delay = baseDelay * Math.pow(2, retryCount - 1);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
         const response = await fetch('https://viewhunt-backend-4fur6.ondigitalocean.app/api/channels/enhanced-analysis', {
             method: 'POST',
             headers: {
@@ -464,10 +481,19 @@ async function getEnhancedChannelData(channel) {
             body: JSON.stringify({
                 channelUrl: channel.channelUrl,
                 channelName: channel.channelName
-            })
+            }),
+            signal: controller.signal
         });
         
+        clearTimeout(timeoutId);
+        
         if (!response.ok) {
+            // Retry on 500 errors and rate limiting
+            if ((response.status >= 500 || response.status === 429) && retryCount < maxRetries) {
+                console.warn(`ViewHunt: Enhanced analysis failed for ${channel.channelName}: ${response.status}, retrying... (${retryCount + 1}/${maxRetries})`);
+                return await getEnhancedChannelData(channel, retryCount + 1);
+            }
+            
             console.warn(`ViewHunt: Enhanced analysis failed for ${channel.channelName}: ${response.status}`);
             return null;
         }
@@ -477,6 +503,12 @@ async function getEnhancedChannelData(channel) {
         return enhancedData;
         
     } catch (error) {
+        // Retry on network errors
+        if ((error.name === 'AbortError' || error.message.includes('fetch')) && retryCount < maxRetries) {
+            console.warn(`ViewHunt: Enhanced analysis error for ${channel.channelName}, retrying... (${retryCount + 1}/${maxRetries}):`, error.message);
+            return await getEnhancedChannelData(channel, retryCount + 1);
+        }
+        
         console.warn(`ViewHunt: Enhanced analysis error for ${channel.channelName}:`, error);
         return null;
     }

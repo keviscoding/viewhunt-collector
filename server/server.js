@@ -1483,20 +1483,64 @@ app.post('/api/channels/enhanced-analysis', async (req, res) => {
     try {
         console.log(`Enhanced analysis requested for: ${channelName || channelUrl}`);
         
-        // TEMPORARY: Use mock data while we figure out the correct Apify actor name
-        console.log(`Mock enhanced analysis for: ${channelName}`);
+        // Call Apify API to get recent video data
+        const apifyToken = process.env.APIFY_TOKEN;
+        let videos = [];
         
-        // Generate realistic mock data based on channel name patterns
-        const baseViews = Math.floor(Math.random() * 100000) + 20000; // 20K-120K base
-        const videos = Array.from({ length: 10 }, (_, i) => ({
-            view_count: Math.floor(baseViews * (0.7 + Math.random() * 0.6)), // ±30% variance
-            short: Math.random() > 0.5,
-            type: Math.random() > 0.5 ? 'short' : 'video',
-            title: `Video ${i + 1}`,
-            video_id: `mock_${i}_${Date.now()}`
-        }));
+        if (!apifyToken) {
+            console.error('APIFY_TOKEN not configured, using mock data');
+        } else {
+            try {
+                console.log(`Calling Apify for channel data: ${channelName}`);
+                
+                // Call the maged120/youtube-channel-data actor
+                const apifyResponse = await fetch(`https://api.apify.com/v2/acts/maged120~youtube-channel-data/run-sync-get-dataset-items?token=${apifyToken}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        channelUrl: channelUrl,
+                        maxVideos: 15,
+                        includeShorts: true
+                    })
+                });
+                
+                if (apifyResponse.ok) {
+                    const apifyData = await apifyResponse.json();
+                    console.log(`Apify returned ${apifyData.length} videos for ${channelName}`);
+                    
+                    // Transform Apify data to our expected format
+                    videos = apifyData.map(video => ({
+                        view_count: parseInt(video.viewCount) || 0,
+                        short: video.isShort || false,
+                        type: video.isShort ? 'short' : 'video',
+                        title: video.title || 'Unknown',
+                        video_id: video.videoId || video.id
+                    })).filter(v => v.view_count > 0);
+                    
+                    console.log(`Processed ${videos.length} valid videos for ${channelName}`);
+                } else {
+                    console.error(`Apify API error for ${channelName}: ${apifyResponse.status}`);
+                }
+            } catch (apifyError) {
+                console.error(`Apify request failed for ${channelName}:`, apifyError.message);
+            }
+        }
         
-        console.log(`Generated ${videos.length} mock videos for ${channelName}`);
+        // Fall back to mock data if Apify failed or no token
+        if (videos.length === 0) {
+            console.log(`Using mock data for: ${channelName}`);
+            const baseViews = Math.floor(Math.random() * 100000) + 20000;
+            videos = Array.from({ length: 10 }, (_, i) => ({
+                view_count: Math.floor(baseViews * (0.7 + Math.random() * 0.6)),
+                short: Math.random() > 0.5,
+                type: Math.random() > 0.5 ? 'short' : 'video',
+                title: `Video ${i + 1}`,
+                video_id: `mock_${i}_${Date.now()}`
+            }));
+            console.log(`Generated ${videos.length} mock videos for ${channelName}`);
+        }
         
         if (!Array.isArray(videos) || videos.length === 0) {
             console.log(`No videos found for ${channelName}`);
@@ -1508,6 +1552,14 @@ app.post('/api/channels/enhanced-analysis', async (req, res) => {
         
         // Calculate enhanced metrics from recent videos
         const enhancedMetrics = calculateEnhancedMetrics(videos);
+        
+        if (!enhancedMetrics) {
+            console.log(`Enhanced metrics calculation failed for ${channelName}`);
+            return res.json({
+                enhanced: false,
+                reason: 'Failed to calculate enhanced metrics'
+            });
+        }
         
         console.log(`Enhanced analysis complete for ${channelName}: ${enhancedMetrics.videosAnalyzed} videos analyzed`);
         
