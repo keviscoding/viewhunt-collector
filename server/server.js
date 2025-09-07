@@ -1427,6 +1427,8 @@ app.post('/api/channels/bulk', async (req, res) => {
     try {
         for (const channel of channels) {
             try {
+                console.log(`Processing channel: ${channel.channelName}, enhanced: ${channel.enhanced}, recentAverage: ${channel.recentAverage}`);
+                
                 const channelDoc = {
                     channel_name: channel.channelName,
                     channel_url: channel.channelUrl,
