@@ -99,6 +99,17 @@ class ViewHuntApp {
             }
         });
 
+        // Enhanced Only filter
+        document.getElementById('enhanced-only').addEventListener('change', () => {
+            if (this.currentView === 'pending') {
+                this.loadPendingChannels(1);
+            } else if (this.currentView === 'approved') {
+                this.loadApprovedChannels();
+            } else {
+                this.applyFilters();
+            }
+        });
+
         // Apply Filters button
         document.getElementById('apply-filters-btn').addEventListener('click', () => {
             if (this.currentView === 'pending') {
@@ -343,9 +354,16 @@ class ViewHuntApp {
         if (!this.channels || this.channels.length === 0) return;
 
         const primarySort = document.getElementById('primary-sort').value;
+        const enhancedOnly = document.getElementById('enhanced-only')?.checked || false;
 
-        // For approved channels, just sort them (no filtering for now)
+        // Apply Enhanced filter for approved channels
         let filteredChannels = [...this.channels];
+        
+        if (enhancedOnly) {
+            filteredChannels = filteredChannels.filter(channel => 
+                channel.enhanced === true && (channel.recent_average || channel.recentAverage)
+            );
+        }
 
         // Simple sorting for approved channels
         filteredChannels.sort((a, b) => {
@@ -472,6 +490,7 @@ class ViewHuntApp {
             // Get current filter values
             const primarySort = document.getElementById('primary-sort').value;
             const secondarySort = document.getElementById('secondary-sort').value;
+            const enhancedOnly = document.getElementById('enhanced-only').checked;
             const minViews = this.parseFormattedNumber(document.getElementById('min-views').value) || 0;
             const maxViews = document.getElementById('max-views').value ? this.parseFormattedNumber(document.getElementById('max-views').value) : null;
             const minSubs = this.parseFormattedNumber(document.getElementById('min-subs').value) || 0;
@@ -488,6 +507,7 @@ class ViewHuntApp {
             });
             
             // Add filter parameters if they have values
+            if (enhancedOnly) params.append('enhancedOnly', 'true');
             if (minViews > 0) params.append('minViews', minViews.toString());
             if (maxViews) params.append('maxViews', maxViews.toString());
             if (minSubs > 0) params.append('minSubs', minSubs.toString());
@@ -584,6 +604,7 @@ class ViewHuntApp {
                 
                 // Get filter values
                 const primarySort = document.getElementById('primary-sort')?.value || 'approval-time-desc';
+                const enhancedOnly = document.getElementById('enhanced-only')?.checked || false;
                 const minViews = this.parseFormattedNumber(document.getElementById('min-views')?.value || '0');
                 const maxViews = document.getElementById('max-views')?.value ? this.parseFormattedNumber(document.getElementById('max-views').value) : null;
                 const minSubs = this.parseFormattedNumber(document.getElementById('min-subs')?.value || '0');
@@ -592,6 +613,7 @@ class ViewHuntApp {
                 const maxVideos = document.getElementById('max-videos')?.value ? parseInt(document.getElementById('max-videos').value) : null;
 
                 params.append('sortBy', primarySort);
+                if (enhancedOnly) params.append('enhancedOnly', 'true');
                 if (minViews > 0) params.append('minViews', minViews.toString());
                 if (maxViews) params.append('maxViews', maxViews.toString());
                 if (minSubs > 0) params.append('minSubs', minSubs.toString());

@@ -1834,6 +1834,45 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
         const isAdmin = req.user.email === 'nwalikelv@gmail.com' || req.user.email === 'kevis@viewhunt.com';
         
         if (isAdmin) {
+            // Get filter parameters for admin
+            const enhancedOnly = req.query.enhancedOnly === 'true';
+            const minViews = parseInt(req.query.minViews) || 0;
+            const maxViews = req.query.maxViews ? parseInt(req.query.maxViews) : null;
+            const minSubs = parseInt(req.query.minSubs) || 0;
+            const maxSubs = req.query.maxSubs ? parseInt(req.query.maxSubs) : null;
+            const minVideos = parseInt(req.query.minVideos) || 0;
+            const maxVideos = req.query.maxVideos ? parseInt(req.query.maxVideos) : null;
+            
+            // Build match query for approved channels
+            const approvedMatchQuery = {
+                'approvals.action': 'approved'
+            };
+            
+            // Add enhanced filter
+            if (enhancedOnly) {
+                approvedMatchQuery.enhanced = true;
+                approvedMatchQuery.recent_average = { $exists: true, $ne: null };
+            }
+            
+            // Add other filters
+            if (minViews > 0 || maxViews) {
+                approvedMatchQuery.average_views = {};
+                if (minViews > 0) approvedMatchQuery.average_views.$gte = minViews;
+                if (maxViews) approvedMatchQuery.average_views.$lte = maxViews;
+            }
+            
+            if (minSubs > 0 || maxSubs) {
+                approvedMatchQuery.subscriber_count = {};
+                if (minSubs > 0) approvedMatchQuery.subscriber_count.$gte = minSubs;
+                if (maxSubs) approvedMatchQuery.subscriber_count.$lte = maxSubs;
+            }
+            
+            if (minVideos > 0 || maxVideos) {
+                approvedMatchQuery.video_count = {};
+                if (minVideos > 0) approvedMatchQuery.video_count.$gte = minVideos;
+                if (maxVideos) approvedMatchQuery.video_count.$lte = maxVideos;
+            }
+            
             // Admin sees all channels with approval counts
             const channels = await db.collection('channels')
                 .aggregate([
@@ -1846,9 +1885,7 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
                         }
                     },
                     {
-                        $match: {
-                            'approvals.action': 'approved'
-                        }
+                        $match: approvedMatchQuery
                     },
                     {
                         $addFields: {
@@ -1940,6 +1977,7 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
         const secondarySort = req.query.secondarySort || 'none';
         
         // Filter parameters
+        const enhancedOnly = req.query.enhancedOnly === 'true';
         const minViews = parseInt(req.query.minViews) || 0;
         const maxViews = req.query.maxViews ? parseInt(req.query.maxViews) : null;
         const minSubs = parseInt(req.query.minSubs) || 0;
@@ -1959,6 +1997,12 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
             status: 'pending',
             _id: { $nin: reviewedChannelIds }
         };
+        
+        // Add enhanced filter if specified
+        if (enhancedOnly) {
+            matchQuery.enhanced = true;
+            matchQuery.recent_average = { $exists: true, $ne: null };
+        }
         
         // Add average views filters if specified (more meaningful than single video views)
         if (minViews > 0 || maxViews) {

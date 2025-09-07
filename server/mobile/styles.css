@@ -2677,4 +2677,56 @@ nhanced Badge */
 .enhanced-value {
     color: #10b981;
     font-weight: 700;
+}/* Enhan
+ced Only Checkbox Filter */
+.checkbox-filter {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    margin-bottom: 4px;
+}
+
+.enhanced-checkbox {
+    display: none;
+}
+
+.checkmark {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(16, 185, 129, 0.3);
+    border-radius: 4px;
+    margin-right: 8px;
+    position: relative;
+    transition: all 0.2s ease;
+    background: transparent;
+}
+
+.enhanced-checkbox:checked + .checkmark {
+    background: linear-gradient(45deg, #10b981, #059669);
+    border-color: #10b981;
+}
+
+.enhanced-checkbox:checked + .checkmark::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.checkbox-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.filter-help {
+    display: block;
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    margin-left: 26px;
 }
