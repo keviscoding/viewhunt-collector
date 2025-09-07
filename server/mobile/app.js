@@ -771,7 +771,8 @@ class ViewHuntApp {
         card.dataset.channelId = channel._id;
 
         // Get first letter for avatar fallback
-        const avatarLetter = channel.channel_name.charAt(0).toUpperCase();
+        const channelName = channel.channel_name || channel.channelName || 'Unknown';
+        const avatarLetter = channelName.charAt(0).toUpperCase();
         
         // Format numbers
         const formatNumber = (num) => {
