@@ -1523,7 +1523,7 @@ app.post('/api/channels/enhanced-analysis', async (req, res) => {
                     body: JSON.stringify({
                         channel_identifier: channelUrl,
                         max_results: 15,
-                        select_types: ["video", "live", "short"],
+                        select_types: ["video", "live"], // Exclude shorts for more accurate long-form performance
                         sleep_interval: 2,
                         max_retries: 3
                     })
@@ -1668,7 +1668,7 @@ function calculateEnhancedMetrics(videos) {
     
     return {
         // RECENT AVERAGE - Distribution-aware metric from last 10 videos
-        recentAverage: hasViralOutlier ? Math.round(trimmedMean) : Math.round(median),
+        recentAverage: hasViralOutlier ? Math.round(trimmedMean) : Math.round(mean),
         
         // Detailed breakdown for debugging/analysis
         recentMean: Math.round(mean),
