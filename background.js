@@ -502,6 +502,7 @@ async function getEnhancedChannelData(channel, retryCount = 0) {
         
         const enhancedData = await response.json();
         console.log(`ViewHunt: Enhanced analysis complete for ${channel.channelName}`);
+        console.log(`ViewHunt: Enhanced data received:`, enhancedData);
         return enhancedData;
         
     } catch (error) {
