@@ -781,17 +781,18 @@ class ViewHuntApp {
         };
 
         // Channel Average (historical) vs Recent Average (last 10 videos)
-        const channelAverage = formatNumber(channel.average_views || channel.view_count || 0);
+        const channelAverage = formatNumber(channel.average_views || channel.averageViews || channel.view_count || 0);
         const recentAverage = channel.enhanced && channel.recentAverage ? 
             formatNumber(channel.recentAverage) : null;
-        const videoCount = channel.video_count || 0;
+        const videoCount = channel.video_count || channel.videoCount || 0;
         
         // Debug: log video count to see what's happening
-        if (channel.video_count === undefined) {
+        if (channel.video_count === undefined && channel.videoCount === undefined) {
             console.log(`Channel ${channel.channel_name} has no video_count field`);
         }
-        const subCount = formatNumber(channel.subscriber_count || 0);
-        const ratio = channel.view_to_sub_ratio ? channel.view_to_sub_ratio.toFixed(2) : 'N/A';
+        const subCount = formatNumber(channel.subscriber_count || channel.subscriberCount || 0);
+        const ratio = (channel.view_to_sub_ratio || channel.viewToSubRatio) ? 
+            (channel.view_to_sub_ratio || channel.viewToSubRatio).toFixed(2) : 'N/A';
 
         // Create approval info for approved channels
         let approvalInfo = '';
@@ -816,14 +817,16 @@ class ViewHuntApp {
         }
 
         // Create avatar HTML - use real avatar if available, fallback to letter
-        const avatarHtml = channel.avatar_url ? 
-            `<img src="${channel.avatar_url}" alt="${this.escapeHtml(channel.channel_name)}" class="channel-avatar-img">` :
+        const avatarUrl = channel.avatar_url || channel.avatarUrl;
+        const avatarHtml = avatarUrl ? 
+            `<img src="${avatarUrl}" alt="${this.escapeHtml(channelName)}" class="channel-avatar-img">` :
             `<div class="channel-avatar-letter">${avatarLetter}</div>`;
 
         // Create thumbnail HTML
-        const thumbnailHtml = channel.thumbnail_url ? 
+        const thumbnailUrl = channel.thumbnail_url || channel.thumbnailUrl;
+        const thumbnailHtml = thumbnailUrl ? 
             `<div class="video-thumbnail">
-                <img src="${channel.thumbnail_url}" alt="Video thumbnail" class="thumbnail-img" loading="lazy">
+                <img src="${thumbnailUrl}" alt="Video thumbnail" class="thumbnail-img" loading="lazy">
                 <div class="thumbnail-overlay">
                     <span class="play-icon">▶</span>
                 </div>
@@ -834,8 +837,8 @@ class ViewHuntApp {
             <div class="channel-header">
                 <div class="channel-avatar">${avatarHtml}</div>
                 <div class="channel-info">
-                    <h3>${this.escapeHtml(channel.channel_name)} ${communityBadge}</h3>
-                    <p>${this.escapeHtml(channel.video_title || 'No video title')}</p>
+                    <h3>${this.escapeHtml(channelName)} ${communityBadge}</h3>
+                    <p>${this.escapeHtml(channel.video_title || channel.videoTitle || 'No video title')}</p>
                     <small class="video-count">${videoCount > 0 ? videoCount.toLocaleString() : 'N/A'} videos</small>
                     ${approvalInfo}
                 </div>
