@@ -2620,4 +2620,61 @@ vis Admin Styles */
         transform: translateY(-100%) !important;
         transition: transform 0.3s ease !important;
     }
+}/* E
+nhanced Badge */
+.enhanced-badge {
+    display: inline-block;
+    background: linear-gradient(45deg, #10b981, #059669);
+    color: white;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 8px;
+    margin-left: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+    animation: pulse-glow 2s infinite;
+}
+
+@keyframes pulse-glow {
+    0%, 100% { 
+        box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+        transform: scale(1);
+    }
+    50% { 
+        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5);
+        transform: scale(1.02);
+    }
+}
+
+/* Enhanced comparison section styling */
+.enhanced-comparison {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.1));
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 8px;
+    padding: 8px;
+    margin-top: 8px;
+    font-size: 11px;
+}
+
+.comparison-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 2px;
+}
+
+.comparison-label {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.comparison-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.enhanced-value {
+    color: #10b981;
+    font-weight: 700;
 }

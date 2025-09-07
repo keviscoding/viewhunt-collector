@@ -1988,6 +1988,8 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
                 case 'ratio-asc': return ['view_to_sub_ratio', 1];
                 case 'views-desc': return ['view_count', -1];
                 case 'views-asc': return ['view_count', 1];
+                case 'recent-avg-desc': return ['recent_average', -1];
+                case 'recent-avg-asc': return ['recent_average', 1];
                 case 'subs-desc': return ['subscriber_count', -1];
                 case 'subs-asc': return ['subscriber_count', 1];
                 case 'videos-desc': return ['video_count', -1];
