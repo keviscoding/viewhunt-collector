@@ -1544,6 +1544,12 @@ app.post('/api/channels/enhanced-analysis', async (req, res) => {
                         })).filter(v => v.view_count > 0);
                         
                         console.log(`Processed ${videos.length} valid videos for ${channelName}`);
+                        
+                        // Debug: Log the view counts we're using for calculation
+                        const viewCounts = videos.map(v => v.view_count);
+                        const mean = viewCounts.reduce((a, b) => a + b, 0) / viewCounts.length;
+                        console.log(`View counts for ${channelName}:`, viewCounts);
+                        console.log(`Manual mean calculation: ${Math.round(mean)}`);
                     } else {
                         console.log(`Apify returned empty or invalid data for ${channelName}`);
                     }
@@ -1621,6 +1627,9 @@ function calculateEnhancedMetrics(videos) {
         .filter(count => count > 0)
         .sort((a, b) => b - a);
     
+    console.log(`calculateEnhancedMetrics: Processing ${recentVideos.length} videos`);
+    console.log(`View counts (sorted):`, viewCounts);
+    
     if (viewCounts.length === 0) {
         return {
             enhanced: false,
@@ -1630,6 +1639,8 @@ function calculateEnhancedMetrics(videos) {
     
     const mean = viewCounts.reduce((a, b) => a + b) / viewCounts.length;
     const median = viewCounts[Math.floor(viewCounts.length / 2)];
+    
+    console.log(`Calculation: mean=${Math.round(mean)}, median=${Math.round(median)}`);
     
     // Trimmed mean (remove highest and lowest to reduce outlier impact)
     let trimmedMean = mean;
