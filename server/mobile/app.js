@@ -783,8 +783,8 @@ class ViewHuntApp {
 
         // Channel Average (historical) vs Recent Average (last 10 videos)
         const channelAverage = formatNumber(channel.average_views || channel.averageViews || channel.view_count || 0);
-        const recentAverage = channel.enhanced && channel.recentAverage ? 
-            formatNumber(channel.recentAverage) : null;
+        const recentAverage = channel.enhanced && (channel.recent_average || channel.recentAverage) ? 
+            formatNumber(channel.recent_average || channel.recentAverage) : null;
         const videoCount = channel.video_count || channel.videoCount || 0;
         
         // Debug: log video count to see what's happening
