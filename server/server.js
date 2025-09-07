@@ -1523,7 +1523,7 @@ app.post('/api/channels/enhanced-analysis', async (req, res) => {
                     body: JSON.stringify({
                         channel_identifier: channelUrl,
                         max_results: 15,
-                        select_types: ["video", "live"], // Exclude shorts for more accurate long-form performance
+                        select_types: ["short"], // Only get shorts for accurate shorts performance
                         sleep_interval: 2,
                         max_retries: 3
                     })
