@@ -1500,28 +1500,35 @@ app.post('/api/channels/enhanced-analysis', async (req, res) => {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        channelUrl: channelUrl,
-                        maxVideos: 15,
-                        includeShorts: true
+                        channel_identifier: channelUrl,
+                        max_results: 15,
+                        select_types: ["video", "live", "short"],
+                        sleep_interval: 2,
+                        max_retries: 3
                     })
                 });
                 
                 if (apifyResponse.ok) {
                     const apifyData = await apifyResponse.json();
-                    console.log(`Apify returned ${apifyData.length} videos for ${channelName}`);
+                    console.log(`Apify returned data for ${channelName}:`, JSON.stringify(apifyData.slice(0, 2), null, 2)); // Log first 2 items to see structure
                     
-                    // Transform Apify data to our expected format
-                    videos = apifyData.map(video => ({
-                        view_count: parseInt(video.viewCount) || 0,
-                        short: video.isShort || false,
-                        type: video.isShort ? 'short' : 'video',
-                        title: video.title || 'Unknown',
-                        video_id: video.videoId || video.id
-                    })).filter(v => v.view_count > 0);
-                    
-                    console.log(`Processed ${videos.length} valid videos for ${channelName}`);
+                    if (Array.isArray(apifyData) && apifyData.length > 0) {
+                        // Transform Apify data to our expected format
+                        videos = apifyData.map(video => ({
+                            view_count: parseInt(video.viewCount || video.view_count || video.views) || 0,
+                            short: video.isShort || video.is_short || video.type === 'short' || false,
+                            type: video.isShort || video.is_short || video.type === 'short' ? 'short' : 'video',
+                            title: video.title || 'Unknown',
+                            video_id: video.videoId || video.video_id || video.id
+                        })).filter(v => v.view_count > 0);
+                        
+                        console.log(`Processed ${videos.length} valid videos for ${channelName}`);
+                    } else {
+                        console.log(`Apify returned empty or invalid data for ${channelName}`);
+                    }
                 } else {
-                    console.error(`Apify API error for ${channelName}: ${apifyResponse.status}`);
+                    const errorText = await apifyResponse.text();
+                    console.error(`Apify API error for ${channelName}: ${apifyResponse.status} - ${errorText}`);
                 }
             } catch (apifyError) {
                 console.error(`Apify request failed for ${channelName}:`, apifyError.message);
@@ -1563,12 +1570,15 @@ app.post('/api/channels/enhanced-analysis', async (req, res) => {
         
         console.log(`Enhanced analysis complete for ${channelName}: ${enhancedMetrics.videosAnalyzed} videos analyzed`);
         
-        res.json({
+        const responseData = {
             enhanced: true,
             ...enhancedMetrics,
             videosAnalyzed: videos.length,
             lastUpdated: new Date()
-        });
+        };
+        
+        console.log(`Enhanced analysis response for ${channelName}:`, JSON.stringify(responseData, null, 2));
+        res.json(responseData);
         
     } catch (error) {
         console.error('Enhanced analysis error:', error);

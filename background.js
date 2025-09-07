@@ -414,11 +414,13 @@ async function processEnhancedAnalysis() {
                 // Find the channel in state.results and update it
                 const channelIndex = state.results.findIndex(c => c.channelUrl === channel.channelUrl);
                 if (channelIndex !== -1) {
+                    console.log(`ViewHunt: Merging enhanced data for ${channel.channelName}:`, enhancedData);
                     state.results[channelIndex] = {
                         ...state.results[channelIndex],
                         ...enhancedData,
                         enhanced: true
                     };
+                    console.log(`ViewHunt: Updated channel data:`, state.results[channelIndex]);
                 }
             }
         });
