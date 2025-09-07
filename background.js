@@ -395,30 +395,42 @@ async function processEnhancedAnalysis() {
         return shouldRunEnhancedAnalysis(channel);
     });
     
-    console.log(`ViewHunt Background: ${channelsForEnhancement.length}/${state.results.length} channels qualify for enhanced analysis`);
+    // Further filter to prioritize highest potential channels (save quota)
+    const prioritizedChannels = channelsForEnhancement
+        .sort((a, b) => (b.averageViews || 0) - (a.averageViews || 0)) // Sort by average views desc
+        .slice(0, Math.min(15, channelsForEnhancement.length)); // Limit to top 15 channels per batch
     
-    if (channelsForEnhancement.length === 0) {
+    console.log(`ViewHunt Background: ${channelsForEnhancement.length}/${state.results.length} channels qualify, processing top ${prioritizedChannels.length} to save quota`);
+    
+    if (prioritizedChannels.length === 0) {
         console.log('ViewHunt Background: No channels qualify for enhanced analysis');
         return;
     }
     
     // Process channels in batches to avoid overwhelming the API
-    const batchSize = 2; // Process 2 channels at a time to reduce server load
+    const batchSize = 3; // Increase to 3 channels at a time for better speed
     
-    for (let i = 0; i < channelsForEnhancement.length; i += batchSize) {
+    for (let i = 0; i < prioritizedChannels.length; i += batchSize) {
         if (state.stopRequested) break;
         
-        const batch = channelsForEnhancement.slice(i, i + batchSize);
-        state.status = `Enhanced analysis... (${Math.min(i + batchSize, channelsForEnhancement.length)}/${channelsForEnhancement.length})`;
+        const batch = prioritizedChannels.slice(i, i + batchSize);
+        state.status = `Enhanced analysis... (${Math.min(i + batchSize, prioritizedChannels.length)}/${prioritizedChannels.length})`;
         broadcastState();
         
-        // Process batch in parallel
-        const promises = batch.map(channel => getEnhancedChannelData(channel));
+        // Process batch in parallel with staggered start to avoid rate limits
+        const promises = batch.map((channel, index) => {
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    resolve(getEnhancedChannelData(channel));
+                }, index * 500); // Stagger by 500ms to avoid hitting rate limits
+            });
+        });
+        
         const results = await Promise.allSettled(promises);
         
-        // Add delay between batches to prevent overwhelming the server
-        if (i + batchSize < channelsForEnhancement.length) {
-            await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay between batches
+        // Reduce delay between batches
+        if (i + batchSize < prioritizedChannels.length) {
+            await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay between batches
         }
         
         // Update channels with enhanced data
@@ -477,8 +489,8 @@ function shouldRunEnhancedAnalysis(channel) {
 
 // Get enhanced channel data from backend (which calls Apify)
 async function getEnhancedChannelData(channel, retryCount = 0) {
-    const maxRetries = 2;
-    const baseDelay = 1000; // 1 second base delay
+    const maxRetries = 1; // Reduce retries for speed
+    const baseDelay = 500; // Reduce base delay
     
     try {
         // Add exponential backoff delay for retries
@@ -488,7 +500,7 @@ async function getEnhancedChannelData(channel, retryCount = 0) {
         }
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
         
         const response = await fetch('https://viewhunt-backend-4fur6.ondigitalocean.app/api/channels/enhanced-analysis', {
             method: 'POST',

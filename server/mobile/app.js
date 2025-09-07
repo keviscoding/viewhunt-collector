@@ -858,8 +858,11 @@ class ViewHuntApp {
             <div class="channel-stats">
                 <div class="stat-item">
                     <span class="stat-value">${recentAverage || channelAverage}</span>
-                    <span class="stat-label">${recentAverage ? 'Recent Avg' : 'Channel Avg'}</span>
-                    ${recentAverage ? `<small class="stat-note">Last 10 videos</small>` : ''}
+                    <span class="stat-label">
+                        ${recentAverage ? 'Recent Avg' : 'Channel Avg'}
+                        ${recentAverage ? '<span class="enhanced-badge">✨ Enhanced</span>' : ''}
+                    </span>
+                    ${recentAverage ? `<small class="stat-note">Last 10 shorts</small>` : ''}
                 </div>
                 <div class="stat-item">
                     <span class="stat-value">${subCount}</span>

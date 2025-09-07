@@ -1522,10 +1522,10 @@ app.post('/api/channels/enhanced-analysis', async (req, res) => {
                     },
                     body: JSON.stringify({
                         channel_identifier: channelUrl,
-                        max_results: 15,
+                        max_results: 10, // Exactly 10 shorts to save quota
                         select_types: ["short"], // Only get shorts for accurate shorts performance
-                        sleep_interval: 2,
-                        max_retries: 3
+                        sleep_interval: 1, // Reduce sleep to speed up
+                        max_retries: 2 // Reduce retries to speed up
                     })
                 });
                 
