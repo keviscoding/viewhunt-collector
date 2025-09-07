@@ -184,6 +184,50 @@ class ViewHuntApp {
             return num.toString();
         };
 
+        // Recent Avg range slider
+        const recentAvgSliderMin = document.getElementById('recent-avg-slider-min');
+        const recentAvgSliderMax = document.getElementById('recent-avg-slider-max');
+        const minRecentAvgInput = document.getElementById('min-recent-avg');
+        const maxRecentAvgInput = document.getElementById('max-recent-avg');
+
+        if (recentAvgSliderMin && recentAvgSliderMax && minRecentAvgInput && maxRecentAvgInput) {
+            // Update input when slider changes
+            recentAvgSliderMin.addEventListener('input', () => {
+                const value = parseInt(recentAvgSliderMin.value);
+                const formattedValue = formatNumber(value);
+                minRecentAvgInput.value = formattedValue;
+                
+                // Ensure min doesn't exceed max
+                if (value > parseInt(recentAvgSliderMax.value)) {
+                    recentAvgSliderMax.value = value;
+                    maxRecentAvgInput.value = formatNumber(value);
+                }
+            });
+
+            recentAvgSliderMax.addEventListener('input', () => {
+                const value = parseInt(recentAvgSliderMax.value);
+                const formattedValue = formatNumber(value);
+                maxRecentAvgInput.value = formattedValue;
+                
+                // Ensure max doesn't go below min
+                if (value < parseInt(recentAvgSliderMin.value)) {
+                    recentAvgSliderMin.value = value;
+                    minRecentAvgInput.value = formatNumber(value);
+                }
+            });
+
+            // Update slider when input changes
+            minRecentAvgInput.addEventListener('input', () => {
+                const value = this.parseFormattedNumber(minRecentAvgInput.value) || 0;
+                recentAvgSliderMin.value = value;
+            });
+
+            maxRecentAvgInput.addEventListener('input', () => {
+                const value = this.parseFormattedNumber(maxRecentAvgInput.value) || 5000000;
+                recentAvgSliderMax.value = value;
+            });
+        }
+
         // Views range slider
         const viewsSliderMin = document.getElementById('views-slider-min');
         const viewsSliderMax = document.getElementById('views-slider-max');
@@ -491,6 +535,8 @@ class ViewHuntApp {
             const primarySort = document.getElementById('primary-sort').value;
             const secondarySort = document.getElementById('secondary-sort').value;
             const enhancedOnly = document.getElementById('enhanced-only').checked;
+            const minRecentAvg = this.parseFormattedNumber(document.getElementById('min-recent-avg').value) || 0;
+            const maxRecentAvg = document.getElementById('max-recent-avg').value ? this.parseFormattedNumber(document.getElementById('max-recent-avg').value) : null;
             const minViews = this.parseFormattedNumber(document.getElementById('min-views').value) || 0;
             const maxViews = document.getElementById('max-views').value ? this.parseFormattedNumber(document.getElementById('max-views').value) : null;
             const minSubs = this.parseFormattedNumber(document.getElementById('min-subs').value) || 0;
@@ -508,6 +554,8 @@ class ViewHuntApp {
             
             // Add filter parameters if they have values
             if (enhancedOnly) params.append('enhancedOnly', 'true');
+            if (minRecentAvg > 0) params.append('minRecentAvg', minRecentAvg.toString());
+            if (maxRecentAvg) params.append('maxRecentAvg', maxRecentAvg.toString());
             if (minViews > 0) params.append('minViews', minViews.toString());
             if (maxViews) params.append('maxViews', maxViews.toString());
             if (minSubs > 0) params.append('minSubs', minSubs.toString());
@@ -605,6 +653,8 @@ class ViewHuntApp {
                 // Get filter values
                 const primarySort = document.getElementById('primary-sort')?.value || 'approval-time-desc';
                 const enhancedOnly = document.getElementById('enhanced-only')?.checked || false;
+                const minRecentAvg = this.parseFormattedNumber(document.getElementById('min-recent-avg')?.value || '0');
+                const maxRecentAvg = document.getElementById('max-recent-avg')?.value ? this.parseFormattedNumber(document.getElementById('max-recent-avg').value) : null;
                 const minViews = this.parseFormattedNumber(document.getElementById('min-views')?.value || '0');
                 const maxViews = document.getElementById('max-views')?.value ? this.parseFormattedNumber(document.getElementById('max-views').value) : null;
                 const minSubs = this.parseFormattedNumber(document.getElementById('min-subs')?.value || '0');
@@ -614,6 +664,8 @@ class ViewHuntApp {
 
                 params.append('sortBy', primarySort);
                 if (enhancedOnly) params.append('enhancedOnly', 'true');
+                if (minRecentAvg > 0) params.append('minRecentAvg', minRecentAvg.toString());
+                if (maxRecentAvg) params.append('maxRecentAvg', maxRecentAvg.toString());
                 if (minViews > 0) params.append('minViews', minViews.toString());
                 if (maxViews) params.append('maxViews', maxViews.toString());
                 if (minSubs > 0) params.append('minSubs', minSubs.toString());
@@ -896,21 +948,7 @@ class ViewHuntApp {
                 </div>
             </div>
             
-            ${recentAverage && channelAverage !== recentAverage ? `
-                <div class="enhanced-comparison">
-                    <div class="comparison-row">
-                        <span class="comparison-label">Channel Avg:</span>
-                        <span class="comparison-value">${channelAverage}</span>
-                    </div>
-                    <div class="comparison-row">
-                        <span class="comparison-label">Recent Avg:</span>
-                        <span class="comparison-value enhanced-value">${recentAverage}</span>
-                        <span class="enhanced-badge">✨ Enhanced</span>
-                    </div>
-                    ${channel.hasViralOutlier ? '<small class="viral-warning">⚠️ Has viral outlier</small>' : ''}
-                    ${channel.distributionIssue ? '<small class="distribution-warning">📊 Distribution variance detected</small>' : ''}
-                </div>
-            ` : ''}
+
             
             <div class="channel-actions">
                 <a href="${channel.channel_url}/shorts" target="_blank" class="btn btn-primary">

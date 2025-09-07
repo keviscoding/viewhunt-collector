@@ -1836,6 +1836,8 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
         if (isAdmin) {
             // Get filter parameters for admin
             const enhancedOnly = req.query.enhancedOnly === 'true';
+            const minRecentAvg = parseInt(req.query.minRecentAvg) || 0;
+            const maxRecentAvg = req.query.maxRecentAvg ? parseInt(req.query.maxRecentAvg) : null;
             const minViews = parseInt(req.query.minViews) || 0;
             const maxViews = req.query.maxViews ? parseInt(req.query.maxViews) : null;
             const minSubs = parseInt(req.query.minSubs) || 0;
@@ -1852,6 +1854,13 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
             if (enhancedOnly) {
                 approvedMatchQuery.enhanced = true;
                 approvedMatchQuery.recent_average = { $exists: true, $ne: null };
+            }
+            
+            // Add recent average filters
+            if (minRecentAvg > 0 || maxRecentAvg) {
+                approvedMatchQuery.recent_average = approvedMatchQuery.recent_average || {};
+                if (minRecentAvg > 0) approvedMatchQuery.recent_average.$gte = minRecentAvg;
+                if (maxRecentAvg) approvedMatchQuery.recent_average.$lte = maxRecentAvg;
             }
             
             // Add other filters
@@ -1978,6 +1987,8 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
         
         // Filter parameters
         const enhancedOnly = req.query.enhancedOnly === 'true';
+        const minRecentAvg = parseInt(req.query.minRecentAvg) || 0;
+        const maxRecentAvg = req.query.maxRecentAvg ? parseInt(req.query.maxRecentAvg) : null;
         const minViews = parseInt(req.query.minViews) || 0;
         const maxViews = req.query.maxViews ? parseInt(req.query.maxViews) : null;
         const minSubs = parseInt(req.query.minSubs) || 0;
@@ -2002,6 +2013,13 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
         if (enhancedOnly) {
             matchQuery.enhanced = true;
             matchQuery.recent_average = { $exists: true, $ne: null };
+        }
+        
+        // Add recent average filters if specified
+        if (minRecentAvg > 0 || maxRecentAvg) {
+            matchQuery.recent_average = matchQuery.recent_average || {};
+            if (minRecentAvg > 0) matchQuery.recent_average.$gte = minRecentAvg;
+            if (maxRecentAvg) matchQuery.recent_average.$lte = maxRecentAvg;
         }
         
         // Add average views filters if specified (more meaningful than single video views)

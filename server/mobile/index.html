@@ -131,7 +131,26 @@
                     </div>
                     
                     <div class="filter-group range-filter">
-                        <label>👀 Avg Views Range:</label>
+                        <label>✨ Recent Avg Range:</label>
+                        <div class="range-slider-container">
+                            <div class="range-inputs">
+                                <input type="text" id="min-recent-avg" class="range-input" placeholder="Min">
+                                <span class="range-separator">to</span>
+                                <input type="text" id="max-recent-avg" class="range-input" placeholder="Max">
+                            </div>
+                            <div class="range-slider">
+                                <input type="range" id="recent-avg-slider-min" class="slider" min="0" max="5000000" step="10000" value="0">
+                                <input type="range" id="recent-avg-slider-max" class="slider" min="0" max="5000000" step="10000" value="5000000">
+                            </div>
+                            <div class="range-labels">
+                                <span>0</span>
+                                <span>5M+</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="filter-group range-filter">
+                        <label>👀 Channel Avg Range:</label>
                         <div class="range-slider-container">
                             <div class="range-inputs">
                                 <input type="text" id="min-views" class="range-input" placeholder="Min">
