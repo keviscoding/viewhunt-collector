@@ -785,6 +785,16 @@ class ViewHuntApp {
         const channelAverage = formatNumber(channel.average_views || channel.averageViews || channel.view_count || 0);
         const recentAverage = channel.enhanced && (channel.recent_average || channel.recentAverage) ? 
             formatNumber(channel.recent_average || channel.recentAverage) : null;
+        
+        // Debug enhanced data
+        if (channel.enhanced) {
+            console.log(`Enhanced channel found: ${channelName}`, {
+                enhanced: channel.enhanced,
+                recent_average: channel.recent_average,
+                recentAverage: channel.recentAverage,
+                calculated: recentAverage
+            });
+        }
         const videoCount = channel.video_count || channel.videoCount || 0;
         
         // Debug: log video count to see what's happening
