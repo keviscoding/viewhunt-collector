@@ -244,10 +244,10 @@ async function processBatchAndSend() {
     // Filter channels that meet minimum threshold before sending to backend
     const qualifiedChannels = state.results.filter(channel => {
         const avgViews = channel.averageViews || 0;
-        return avgViews >= 700000; // Only send channels with 700K+ average views
+        return avgViews >= 500000; // Only send channels with 500K+ average views
     });
     
-    console.log(`ViewHunt: Filtered ${state.results.length} channels to ${qualifiedChannels.length} qualified channels (700K+ avg views)`);
+    console.log(`ViewHunt: Filtered ${state.results.length} channels to ${qualifiedChannels.length} qualified channels (500K+ avg views)`);
     
     // Send to backend
     await sendToBackend(qualifiedChannels);
@@ -375,10 +375,10 @@ async function processSubscriberData() {
     // Filter channels that meet minimum threshold before sending to backend
     const qualifiedChannels = state.results.filter(channel => {
         const avgViews = channel.averageViews || 0;
-        return avgViews >= 700000; // Only send channels with 700K+ average views
+        return avgViews >= 500000; // Only send channels with 500K+ average views
     });
     
-    console.log(`ViewHunt: Filtered ${state.results.length} channels to ${qualifiedChannels.length} qualified channels (700K+ avg views)`);
+    console.log(`ViewHunt: Filtered ${state.results.length} channels to ${qualifiedChannels.length} qualified channels (500K+ avg views)`);
     
     // Send data to backend server
     await sendToBackend(qualifiedChannels);
@@ -466,10 +466,10 @@ function shouldRunEnhancedAnalysis(channel) {
     const avgViews = channel.averageViews || 0;
     const ratio = channel.viewToSubRatio || 0;
     
-    // PRIMARY FILTER: 700K threshold for enhanced analysis
-    if (avgViews < 700000) {
-        console.log(`ViewHunt: Skipping enhanced analysis for ${channel.channelName}: avgViews=${avgViews} < 700K`);
-        return false; // Skip enhanced analysis for channels under 700K average
+    // PRIMARY FILTER: 500K threshold for enhanced analysis
+    if (avgViews < 500000) {
+        console.log(`ViewHunt: Skipping enhanced analysis for ${channel.channelName}: avgViews=${avgViews} < 500K`);
+        return false; // Skip enhanced analysis for channels under 500K average
     }
     
     console.log(`ViewHunt: Channel ${channel.channelName} qualifies for enhanced analysis: avgViews=${avgViews}, subs=${subs}, ratio=${ratio}`);
@@ -477,13 +477,13 @@ function shouldRunEnhancedAnalysis(channel) {
     // SECONDARY FILTERS: Tiered filtering based on channel size
     if (subs < 100000) {
         // Small channels with high averages - likely viral outliers
-        return ratio >= 1.0 && avgViews >= 700000;
+        return ratio >= 1.0 && avgViews >= 500000;
     } else if (subs < 1000000) {
         // Medium channels with high averages - potential declining performance
-        return ratio >= 0.5 && avgViews >= 700000;
+        return ratio >= 0.5 && avgViews >= 500000;
     } else {
         // Large channels with high averages - consistency analysis
-        return ratio >= 0.1 && avgViews >= 700000;
+        return ratio >= 0.1 && avgViews >= 500000;
     }
 }
 
