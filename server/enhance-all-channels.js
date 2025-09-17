@@ -161,12 +161,12 @@ async function enhanceAllChannels() {
         const collection = db.collection('channels');
         
         console.log('🚀 Starting MASSIVE database enhancement...');
-        console.log('📊 This will add Recent Avg + video previews to ALL channels!');
+        console.log('📊 This will add Recent Avg + video previews to EVERY SINGLE CHANNEL!');
+        console.log('🎯 No view limitations - enhancing ALL channels in the database!');
         console.log('');
         
-        // Get all channels that need enhancement (500K+ avg views, not already enhanced)
+        // Get ALL channels that need enhancement (no view limitations!)
         const channels = await collection.find({
-            average_views: { $gte: 500000 },
             $or: [
                 { enhanced: { $ne: true } },
                 { enhanced: { $exists: false } },
@@ -175,7 +175,7 @@ async function enhanceAllChannels() {
             ]
         }).toArray();
         
-        console.log(`📈 Found ${channels.length} channels that need enhancement (500K+ avg views)`);
+        console.log(`📈 Found ${channels.length} channels that need enhancement (ALL CHANNELS - no view limits!)`);
         
         if (channels.length === 0) {
             console.log('✅ All channels are already enhanced!');
@@ -264,7 +264,7 @@ async function enhanceAllChannels() {
         console.log(`   💰 Quota Used: ${quotaUsed.toLocaleString()} units`);
         console.log(`   📈 Success Rate: ${((enhanced / processed) * 100).toFixed(1)}%`);
         console.log('');
-        console.log('🚀 ViewHunt is now FULLY ENHANCED with Recent Avg + Video Previews!');
+        console.log('🚀 ViewHunt is now FULLY ENHANCED - EVERY CHANNEL has Recent Avg + Video Previews!');
         
         // Show final database stats
         const totalEnhanced = await collection.countDocuments({ enhanced: true });

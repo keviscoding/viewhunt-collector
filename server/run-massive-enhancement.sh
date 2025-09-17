@@ -3,10 +3,11 @@
 echo "🚀 MASSIVE DATABASE ENHANCEMENT SCRIPT"
 echo "======================================"
 echo ""
-echo "This will enhance ALL channels in your database with:"
+echo "This will enhance EVERY SINGLE CHANNEL in your database with:"
 echo "✨ Recent Avg calculations from last 10 shorts"
 echo "🎬 Video previews with clickable thumbnails"
 echo "📊 Enhanced analytics and performance data"
+echo "🎯 NO VIEW LIMITATIONS - All channels get enhanced!"
 echo ""
 
 # Check if environment variables are set
@@ -28,6 +29,7 @@ echo ""
 echo "⚠️  QUOTA WARNING:"
 echo "   This script will use ~3 YouTube API quota units per channel"
 echo "   With 150K daily quota, you can enhance ~50,000 channels per day"
+echo "   🚀 Processing ALL channels regardless of view count!"
 echo ""
 
 # Ask for confirmation
