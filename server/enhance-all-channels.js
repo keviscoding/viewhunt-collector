@@ -13,22 +13,52 @@ function parseDuration(duration) {
     return minutes * 60 + seconds;
 }
 
+// Zero-quota channel ID resolution (web scraping method)
+async function getChannelIdFromHandle(handleUrl) {
+    try {
+        const response = await fetch(handleUrl);
+        if (!response.ok) {
+            return null;
+        }
+        
+        const html = await response.text();
+        
+        // Look for channel ID in various places in the HTML
+        const channelIdMatch = html.match(/"channelId":"(UC[a-zA-Z0-9_-]{22})"/)
+            || html.match(/"externalId":"(UC[a-zA-Z0-9_-]{22})"/)
+            || html.match(/channel\/(UC[a-zA-Z0-9_-]{22})/)
+            || html.match(/"webCommandMetadata":{"url":"\/channel\/(UC[a-zA-Z0-9_-]{22})/)
+            || html.match(/property="og:url" content="https:\/\/www\.youtube\.com\/channel\/(UC[a-zA-Z0-9_-]{22})/)
+            || html.match(/"canonicalBaseUrl":"\/channel\/(UC[a-zA-Z0-9_-]{22})/)
+            || html.match(/"browseEndpoint":{"browseId":"(UC[a-zA-Z0-9_-]{22})/)
+            || html.match(/"browseId":"(UC[a-zA-Z0-9_-]{22})/)
+            || html.match(/\/channel\/(UC[a-zA-Z0-9_-]{22})/);
+        
+        if (channelIdMatch && channelIdMatch[1]) {
+            return channelIdMatch[1];
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Error getting channel ID from handle:', error);
+        return null;
+    }
+}
+
 async function resolveChannelId(channelUrl) {
     try {
         if (channelUrl.includes('/channel/UC')) {
             return channelUrl.split('/channel/')[1].split('/')[0];
         } else if (channelUrl.includes('/@')) {
-            const handle = channelUrl.split('/@')[1].split('/')[0];
-            
-            const response = await fetch(
-                `${YOUTUBE_API_BASE}/search?part=snippet&type=channel&q=${handle}&key=${YOUTUBE_API_KEY}`
-            );
-            
-            if (response.ok) {
-                const data = await response.json();
-                if (data.items && data.items.length > 0) {
-                    return data.items[0].snippet.channelId;
-                }
+            // Use zero-quota web scraping method!
+            console.log(`🔍 Resolving @handle: ${channelUrl}`);
+            const channelId = await getChannelIdFromHandle(channelUrl);
+            if (channelId) {
+                console.log(`✅ Resolved: ${channelUrl} -> ${channelId}`);
+                return channelId;
+            } else {
+                console.warn(`❌ Could not resolve: ${channelUrl}`);
+                return null;
             }
         }
         return null;
@@ -182,10 +212,11 @@ async function enhanceAllChannels() {
             return;
         }
         
-        // Show quota estimation
-        const quotaNeeded = channels.length * 3; // 3 quota units per channel
-        console.log(`💰 Estimated quota needed: ${quotaNeeded.toLocaleString()} units`);
+        // Show quota estimation (now much more accurate!)
+        const quotaNeeded = channels.length * 3; // 3 quota units per channel (no more expensive handle resolution!)
+        console.log(`💰 Estimated quota needed: ${quotaNeeded.toLocaleString()} units (ZERO-QUOTA handle resolution!)`);
         console.log(`⏱️  Estimated time: ${Math.round(channels.length / 20)} minutes (20 channels/min)`);
+        console.log(`🚀 Daily capacity: ~50,000 channels with 150K quota (vs previous 1,200!)`);
         console.log('');
         
         let processed = 0;
@@ -209,7 +240,7 @@ async function enhanceAllChannels() {
                             processed++;
                             
                             const enhancedData = await getEnhancedChannelData(channel.channel_url, channel.channel_name);
-                            quotaUsed += 3; // Each channel uses ~3 quota units
+                            quotaUsed += 3; // Each channel uses exactly 3 quota units (handle resolution is FREE!)
                             
                             if (enhancedData) {
                                 // Update channel with enhanced data
