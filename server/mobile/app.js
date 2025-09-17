@@ -162,6 +162,55 @@ class ViewHuntApp {
                 this.closeCreateCollection();
             }
         });
+
+        // Add mobile scroll protection to prevent crashes
+        if (window.innerWidth <= 768) {
+            let scrollTimeout;
+            window.addEventListener('scroll', () => {
+                clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(() => {
+                    // Throttle scroll events on mobile
+                    const scrollPercent = (window.scrollY / (document.body.scrollHeight - window.innerHeight)) * 100;
+                    
+                    // If user scrolls past 90%, show pagination hint
+                    if (scrollPercent > 90 && this.pagination && this.currentPage < this.pagination.totalPages) {
+                        this.showPaginationHint();
+                    }
+                }, 100);
+            });
+        }
+    }
+
+    showPaginationHint() {
+        // Show a subtle hint about pagination instead of infinite scroll
+        const hint = document.createElement('div');
+        hint.className = 'pagination-hint';
+        hint.innerHTML = `
+            <div style="
+                position: fixed; 
+                bottom: 20px; 
+                left: 50%; 
+                transform: translateX(-50%); 
+                background: var(--primary-color); 
+                color: white; 
+                padding: 10px 20px; 
+                border-radius: 25px; 
+                font-size: 14px; 
+                z-index: 1000;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            ">
+                📄 Page ${this.currentPage} of ${this.pagination.totalPages} • Use pagination controls below
+            </div>
+        `;
+        
+        document.body.appendChild(hint);
+        
+        // Remove hint after 3 seconds
+        setTimeout(() => {
+            if (hint.parentNode) {
+                hint.parentNode.removeChild(hint);
+            }
+        }, 3000);
     }
 
     debounce(func, wait) {
@@ -497,10 +546,13 @@ class ViewHuntApp {
             const minVideos = parseInt(document.getElementById('min-videos').value.replace(/,/g, '')) || 0;
             const maxVideos = document.getElementById('max-videos').value ? parseInt(document.getElementById('max-videos').value.replace(/,/g, '')) : null;
 
-            // Build query parameters
+            // Build query parameters - Use smaller page size for mobile
+            const isMobile = window.innerWidth <= 768;
+            const pageSize = isMobile ? '25' : '50'; // Reduce to 25 for mobile
+            
             const params = new URLSearchParams({
                 page: page.toString(),
-                limit: '50',
+                limit: pageSize,
                 primarySort: primarySort,
                 secondarySort: secondarySort
             });
@@ -696,13 +748,22 @@ class ViewHuntApp {
         const channelGrid = document.getElementById('channel-grid');
         const emptyState = document.getElementById('empty-state');
 
+        // Clear existing content and force garbage collection
         channelGrid.innerHTML = '';
         emptyState.style.display = 'none';
+        
+        // Force garbage collection on mobile to prevent memory crashes
+        if (window.innerWidth <= 768 && window.gc) {
+            window.gc();
+        }
 
         this.currentBatch.forEach(channel => {
             const card = this.createChannelCard(channel);
             channelGrid.appendChild(card);
         });
+        
+        // Scroll to top when new page loads to prevent scroll position issues
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     updatePaginationControls() {

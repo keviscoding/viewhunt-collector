@@ -35,6 +35,32 @@ body {
     position: relative;
     overflow-x: hidden;
     transition: all 0.3s ease;
+    
+    /* Mobile memory optimization */
+    -webkit-overflow-scrolling: touch;
+    transform: translateZ(0); /* Force hardware acceleration */
+}
+
+/* Mobile-specific optimizations */
+@media (max-width: 768px) {
+    body {
+        /* Reduce memory usage on mobile */
+        will-change: auto;
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+    }
+    
+    /* Optimize channel cards for mobile memory */
+    .channel-card {
+        will-change: auto !important;
+        transform: translateZ(0);
+        -webkit-transform: translateZ(0);
+    }
+    
+    /* Reduce animation complexity on mobile */
+    .channel-card:hover {
+        transform: translateY(-2px) translateZ(0) !important;
+    }
 }
 
 /* Clean background - no overlay effects */
