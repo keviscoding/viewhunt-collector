@@ -2,6 +2,43 @@
 const YOUTUBE_API_KEY = 'AIzaSyBOJg1zOs4STy1MJdqdiFKnKzAUyNa-LdU'; // Default API key
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 
+// YouTube API helper functions
+function parseDuration(duration) {
+    // Convert YouTube duration format (PT15S, PT1M30S) to seconds
+    const match = duration.match(/PT(?:(\d+)M)?(?:(\d+)S)?/);
+    const minutes = parseInt(match[1] || 0);
+    const seconds = parseInt(match[2] || 0);
+    return minutes * 60 + seconds;
+}
+
+async function resolveChannelId(channelUrl) {
+    try {
+        if (channelUrl.includes('/channel/UC')) {
+            // Direct channel ID URL
+            return channelUrl.split('/channel/')[1].split('/')[0];
+        } else if (channelUrl.includes('/@')) {
+            // Handle format - need to resolve to channel ID
+            const handle = channelUrl.split('/@')[1].split('/')[0];
+            
+            // Search for channel by handle
+            const response = await fetch(
+                `${YOUTUBE_API_BASE}/search?part=snippet&type=channel&q=${handle}&key=${state.apiKey}`
+            );
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.items && data.items.length > 0) {
+                    return data.items[0].snippet.channelId;
+                }
+            }
+        }
+        return null;
+    } catch (error) {
+        console.error('Error resolving channel ID:', error);
+        return null;
+    }
+}
+
 // Default keywords
 const DEFAULT_KEYWORDS = ['go', 'why', 'how', 'she', 'did', 'her', 'make', 'get', 'can', 'will', 'new', 'best', 'top', 'easy', 'quick', 'simple'];
 
@@ -388,50 +425,33 @@ async function processSubscriberData() {
 
 // Enhanced analysis using Apify API for accurate recent performance
 async function processEnhancedAnalysis() {
-    console.log(`ViewHunt Background: Starting enhanced analysis for ${state.results.length} channels`);
+    console.log(`ViewHunt Background: Starting YouTube API enhanced analysis for ${state.results.length} channels`);
     
     // Filter channels that should get enhanced analysis
     const channelsForEnhancement = state.results.filter(channel => {
         return shouldRunEnhancedAnalysis(channel);
     });
     
-    // Further filter to prioritize highest potential channels (save quota)
-    const prioritizedChannels = channelsForEnhancement
-        .sort((a, b) => (b.averageViews || 0) - (a.averageViews || 0)) // Sort by average views desc
-        .slice(0, Math.min(15, channelsForEnhancement.length)); // Limit to top 15 channels per batch
+    console.log(`ViewHunt Background: ${channelsForEnhancement.length}/${state.results.length} channels qualify for enhanced analysis`);
     
-    console.log(`ViewHunt Background: ${channelsForEnhancement.length}/${state.results.length} channels qualify, processing top ${prioritizedChannels.length} to save quota`);
-    
-    if (prioritizedChannels.length === 0) {
+    if (channelsForEnhancement.length === 0) {
         console.log('ViewHunt Background: No channels qualify for enhanced analysis');
         return;
     }
     
-    // Process channels in batches to avoid overwhelming the API
-    const batchSize = 3; // Increase to 3 channels at a time for better speed
+    // Process all qualifying channels (no more artificial limits!)
+    const batchSize = 5; // Process 5 channels at a time
     
-    for (let i = 0; i < prioritizedChannels.length; i += batchSize) {
+    for (let i = 0; i < channelsForEnhancement.length; i += batchSize) {
         if (state.stopRequested) break;
         
-        const batch = prioritizedChannels.slice(i, i + batchSize);
-        state.status = `Enhanced analysis... (${Math.min(i + batchSize, prioritizedChannels.length)}/${prioritizedChannels.length})`;
+        const batch = channelsForEnhancement.slice(i, i + batchSize);
+        state.status = `YouTube API analysis... (${Math.min(i + batchSize, channelsForEnhancement.length)}/${channelsForEnhancement.length})`;
         broadcastState();
         
-        // Process batch in parallel with staggered start to avoid rate limits
-        const promises = batch.map((channel, index) => {
-            return new Promise(resolve => {
-                setTimeout(() => {
-                    resolve(getEnhancedChannelData(channel));
-                }, index * 500); // Stagger by 500ms to avoid hitting rate limits
-            });
-        });
-        
+        // Process batch in parallel
+        const promises = batch.map(channel => getEnhancedChannelDataYouTube(channel));
         const results = await Promise.allSettled(promises);
-        
-        // Reduce delay between batches
-        if (i + batchSize < prioritizedChannels.length) {
-            await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay between batches
-        }
         
         // Update channels with enhanced data
         results.forEach((result, index) => {
@@ -442,22 +462,23 @@ async function processEnhancedAnalysis() {
                 // Find the channel in state.results and update it
                 const channelIndex = state.results.findIndex(c => c.channelUrl === channel.channelUrl);
                 if (channelIndex !== -1) {
-                    console.log(`ViewHunt: Merging enhanced data for ${channel.channelName}:`, enhancedData);
+                    console.log(`ViewHunt: Enhanced data for ${channel.channelName}: Recent Avg ${enhancedData.recentAverage}, ${enhancedData.recentShorts?.length} shorts`);
                     state.results[channelIndex] = {
                         ...state.results[channelIndex],
                         ...enhancedData,
                         enhanced: true
                     };
-                    console.log(`ViewHunt: Updated channel data:`, state.results[channelIndex]);
                 }
             }
         });
         
-        // Small delay between batches
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Small delay between batches to respect rate limits
+        if (i + batchSize < channelsForEnhancement.length) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
     }
     
-    console.log(`ViewHunt Background: Enhanced analysis complete`);
+    console.log(`ViewHunt Background: YouTube API enhanced analysis complete`);
 }
 
 // Determine if a channel should get enhanced analysis
@@ -487,7 +508,112 @@ function shouldRunEnhancedAnalysis(channel) {
     }
 }
 
-// Get enhanced channel data from backend (which calls Apify)
+// Get enhanced channel data using YouTube API directly
+async function getEnhancedChannelDataYouTube(channel) {
+    try {
+        console.log(`ViewHunt: Getting YouTube API data for ${channel.channelName}`);
+        
+        // Step 1: Resolve channel ID
+        const channelId = await resolveChannelId(channel.channelUrl);
+        if (!channelId) {
+            console.warn(`ViewHunt: Could not resolve channel ID for ${channel.channelName}`);
+            return null;
+        }
+        
+        // Step 2: Get channel info and uploads playlist
+        const channelResponse = await fetch(
+            `${YOUTUBE_API_BASE}/channels?part=statistics,contentDetails,snippet&id=${channelId}&key=${state.apiKey}`
+        );
+        
+        if (!channelResponse.ok) {
+            console.warn(`ViewHunt: Channel API failed for ${channel.channelName}: ${channelResponse.status}`);
+            return null;
+        }
+        
+        const channelData = await channelResponse.json();
+        if (!channelData.items || channelData.items.length === 0) {
+            console.warn(`ViewHunt: No channel data found for ${channel.channelName}`);
+            return null;
+        }
+        
+        const channelInfo = channelData.items[0];
+        const uploadsPlaylistId = channelInfo.contentDetails.relatedPlaylists.uploads;
+        
+        // Step 3: Get recent videos from uploads playlist
+        const playlistResponse = await fetch(
+            `${YOUTUBE_API_BASE}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=30&key=${state.apiKey}`
+        );
+        
+        if (!playlistResponse.ok) {
+            console.warn(`ViewHunt: Playlist API failed for ${channel.channelName}: ${playlistResponse.status}`);
+            return null;
+        }
+        
+        const playlistData = await playlistResponse.json();
+        if (!playlistData.items || playlistData.items.length === 0) {
+            console.warn(`ViewHunt: No videos found for ${channel.channelName}`);
+            return null;
+        }
+        
+        const videoIds = playlistData.items.map(item => item.snippet.resourceId.videoId);
+        
+        // Step 4: Get video details and filter for shorts
+        const videosResponse = await fetch(
+            `${YOUTUBE_API_BASE}/videos?part=contentDetails,statistics,snippet&id=${videoIds.join(',')}&key=${state.apiKey}`
+        );
+        
+        if (!videosResponse.ok) {
+            console.warn(`ViewHunt: Videos API failed for ${channel.channelName}: ${videosResponse.status}`);
+            return null;
+        }
+        
+        const videosData = await videosResponse.json();
+        
+        // Filter for shorts only (duration ≤ 60 seconds)
+        const shorts = videosData.items.filter(video => {
+            const duration = video.contentDetails.duration;
+            const seconds = parseDuration(duration);
+            return seconds <= 60;
+        }).slice(0, 10); // Take first 10 shorts
+        
+        if (shorts.length === 0) {
+            console.warn(`ViewHunt: No shorts found for ${channel.channelName}`);
+            return null;
+        }
+        
+        // Step 5: Calculate enhanced metrics
+        const viewCounts = shorts.map(short => parseInt(short.statistics.viewCount || 0));
+        const recentAverage = Math.round(viewCounts.reduce((a, b) => a + b, 0) / viewCounts.length);
+        
+        // Step 6: Create recent shorts data with links
+        const recentShorts = shorts.map(short => ({
+            videoId: short.id,
+            title: short.snippet.title,
+            viewCount: parseInt(short.statistics.viewCount || 0),
+            publishedAt: short.snippet.publishedAt,
+            duration: short.contentDetails.duration,
+            shortUrl: `https://youtube.com/shorts/${short.id}`,
+            watchUrl: `https://youtube.com/watch?v=${short.id}`,
+            thumbnailUrl: `https://img.youtube.com/vi/${short.id}/hqdefault.jpg`
+        }));
+        
+        console.log(`ViewHunt: YouTube API success for ${channel.channelName}: ${recentAverage} avg from ${shorts.length} shorts`);
+        
+        return {
+            enhanced: true,
+            recentAverage: recentAverage,
+            videosAnalyzed: shorts.length,
+            recentShorts: recentShorts,
+            lastUpdated: new Date().toISOString()
+        };
+        
+    } catch (error) {
+        console.error(`ViewHunt: YouTube API error for ${channel.channelName}:`, error);
+        return null;
+    }
+}
+
+// Legacy Apify function (keeping for fallback)
 async function getEnhancedChannelData(channel, retryCount = 0) {
     const maxRetries = 1; // Reduce retries for speed
     const baseDelay = 500; // Reduce base delay

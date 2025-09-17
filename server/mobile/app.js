@@ -936,7 +936,7 @@ class ViewHuntApp {
                         ${recentAverage ? 'Recent Avg' : 'Channel Avg'}
                         ${recentAverage ? '<span class="enhanced-badge">✨ Enhanced</span>' : ''}
                     </span>
-                    ${recentAverage ? `<small class="stat-note">Last 10 shorts</small>` : ''}
+                    ${recentAverage ? `<small class="stat-note">Last ${channel.videos_analyzed || 10} shorts</small>` : ''}
                 </div>
                 <div class="stat-item">
                     <span class="stat-value">${subCount}</span>
@@ -947,6 +947,23 @@ class ViewHuntApp {
                     <span class="stat-label">Ratio</span>
                 </div>
             </div>
+            
+            ${channel.recent_shorts && channel.recent_shorts.length > 0 ? `
+                <div class="recent-shorts">
+                    <h4 class="shorts-title">Recent Shorts:</h4>
+                    <div class="shorts-grid">
+                        ${channel.recent_shorts.slice(0, 4).map(short => `
+                            <a href="${short.shortUrl || short.watchUrl}" target="_blank" class="short-preview" title="${this.escapeHtml(short.title)}">
+                                <img src="${short.thumbnailUrl}" alt="Short thumbnail" class="short-thumbnail" loading="lazy">
+                                <div class="short-stats">
+                                    <span class="short-views">${this.formatNumber(short.viewCount)}</span>
+                                    <span class="short-date">${this.getTimeAgo(new Date(short.publishedAt))}</span>
+                                </div>
+                            </a>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : ''}
             
 
             

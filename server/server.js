@@ -1437,7 +1437,7 @@ app.post('/api/channels/bulk', async (req, res) => {
                     subscriber_count: channel.subscriberCount || 0,
                     view_to_sub_ratio: channel.viewToSubRatio || 0,
                     avatar_url: channel.avatarUrl || null,
-                    // NEW: Add video and thumbnail data
+                    // Video and thumbnail data
                     video_url: channel.videoUrl || null,
                     thumbnail_url: channel.thumbnailUrl || null,
                     // Channel-level statistics
@@ -1447,21 +1447,9 @@ app.post('/api/channels/bulk', async (req, res) => {
                     // Enhanced analysis data
                     enhanced: channel.enhanced || false,
                     recent_average: channel.recentAverage || null,
-                    recent_mean: channel.recentMean || null,
-                    recent_median: channel.recentMedian || null,
-                    recent_trimmed_mean: channel.recentTrimmedMean || null,
-                    consistency_score: channel.consistencyScore || null,
-                    has_viral_outlier: channel.hasViralOutlier || false,
-                    is_consistent: channel.isConsistent || false,
-                    trend_direction: channel.trendDirection || null,
-                    trend_percentage: channel.trendPercentage || null,
-                    shorts_count: channel.shortsCount || null,
-                    regular_count: channel.regularCount || null,
                     videos_analyzed: channel.videosAnalyzed || null,
-                    viral_multiplier: channel.viralMultiplier || null,
-                    distribution_issue: channel.distributionIssue || false,
-                    view_range_min: channel.viewRange?.min || null,
-                    view_range_max: channel.viewRange?.max || null,
+                    // 🔥 NEW: Recent shorts with clickable links
+                    recent_shorts: channel.recentShorts || null,
                     last_enhanced_update: channel.lastUpdated || null,
                     status: 'pending',
                     created_at: new Date(),
