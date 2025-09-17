@@ -511,7 +511,7 @@ function shouldRunEnhancedAnalysis(channel) {
 // Get enhanced channel data using YouTube API directly
 async function getEnhancedChannelDataYouTube(channel) {
     try {
-        console.log(`ViewHunt: Getting YouTube API data for ${channel.channelName}`);
+        console.log(`ViewHunt: 🚀 YOUTUBE API - Getting data for ${channel.channelName}`);
         
         // Step 1: Resolve channel ID
         const channelId = await resolveChannelId(channel.channelUrl);
@@ -597,7 +597,7 @@ async function getEnhancedChannelDataYouTube(channel) {
             thumbnailUrl: `https://img.youtube.com/vi/${short.id}/hqdefault.jpg`
         }));
         
-        console.log(`ViewHunt: YouTube API success for ${channel.channelName}: ${recentAverage} avg from ${shorts.length} shorts`);
+        console.log(`ViewHunt: ✅ YOUTUBE API SUCCESS - ${channel.channelName}: Recent Avg ${recentAverage} from ${shorts.length} shorts`);
         
         return {
             enhanced: true,

@@ -866,7 +866,8 @@ class ViewHuntApp {
                 enhanced: channel.enhanced,
                 recent_average: channel.recent_average,
                 recentAverage: channel.recentAverage,
-                calculated: recentAverage
+                calculated: recentAverage,
+                recent_shorts: channel.recent_shorts ? `${channel.recent_shorts.length} shorts` : 'No shorts data'
             });
         }
         const videoCount = channel.video_count || channel.videoCount || 0;
@@ -956,7 +957,7 @@ class ViewHuntApp {
                             <a href="${short.shortUrl || short.watchUrl}" target="_blank" class="short-preview" title="${this.escapeHtml(short.title)}">
                                 <img src="${short.thumbnailUrl}" alt="Short thumbnail" class="short-thumbnail" loading="lazy">
                                 <div class="short-stats">
-                                    <span class="short-views">${this.formatNumber(short.viewCount)}</span>
+                                    <span class="short-views">${formatNumber(short.viewCount)}</span>
                                     <span class="short-date">${this.getTimeAgo(new Date(short.publishedAt))}</span>
                                 </div>
                             </a>
