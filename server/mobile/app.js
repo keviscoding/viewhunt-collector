@@ -228,53 +228,7 @@ class ViewHuntApp {
             });
         }
 
-        // Views range slider
-        const viewsSliderMin = document.getElementById('views-slider-min');
-        const viewsSliderMax = document.getElementById('views-slider-max');
-        const minViewsInput = document.getElementById('min-views');
-        const maxViewsInput = document.getElementById('max-views');
 
-        if (viewsSliderMin && viewsSliderMax && minViewsInput && maxViewsInput) {
-            // Update input when slider changes (no real-time filtering)
-            viewsSliderMin.addEventListener('input', () => {
-                const value = parseInt(viewsSliderMin.value);
-                const formattedValue = formatNumber(value);
-                minViewsInput.value = formattedValue;
-                
-                // Ensure min doesn't exceed max
-                if (value > parseInt(viewsSliderMax.value)) {
-                    viewsSliderMax.value = value;
-                    maxViewsInput.value = formatNumber(value);
-                }
-            });
-
-            viewsSliderMax.addEventListener('input', () => {
-                const value = parseInt(viewsSliderMax.value);
-                const formattedValue = formatNumber(value);
-                maxViewsInput.value = formattedValue;
-                
-                // Ensure max doesn't go below min
-                if (value < parseInt(viewsSliderMin.value)) {
-                    viewsSliderMin.value = value;
-                    minViewsInput.value = formatNumber(value);
-                }
-            });
-
-            // Update slider when input changes
-            minViewsInput.addEventListener('input', () => {
-                const value = this.parseFormattedNumber(minViewsInput.value);
-                if (value >= 0 && value <= 10000000) {
-                    viewsSliderMin.value = value;
-                }
-            });
-
-            maxViewsInput.addEventListener('input', () => {
-                const value = this.parseFormattedNumber(maxViewsInput.value);
-                if (value >= 0 && value <= 10000000) {
-                    viewsSliderMax.value = value;
-                }
-            });
-        }
 
         // Subs range slider
         const subsSliderMin = document.getElementById('subs-slider-min');
@@ -537,8 +491,7 @@ class ViewHuntApp {
             const enhancedOnly = document.getElementById('enhanced-only').checked;
             const minRecentAvg = this.parseFormattedNumber(document.getElementById('min-recent-avg').value) || 0;
             const maxRecentAvg = document.getElementById('max-recent-avg').value ? this.parseFormattedNumber(document.getElementById('max-recent-avg').value) : null;
-            const minViews = this.parseFormattedNumber(document.getElementById('min-views').value) || 0;
-            const maxViews = document.getElementById('max-views').value ? this.parseFormattedNumber(document.getElementById('max-views').value) : null;
+
             const minSubs = this.parseFormattedNumber(document.getElementById('min-subs').value) || 0;
             const maxSubs = document.getElementById('max-subs').value ? this.parseFormattedNumber(document.getElementById('max-subs').value) : null;
             const minVideos = parseInt(document.getElementById('min-videos').value.replace(/,/g, '')) || 0;
@@ -556,8 +509,7 @@ class ViewHuntApp {
             if (enhancedOnly) params.append('enhancedOnly', 'true');
             if (minRecentAvg > 0) params.append('minRecentAvg', minRecentAvg.toString());
             if (maxRecentAvg) params.append('maxRecentAvg', maxRecentAvg.toString());
-            if (minViews > 0) params.append('minViews', minViews.toString());
-            if (maxViews) params.append('maxViews', maxViews.toString());
+
             if (minSubs > 0) params.append('minSubs', minSubs.toString());
             if (maxSubs) params.append('maxSubs', maxSubs.toString());
             if (minVideos > 0) params.append('minVideos', minVideos.toString());
@@ -666,8 +618,7 @@ class ViewHuntApp {
                 if (enhancedOnly) params.append('enhancedOnly', 'true');
                 if (minRecentAvg > 0) params.append('minRecentAvg', minRecentAvg.toString());
                 if (maxRecentAvg) params.append('maxRecentAvg', maxRecentAvg.toString());
-                if (minViews > 0) params.append('minViews', minViews.toString());
-                if (maxViews) params.append('maxViews', maxViews.toString());
+
                 if (minSubs > 0) params.append('minSubs', minSubs.toString());
                 if (maxSubs) params.append('maxSubs', maxSubs.toString());
                 if (minVideos > 0) params.append('minVideos', minVideos.toString());
