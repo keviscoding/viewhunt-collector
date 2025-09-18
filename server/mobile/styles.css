@@ -44,26 +44,33 @@ body {
     padding-bottom: 120px; /* Space for fixed bottom nav */
 }
 
-/* ULTIMATE FIX: Force bottom nav to stay fixed regardless of content */
+/* Bottom Navigation - Fixed at viewport bottom */
 .bottom-nav {
     position: fixed !important;
-    bottom: 20px !important;
+    bottom: 1rem !important;
     left: 50% !important;
     transform: translateX(-50%) !important;
     z-index: 999999 !important;
     display: flex !important;
     visibility: visible !important;
     opacity: 1 !important;
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border-color) !important;
-    width: 400px !important;
-    height: 80px !important;
-    /* Prevent any interference from parent elements */
+    
+    /* Restore original styling */
+    width: 90%;
+    max-width: 500px;
+    background: var(--bg-card);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-color);
+    border-radius: 20px; /* Restore rounded corners */
+    padding: 0.75rem;
+    box-shadow: 0 10px 30px var(--shadow-medium);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    
+    /* Prevent interference */
     margin: 0 !important;
-    padding: 0.75rem !important;
     box-sizing: border-box !important;
-    /* Ensure it's always on top of everything */
-    isolation: isolate !important;
+    pointer-events: auto !important;
 }
 
 /* Desktop-specific optimizations */
@@ -779,9 +786,12 @@ body {
 /* Desktop styles for bottom navigation */
 @media (min-width: 769px) {
     .bottom-nav {
-        width: 500px !important;
-        height: 90px !important;
-        bottom: 30px !important;
+        bottom: 2rem !important;
+        width: auto;
+        max-width: 600px;
+        min-width: 400px;
+        padding: 1rem;
+        box-shadow: 0 20px 40px var(--shadow-medium);
     }
     
     .nav-btn {

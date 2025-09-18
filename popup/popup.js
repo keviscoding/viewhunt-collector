@@ -82,7 +82,7 @@ const loadApiKey = async () => {
 // Load saved keywords and settings
 const loadKeywords = async () => {
     try {
-        const result = await chrome.storage.local.get(['keywords', 'addAsterisk', 'maxChannels', 'scrollCount']);
+        const result = await chrome.storage.local.get(['keywords', 'addAsterisk', 'maxChannels', 'scrollCount', 'minViewThreshold']);
         if (result.keywords) {
             keywordsInput.value = result.keywords;
             keywordsStatus.textContent = `${result.keywords.split(',').length} keywords loaded`;
@@ -109,6 +109,11 @@ const loadKeywords = async () => {
         // Load scroll count (only if user has set a custom value)
         if (result.scrollCount && result.scrollCount !== 30) {
             document.getElementById('scroll-count').value = result.scrollCount;
+        }
+        
+        // Load minimum view threshold
+        if (result.minViewThreshold !== undefined) {
+            document.getElementById('min-view-threshold').value = result.minViewThreshold;
         }
         
         // Load enhanced analysis preference
@@ -173,13 +178,16 @@ const saveKeywords = () => {
     const scrollCount = scrollCountInput ? parseInt(scrollCountInput) : null;
     const enhancedAnalysis = enhancedAnalysisCheckbox.checked;
     
+    const minViewThreshold = parseInt(document.getElementById('min-view-threshold').value) || 0;
+    
     chrome.runtime.sendMessage({ 
         command: 'save-keywords', 
         keywords: keywords, // Send array, not string
         addAsterisk: addAsterisk,
         maxChannels: maxChannels,
         scrollCount: scrollCount,
-        enhancedAnalysis: enhancedAnalysis
+        enhancedAnalysis: enhancedAnalysis,
+        minViewThreshold: minViewThreshold
     }, (response) => {
         if (chrome.runtime.lastError) {
             console.error('Error saving keywords:', chrome.runtime.lastError.message);

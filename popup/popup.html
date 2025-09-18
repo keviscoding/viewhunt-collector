@@ -58,6 +58,12 @@
             <p id="enhanced-status" class="enhanced-status"></p>
         </div>
         
+        <div class="threshold-section">
+            <p class="threshold-title">MINIMUM VIEW THRESHOLD</p>
+            <input type="number" id="min-view-threshold" placeholder="0 (no minimum)" class="threshold-input" min="0" step="1000">
+            <p class="threshold-help">💰 Only enhance channels with this minimum average views (0 = no limit). Higher values save quota but may miss good small channels.</p>
+        </div>
+        
         <div class="batch-info">
             <p class="batch-help">📦 Scraping pauses every 2,000 channels to process and save data, then continues. This prevents crashes and ensures no data loss.</p>
         </div>
