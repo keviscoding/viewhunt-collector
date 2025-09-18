@@ -44,6 +44,22 @@ body {
     padding-bottom: 120px; /* Space for fixed bottom nav */
 }
 
+/* DEBUG: Force bottom nav visibility on all screen sizes */
+.bottom-nav {
+    position: fixed !important;
+    bottom: 20px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    z-index: 999999 !important;
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    background: #ff0000 !important;
+    border: 5px solid #00ff00 !important;
+    width: 400px !important;
+    height: 80px !important;
+}
+
 /* Desktop-specific optimizations */
 @media (min-width: 769px) {
     body {
@@ -757,19 +773,20 @@ body {
     transform: translateX(-50%) !important;
     width: 90%;
     max-width: 500px;
-    background: var(--bg-card);
+    background: #ff0000 !important; /* DEBUG: Bright red background to make it obvious */
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--border-color);
+    border: 3px solid #00ff00 !important; /* DEBUG: Bright green border */
     border-radius: 20px;
     display: flex !important;
     padding: 0.75rem;
     z-index: 99999 !important; /* Maximum z-index to ensure visibility */
-    box-shadow: 0 10px 30px var(--shadow-medium);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 10px 30px rgba(255, 0, 0, 0.8) !important; /* DEBUG: Red shadow */
+    transition: none !important; /* DEBUG: Remove transitions */
     pointer-events: auto !important;
     visibility: visible !important;
     opacity: 1 !important;
+    height: 80px !important; /* DEBUG: Fixed height */
 }
 
 /* Desktop styles for bottom navigation */
@@ -784,10 +801,13 @@ body {
         min-width: 400px;
         padding: 1rem;
         z-index: 99999 !important;
-        box-shadow: 0 20px 40px var(--shadow-medium);
+        box-shadow: 0 20px 40px rgba(255, 0, 0, 0.8) !important; /* DEBUG: Red shadow */
         display: flex !important;
         visibility: visible !important;
         opacity: 1 !important;
+        background: #ff0000 !important; /* DEBUG: Bright red background */
+        border: 3px solid #00ff00 !important; /* DEBUG: Bright green border */
+        height: 100px !important; /* DEBUG: Fixed height for desktop */
     }
     
     .nav-btn {
