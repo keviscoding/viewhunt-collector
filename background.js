@@ -11,25 +11,53 @@ function parseDuration(duration) {
     return minutes * 60 + seconds;
 }
 
+// Zero-quota channel ID resolution (web scraping method)
+async function getChannelIdFromHandle(handleUrl) {
+    try {
+        const response = await fetch(handleUrl);
+        if (!response.ok) {
+            return null;
+        }
+        
+        const html = await response.text();
+        
+        // Look for channel ID in various places in the HTML
+        const channelIdMatch = html.match(/"channelId":"(UC[a-zA-Z0-9_-]{22})"/)
+            || html.match(/"externalId":"(UC[a-zA-Z0-9_-]{22})"/)
+            || html.match(/channel\/(UC[a-zA-Z0-9_-]{22})/)
+            || html.match(/"webCommandMetadata":{"url":"\/channel\/(UC[a-zA-Z0-9_-]{22})/)
+            || html.match(/property="og:url" content="https:\/\/www\.youtube\.com\/channel\/(UC[a-zA-Z0-9_-]{22})/)
+            || html.match(/"canonicalBaseUrl":"\/channel\/(UC[a-zA-Z0-9_-]{22})/)
+            || html.match(/"browseEndpoint":{"browseId":"(UC[a-zA-Z0-9_-]{22})/)
+            || html.match(/"browseId":"(UC[a-zA-Z0-9_-]{22})/)
+            || html.match(/\/channel\/(UC[a-zA-Z0-9_-]{22})/);
+        
+        if (channelIdMatch && channelIdMatch[1]) {
+            return channelIdMatch[1];
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Error getting channel ID from handle:', error);
+        return null;
+    }
+}
+
 async function resolveChannelId(channelUrl) {
     try {
         if (channelUrl.includes('/channel/UC')) {
             // Direct channel ID URL
             return channelUrl.split('/channel/')[1].split('/')[0];
         } else if (channelUrl.includes('/@')) {
-            // Handle format - need to resolve to channel ID
-            const handle = channelUrl.split('/@')[1].split('/')[0];
-            
-            // Search for channel by handle
-            const response = await fetch(
-                `${YOUTUBE_API_BASE}/search?part=snippet&type=channel&q=${handle}&key=${state.apiKey}`
-            );
-            
-            if (response.ok) {
-                const data = await response.json();
-                if (data.items && data.items.length > 0) {
-                    return data.items[0].snippet.channelId;
-                }
+            // Use zero-quota web scraping method!
+            console.log(`ViewHunt: 🔍 ZERO-QUOTA HANDLE RESOLUTION: ${channelUrl}`);
+            const channelId = await getChannelIdFromHandle(channelUrl);
+            if (channelId) {
+                console.log(`ViewHunt: ✅ FREE RESOLUTION SUCCESS: ${channelUrl} -> ${channelId}`);
+                return channelId;
+            } else {
+                console.warn(`ViewHunt: ❌ Could not resolve: ${channelUrl}`);
+                return null;
             }
         }
         return null;
