@@ -405,8 +405,8 @@ async function enhanceAllChannels() {
         
         // Show final database stats
         const totalEnhanced = await collection.countDocuments({ enhanced: true });
-        const totalChannels = await collection.countDocuments();
-        console.log(`📈 Database: ${totalEnhanced}/${totalChannels} channels now enhanced (${((totalEnhanced/totalChannels)*100).toFixed(1)}%)`);
+        const finalTotalChannels = await collection.countDocuments();
+        console.log(`📈 Database: ${totalEnhanced}/${finalTotalChannels} channels now enhanced (${((totalEnhanced/finalTotalChannels)*100).toFixed(1)}%)`);
         
     } catch (error) {
         console.error('❌ Fatal error during enhancement:', error);
