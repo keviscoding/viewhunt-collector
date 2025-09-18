@@ -51,10 +51,12 @@ async function resolveChannelId(channelUrl) {
             return channelUrl.split('/channel/')[1].split('/')[0];
         } else if (channelUrl.includes('/@')) {
             // Use zero-quota web scraping method!
-            console.log(`🔍 Resolving @handle: ${channelUrl}`);
+            console.log(`🔍 ZERO-QUOTA HANDLE RESOLUTION: ${channelUrl}`);
+            console.log(`💰 Quota Cost: 0 units (FREE web scraping method!)`);
             const channelId = await getChannelIdFromHandle(channelUrl);
             if (channelId) {
-                console.log(`✅ Resolved: ${channelUrl} -> ${channelId}`);
+                console.log(`✅ FREE RESOLUTION SUCCESS: ${channelUrl} -> ${channelId}`);
+                console.log(`💸 Saved 100 quota units by avoiding YouTube API search!`);
                 return channelId;
             } else {
                 console.warn(`❌ Could not resolve: ${channelUrl}`);
@@ -223,6 +225,7 @@ async function enhanceAllChannels() {
         let enhanced = 0;
         let failed = 0;
         let quotaUsed = 0;
+        let quotaSaved = 0; // Track quota saved from zero-quota handle resolution
         
         // Process channels in batches to respect rate limits
         const batchSize = 10; // Process 10 channels at a time
@@ -241,6 +244,12 @@ async function enhanceAllChannels() {
                             
                             const enhancedData = await getEnhancedChannelData(channel.channel_url, channel.channel_name);
                             quotaUsed += 3; // Each channel uses exactly 3 quota units (handle resolution is FREE!)
+                            
+                            // Track quota savings from zero-quota handle resolution
+                            if (channel.channel_url.includes('/@')) {
+                                quotaSaved += 100; // We saved 100 quota units by not using YouTube API search
+                                console.log(`💰 QUOTA SAVED: 100 units (Total saved so far: ${quotaSaved.toLocaleString()})`);
+                            }
                             
                             if (enhancedData) {
                                 // Update channel with enhanced data
@@ -293,7 +302,10 @@ async function enhanceAllChannels() {
         console.log(`   ✅ Enhanced: ${enhanced.toLocaleString()} channels`);
         console.log(`   ❌ Failed: ${failed.toLocaleString()} channels`);
         console.log(`   💰 Quota Used: ${quotaUsed.toLocaleString()} units`);
+        console.log(`   💸 Quota SAVED: ${quotaSaved.toLocaleString()} units (Zero-quota handle resolution!)`);
+        console.log(`   🎯 Total Quota WITHOUT Optimization: ${(quotaUsed + quotaSaved).toLocaleString()} units`);
         console.log(`   📈 Success Rate: ${((enhanced / processed) * 100).toFixed(1)}%`);
+        console.log(`   🚀 Efficiency Gain: ${quotaSaved > 0 ? ((quotaSaved / (quotaUsed + quotaSaved)) * 100).toFixed(1) : 0}% quota savings!`);
         console.log('');
         console.log('🚀 ViewHunt is now FULLY ENHANCED - EVERY CHANNEL has Recent Avg + Video Previews!');
         
