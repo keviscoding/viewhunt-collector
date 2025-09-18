@@ -221,11 +221,22 @@ async function enhanceAllChannels() {
         console.log(`🚀 Daily capacity: ~50,000 channels with 150K quota (vs previous 1,200!)`);
         console.log('');
         
+        // Quota monitoring dashboard
+        console.log('📊 QUOTA MONITORING DASHBOARD:');
+        console.log('═══════════════════════════════');
+        console.log(`🎯 Target: 3.0 units/channel (OPTIMAL)`);
+        console.log(`⚠️  Warning: >4.0 units/channel`);
+        console.log(`🚨 Danger: >5.0 units/channel`);
+        console.log(`💰 Daily Limit: 150,000 units`);
+        console.log(`🔄 Quota Resets: Midnight Pacific Time`);
+        console.log('');
+        
         let processed = 0;
         let enhanced = 0;
         let failed = 0;
         let quotaUsed = 0;
         let quotaSaved = 0; // Track quota saved from zero-quota handle resolution
+        const startTime = Date.now(); // Track processing time
         
         // Process channels in batches to respect rate limits
         const batchSize = 10; // Process 10 channels at a time
@@ -233,7 +244,25 @@ async function enhanceAllChannels() {
         for (let i = 0; i < channels.length; i += batchSize) {
             const batch = channels.slice(i, i + batchSize);
             
-            console.log(`\n📦 Batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(channels.length/batchSize)} (${batch.length} channels)`);
+            const batchNum = Math.floor(i/batchSize) + 1;
+            const totalBatches = Math.ceil(channels.length/batchSize);
+            
+            console.log(`\n📦 Batch ${batchNum}/${totalBatches} (${batch.length} channels)`);
+            
+            // Show milestone checkpoints
+            if (batchNum % 50 === 0 || batchNum === 1 || batchNum === totalBatches) {
+                const timeElapsed = Date.now() - startTime;
+                const channelsPerMinute = processed > 0 ? Math.round((processed / timeElapsed) * 60000) : 0;
+                const estimatedTimeLeft = processed > 0 ? Math.round(((channels.length - processed) / channelsPerMinute)) : 0;
+                
+                console.log(`🎯 MILESTONE CHECKPOINT:`);
+                console.log(`   📈 Processed: ${processed.toLocaleString()}/${channels.length.toLocaleString()} channels`);
+                console.log(`   💰 Quota Used: ${quotaUsed.toLocaleString()} units`);
+                console.log(`   💸 Quota Saved: ${quotaSaved.toLocaleString()} units`);
+                console.log(`   ⚡ Speed: ${channelsPerMinute} channels/minute`);
+                console.log(`   ⏱️  ETA: ${estimatedTimeLeft} minutes remaining`);
+                console.log(`   🎯 On Track: ${quotaUsed < 150000 ? '✅ YES' : '🚨 OVER LIMIT!'}`);
+            }
             
             // Process batch with staggered timing to avoid rate limits
             const promises = batch.map((channel, index) => {
@@ -284,9 +313,34 @@ async function enhanceAllChannels() {
             
             await Promise.all(promises);
             
-            // Progress update
+            // Progress update with comprehensive quota monitoring
             const progress = ((i + batchSize) / channels.length * 100).toFixed(1);
+            const quotaPerChannel = processed > 0 ? (quotaUsed / processed).toFixed(1) : 0;
+            const projectedTotal = Math.round((quotaUsed / processed) * channels.length);
+            const efficiencyPercent = quotaSaved > 0 ? ((quotaSaved / (quotaUsed + quotaSaved)) * 100).toFixed(1) : 0;
+            
+            // Quota health indicators
+            let quotaStatus = '🟢 EXCELLENT';
+            let quotaIcon = '✅';
+            if (quotaPerChannel > 5) {
+                quotaStatus = '🔴 DANGER - TOO HIGH!';
+                quotaIcon = '🚨';
+            } else if (quotaPerChannel > 4) {
+                quotaStatus = '🟡 WARNING';
+                quotaIcon = '⚠️';
+            }
+            
             console.log(`📊 Progress: ${progress}% | Enhanced: ${enhanced} | Failed: ${failed} | Quota: ${quotaUsed.toLocaleString()}`);
+            console.log(`${quotaIcon} Quota Health: ${quotaStatus} (${quotaPerChannel} units/channel)`);
+            console.log(`💸 Efficiency: ${efficiencyPercent}% savings | Projected Total: ${projectedTotal.toLocaleString()} units`);
+            
+            // Alert if quota usage is too high
+            if (quotaPerChannel > 5) {
+                console.log('🚨 QUOTA ALERT: Usage is too high! Expected 3 units/channel, getting ' + quotaPerChannel);
+                console.log('🔍 Check if handle resolution is using API instead of web scraping!');
+            }
+            
+            console.log(''); // Empty line for readability
             
             // Delay between batches to respect rate limits
             if (i + batchSize < channels.length) {
@@ -306,6 +360,26 @@ async function enhanceAllChannels() {
         console.log(`   🎯 Total Quota WITHOUT Optimization: ${(quotaUsed + quotaSaved).toLocaleString()} units`);
         console.log(`   📈 Success Rate: ${((enhanced / processed) * 100).toFixed(1)}%`);
         console.log(`   🚀 Efficiency Gain: ${quotaSaved > 0 ? ((quotaSaved / (quotaUsed + quotaSaved)) * 100).toFixed(1) : 0}% quota savings!`);
+        
+        // Final quota health assessment
+        const finalQuotaPerChannel = processed > 0 ? (quotaUsed / processed).toFixed(2) : 0;
+        console.log('');
+        console.log('🏥 FINAL QUOTA HEALTH CHECK:');
+        console.log('═══════════════════════════════');
+        if (finalQuotaPerChannel <= 3.5) {
+            console.log(`✅ EXCELLENT: ${finalQuotaPerChannel} units/channel (Target: 3.0)`);
+            console.log(`🎯 Zero-quota handle resolution working perfectly!`);
+        } else if (finalQuotaPerChannel <= 4.5) {
+            console.log(`⚠️  WARNING: ${finalQuotaPerChannel} units/channel (Target: 3.0)`);
+            console.log(`🔍 Some handles may have used API instead of web scraping`);
+        } else {
+            console.log(`🚨 DANGER: ${finalQuotaPerChannel} units/channel (Target: 3.0)`);
+            console.log(`❌ Zero-quota optimization may have failed!`);
+        }
+        
+        const quotaRemaining = 150000 - quotaUsed;
+        console.log(`💰 Quota Remaining Today: ${quotaRemaining.toLocaleString()} units`);
+        console.log(`📊 Could Process ${Math.floor(quotaRemaining / 3).toLocaleString()} More Channels Today`);
         console.log('');
         console.log('🚀 ViewHunt is now FULLY ENHANCED - EVERY CHANNEL has Recent Avg + Video Previews!');
         
