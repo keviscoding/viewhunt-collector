@@ -44,7 +44,7 @@ body {
     padding-bottom: 120px; /* Space for fixed bottom nav */
 }
 
-/* DEBUG: Force bottom nav visibility on all screen sizes */
+/* ULTIMATE FIX: Force bottom nav to stay fixed regardless of content */
 .bottom-nav {
     position: fixed !important;
     bottom: 20px !important;
@@ -54,10 +54,16 @@ body {
     display: flex !important;
     visibility: visible !important;
     opacity: 1 !important;
-    background: #ff0000 !important;
-    border: 5px solid #00ff00 !important;
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-color) !important;
     width: 400px !important;
     height: 80px !important;
+    /* Prevent any interference from parent elements */
+    margin: 0 !important;
+    padding: 0.75rem !important;
+    box-sizing: border-box !important;
+    /* Ensure it's always on top of everything */
+    isolation: isolate !important;
 }
 
 /* Desktop-specific optimizations */
@@ -96,6 +102,9 @@ body {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+    /* Ensure the app container doesn't interfere with fixed navigation */
+    position: relative !important;
+    z-index: 1 !important;
 }
 
 /* Header - Ultra Modern Glassmorphism */
@@ -765,49 +774,14 @@ body {
     transform: none !important;
 }
 
-/* Bottom Navigation - Modern Floating Design */
-.bottom-nav {
-    position: fixed !important;
-    bottom: 1rem !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
-    width: 90%;
-    max-width: 500px;
-    background: #ff0000 !important; /* DEBUG: Bright red background to make it obvious */
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 3px solid #00ff00 !important; /* DEBUG: Bright green border */
-    border-radius: 20px;
-    display: flex !important;
-    padding: 0.75rem;
-    z-index: 99999 !important; /* Maximum z-index to ensure visibility */
-    box-shadow: 0 10px 30px rgba(255, 0, 0, 0.8) !important; /* DEBUG: Red shadow */
-    transition: none !important; /* DEBUG: Remove transitions */
-    pointer-events: auto !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    height: 80px !important; /* DEBUG: Fixed height */
-}
+/* This rule is now handled by the ULTIMATE FIX above */
 
 /* Desktop styles for bottom navigation */
 @media (min-width: 769px) {
     .bottom-nav {
-        position: fixed !important;
-        bottom: 2rem !important;
-        left: 50% !important;
-        transform: translateX(-50%) !important;
-        width: auto;
-        max-width: 600px;
-        min-width: 400px;
-        padding: 1rem;
-        z-index: 99999 !important;
-        box-shadow: 0 20px 40px rgba(255, 0, 0, 0.8) !important; /* DEBUG: Red shadow */
-        display: flex !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-        background: #ff0000 !important; /* DEBUG: Bright red background */
-        border: 3px solid #00ff00 !important; /* DEBUG: Bright green border */
-        height: 100px !important; /* DEBUG: Fixed height for desktop */
+        width: 500px !important;
+        height: 90px !important;
+        bottom: 30px !important;
     }
     
     .nav-btn {
