@@ -1,5 +1,5 @@
 // Test script to verify zero-quota handle resolution works
-const fetch = require('node-fetch');
+// Using built-in fetch (Node.js 18+)
 
 console.log('🧪 ZERO-QUOTA HANDLE RESOLUTION TEST');
 console.log('====================================');
