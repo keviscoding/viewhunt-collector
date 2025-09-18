@@ -192,26 +192,45 @@ async function enhanceAllChannels() {
         const db = client.db('viewhuntv2');
         const collection = db.collection('channels');
         
-        console.log('🚀 Starting MASSIVE database enhancement...');
-        console.log('📊 This will add Recent Avg + video previews to EVERY SINGLE CHANNEL!');
-        console.log('🎯 No view limitations - enhancing ALL channels in the database!');
+        console.log('🚀 Starting HIGH-QUALITY database enhancement...');
+        console.log('📊 This will add Recent Avg + video previews to HIGH-PERFORMING CHANNELS!');
+        console.log('🎯 Quality Focus: Only channels with ≥120K average views (sorted highest to lowest)!');
         console.log('');
         
-        // Get ALL channels that need enhancement (no view limitations!)
+        // Get HIGH-QUALITY channels that need enhancement (≥120K views only!)
         const channels = await collection.find({
-            $or: [
-                { enhanced: { $ne: true } },
-                { enhanced: { $exists: false } },
-                { recent_average: { $exists: false } },
-                { recent_shorts: { $exists: false } }
+            $and: [
+                {
+                    $or: [
+                        { enhanced: { $ne: true } },
+                        { enhanced: { $exists: false } },
+                        { recent_average: { $exists: false } },
+                        { recent_shorts: { $exists: false } }
+                    ]
+                },
+                {
+                    view_count: { $gte: 120000 } // Only channels with ≥120K average views
+                }
             ]
-        }).toArray();
+        }).sort({ view_count: -1 }).toArray(); // Sort highest to lowest views
         
-        console.log(`📈 Found ${channels.length} channels that need enhancement (ALL CHANNELS - no view limits!)`);
+        console.log(`📈 Found ${channels.length} HIGH-QUALITY channels that need enhancement (≥120K views only!)`);
         
         if (channels.length === 0) {
-            console.log('✅ All channels are already enhanced!');
+            console.log('✅ All high-quality channels (≥120K views) are already enhanced!');
             return;
+        }
+        
+        // Show quality metrics
+        const totalChannels = await collection.countDocuments();
+        const highQualityPercent = ((channels.length / totalChannels) * 100).toFixed(1);
+        console.log(`📊 Quality Filter: ${channels.length}/${totalChannels} channels qualify (${highQualityPercent}% are high-quality)`);
+        
+        // Show view count range
+        if (channels.length > 0) {
+            const highestViews = channels[0].view_count?.toLocaleString() || 'N/A';
+            const lowestViews = channels[channels.length - 1].view_count?.toLocaleString() || 'N/A';
+            console.log(`📈 View Range: ${highestViews} (highest) → ${lowestViews} (lowest) → 120K+ (minimum)`);
         }
         
         // Show quota estimation (now much more accurate!)
@@ -229,6 +248,7 @@ async function enhanceAllChannels() {
         console.log(`🚨 Danger: >5.0 units/channel`);
         console.log(`💰 Daily Limit: 150,000 units`);
         console.log(`🔄 Quota Resets: Midnight Pacific Time`);
+        console.log(`🏆 Strategy: HIGH-QUALITY FIRST (≥120K views)`);
         console.log('');
         
         let processed = 0;
@@ -381,7 +401,7 @@ async function enhanceAllChannels() {
         console.log(`💰 Quota Remaining Today: ${quotaRemaining.toLocaleString()} units`);
         console.log(`📊 Could Process ${Math.floor(quotaRemaining / 3).toLocaleString()} More Channels Today`);
         console.log('');
-        console.log('🚀 ViewHunt is now FULLY ENHANCED - EVERY CHANNEL has Recent Avg + Video Previews!');
+        console.log('🚀 ViewHunt HIGH-QUALITY channels are now ENHANCED - All ≥120K view channels have Recent Avg + Video Previews!');
         
         // Show final database stats
         const totalEnhanced = await collection.countDocuments({ enhanced: true });
