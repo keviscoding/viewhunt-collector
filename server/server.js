@@ -1824,6 +1824,7 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
         if (isAdmin) {
             // Get filter parameters for admin
             const enhancedOnly = req.query.enhancedOnly === 'true';
+            const activeRecently = req.query.activeRecently === 'true';
             const minRecentAvg = parseInt(req.query.minRecentAvg) || 0;
             const maxRecentAvg = req.query.maxRecentAvg ? parseInt(req.query.maxRecentAvg) : null;
             const minViews = parseInt(req.query.minViews) || 0;
@@ -1842,6 +1843,17 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
             if (enhancedOnly) {
                 approvedMatchQuery.enhanced = true;
                 approvedMatchQuery.recent_average = { $exists: true, $ne: null };
+            }
+            
+            // Add active recently filter
+            if (activeRecently) {
+                const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+                approvedMatchQuery.recent_shorts = {
+                    $elemMatch: {
+                        publishedAt: { $gte: twoWeeksAgo }
+                    }
+                };
+                approvedMatchQuery.enhanced = true; // Active recently requires enhanced data
             }
             
             // Add recent average filters
@@ -1975,6 +1987,7 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
         
         // Filter parameters
         const enhancedOnly = req.query.enhancedOnly === 'true';
+        const activeRecently = req.query.activeRecently === 'true';
         const minRecentAvg = parseInt(req.query.minRecentAvg) || 0;
         const maxRecentAvg = req.query.maxRecentAvg ? parseInt(req.query.maxRecentAvg) : null;
         const minViews = parseInt(req.query.minViews) || 0;
@@ -2001,6 +2014,18 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
         if (enhancedOnly) {
             matchQuery.enhanced = true;
             matchQuery.recent_average = { $exists: true, $ne: null };
+        }
+        
+        // Add active recently filter if specified
+        if (activeRecently) {
+            const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+            matchQuery.recent_shorts = {
+                $elemMatch: {
+                    publishedAt: { $gte: twoWeeksAgo }
+                }
+            };
+            // Also ensure we have at least 4 recent videos (we'll filter this in aggregation)
+            matchQuery.enhanced = true; // Active recently requires enhanced data
         }
         
         // Add recent average filters if specified

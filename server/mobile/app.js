@@ -110,6 +110,17 @@ class ViewHuntApp {
             }
         });
 
+        // Active Recently filter
+        document.getElementById('active-recently').addEventListener('change', () => {
+            if (this.currentView === 'pending') {
+                this.loadPendingChannels(1);
+            } else if (this.currentView === 'approved') {
+                this.loadApprovedChannels();
+            } else {
+                this.applyFilters();
+            }
+        });
+
         // Apply Filters button
         document.getElementById('apply-filters-btn').addEventListener('click', () => {
             if (this.currentView === 'pending') {
@@ -402,6 +413,7 @@ class ViewHuntApp {
 
         const primarySort = document.getElementById('primary-sort').value;
         const enhancedOnly = document.getElementById('enhanced-only')?.checked || false;
+        const activeRecently = document.getElementById('active-recently')?.checked || false;
 
         // Apply Enhanced filter for approved channels
         let filteredChannels = [...this.channels];
@@ -410,6 +422,19 @@ class ViewHuntApp {
             filteredChannels = filteredChannels.filter(channel => 
                 channel.enhanced === true && (channel.recent_average || channel.recentAverage)
             );
+        }
+        
+        if (activeRecently) {
+            filteredChannels = filteredChannels.filter(channel => {
+                const recentShorts = channel.recent_shorts || [];
+                const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+                
+                const activeVideos = recentShorts.filter(video => 
+                    new Date(video.publishedAt) >= twoWeeksAgo
+                );
+                
+                return activeVideos.length >= 4;
+            });
         }
 
         // Simple sorting for approved channels
@@ -538,6 +563,7 @@ class ViewHuntApp {
             const primarySort = document.getElementById('primary-sort').value;
             const secondarySort = document.getElementById('secondary-sort').value;
             const enhancedOnly = document.getElementById('enhanced-only').checked;
+            const activeRecently = document.getElementById('active-recently').checked;
             const minRecentAvg = this.parseFormattedNumber(document.getElementById('min-recent-avg').value) || 0;
             const maxRecentAvg = document.getElementById('max-recent-avg').value ? this.parseFormattedNumber(document.getElementById('max-recent-avg').value) : null;
 
@@ -559,6 +585,7 @@ class ViewHuntApp {
             
             // Add filter parameters if they have values
             if (enhancedOnly) params.append('enhancedOnly', 'true');
+            if (activeRecently) params.append('activeRecently', 'true');
             if (minRecentAvg > 0) params.append('minRecentAvg', minRecentAvg.toString());
             if (maxRecentAvg) params.append('maxRecentAvg', maxRecentAvg.toString());
 
@@ -657,6 +684,7 @@ class ViewHuntApp {
                 // Get filter values
                 const primarySort = document.getElementById('primary-sort')?.value || 'approval-time-desc';
                 const enhancedOnly = document.getElementById('enhanced-only')?.checked || false;
+                const activeRecently = document.getElementById('active-recently')?.checked || false;
                 const minRecentAvg = this.parseFormattedNumber(document.getElementById('min-recent-avg')?.value || '0');
                 const maxRecentAvg = document.getElementById('max-recent-avg')?.value ? this.parseFormattedNumber(document.getElementById('max-recent-avg').value) : null;
                 const minViews = this.parseFormattedNumber(document.getElementById('min-views')?.value || '0');
@@ -668,6 +696,7 @@ class ViewHuntApp {
 
                 params.append('sortBy', primarySort);
                 if (enhancedOnly) params.append('enhancedOnly', 'true');
+                if (activeRecently) params.append('activeRecently', 'true');
                 if (minRecentAvg > 0) params.append('minRecentAvg', minRecentAvg.toString());
                 if (maxRecentAvg) params.append('maxRecentAvg', maxRecentAvg.toString());
 
