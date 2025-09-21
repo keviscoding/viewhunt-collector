@@ -2110,41 +2110,58 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
         let channels, totalChannels;
         
         if (activeRecently) {
-            // Use aggregation pipeline for Active Recently filter
-            const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-            
-            const pipeline = [
-                { $match: matchQuery },
-                {
-                    $addFields: {
-                        recentVideosCount: {
-                            $size: {
-                                $filter: {
-                                    input: { $ifNull: ["$recent_shorts", []] },
-                                    cond: { 
-                                        $gte: [
-                                            { $toDate: "$$this.publishedAt" },
-                                            twoWeeksAgo
-                                        ]
+            try {
+                // Use aggregation pipeline for Active Recently filter
+                const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+                console.log('Active Recently filter - twoWeeksAgo:', twoWeeksAgo);
+                
+                // Simplified pipeline to avoid complex date operations
+                const pipeline = [
+                    { $match: matchQuery },
+                    {
+                        $addFields: {
+                            recentVideosCount: {
+                                $size: {
+                                    $filter: {
+                                        input: { $ifNull: ["$recent_shorts", []] },
+                                        cond: { 
+                                            $and: [
+                                                { $ne: ["$$this.publishedAt", null] },
+                                                { $ne: ["$$this.publishedAt", ""] },
+                                                { $gte: ["$$this.publishedAt", twoWeeksAgo.toISOString()] }
+                                            ]
+                                        }
                                     }
                                 }
                             }
                         }
+                    },
+                    { $match: { recentVideosCount: { $gte: 4 } } },
+                    { $sort: sortQuery },
+                    {
+                        $facet: {
+                            channels: [{ $skip: skip }, { $limit: limit }],
+                            totalCount: [{ $count: "count" }]
+                        }
                     }
-                },
-                { $match: { recentVideosCount: { $gte: 4 } } },
-                { $sort: sortQuery },
-                {
-                    $facet: {
-                        channels: [{ $skip: skip }, { $limit: limit }],
-                        totalCount: [{ $count: "count" }]
-                    }
-                }
-            ];
-            
-            const result = await db.collection('channels').aggregate(pipeline).toArray();
-            channels = result[0].channels;
-            totalChannels = result[0].totalCount[0]?.count || 0;
+                ];
+                
+                console.log('Executing aggregation pipeline for activeRecently');
+                const result = await db.collection('channels').aggregate(pipeline).toArray();
+                channels = result[0].channels;
+                totalChannels = result[0].totalCount[0]?.count || 0;
+                console.log('Active Recently results:', { totalChannels, channelsCount: channels.length });
+            } catch (error) {
+                console.error('Error in activeRecently aggregation:', error);
+                // Fallback to simple query without activeRecently filter
+                totalChannels = await db.collection('channels').countDocuments(matchQuery);
+                channels = await db.collection('channels')
+                    .find(matchQuery)
+                    .sort(sortQuery)
+                    .skip(skip)
+                    .limit(limit)
+                    .toArray();
+            }
         } else {
             // Use simple query for other filters
             totalChannels = await db.collection('channels').countDocuments(matchQuery);
