@@ -1927,7 +1927,12 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
                                 $size: {
                                     $filter: {
                                         input: { $ifNull: ["$recent_shorts", []] },
-                                        cond: { $gte: [{ $dateFromString: { dateString: "$$this.publishedAt" } }, new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)] }
+                                        cond: { 
+                                            $gte: [
+                                                { $toDate: "$$this.publishedAt" },
+                                                new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
+                                            ]
+                                        }
                                     }
                                 }
                             }
@@ -2116,7 +2121,12 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
                             $size: {
                                 $filter: {
                                     input: { $ifNull: ["$recent_shorts", []] },
-                                    cond: { $gte: [{ $dateFromString: { dateString: "$$this.publishedAt" } }, twoWeeksAgo] }
+                                    cond: { 
+                                        $gte: [
+                                            { $toDate: "$$this.publishedAt" },
+                                            twoWeeksAgo
+                                        ]
+                                    }
                                 }
                             }
                         }
