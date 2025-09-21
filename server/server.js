@@ -1845,15 +1845,10 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
                 approvedMatchQuery.recent_average = { $exists: true, $ne: null };
             }
             
-            // Add active recently filter
+            // Active recently filter will be handled in aggregation pipeline
             if (activeRecently) {
-                const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-                approvedMatchQuery.recent_shorts = {
-                    $elemMatch: {
-                        publishedAt: { $gte: twoWeeksAgo }
-                    }
-                };
-                approvedMatchQuery.enhanced = true; // Active recently requires enhanced data
+                approvedMatchQuery.enhanced = true;
+                approvedMatchQuery.recent_shorts = { $exists: true, $ne: null, $not: { $size: 0 } };
             }
             
             // Add recent average filters
@@ -1926,6 +1921,20 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
                             }
                         }
                     },
+                    ...(activeRecently ? [{
+                        $addFields: {
+                            recentVideosCount: {
+                                $size: {
+                                    $filter: {
+                                        input: { $ifNull: ["$recent_shorts", []] },
+                                        cond: { $gte: [{ $dateFromString: { dateString: "$$this.publishedAt" } }, new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)] }
+                                    }
+                                }
+                            }
+                        }
+                    }, {
+                        $match: { recentVideosCount: { $gte: 4 } }
+                    }] : []),
                     { $sort: { first_approval_time: -1, approval_count: -1 } },
                     { $limit: 200 }
                 ])
@@ -2016,16 +2025,10 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
             matchQuery.recent_average = { $exists: true, $ne: null };
         }
         
-        // Add active recently filter if specified
+        // Active recently filter requires enhanced data and will be handled in aggregation
         if (activeRecently) {
-            const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-            matchQuery.recent_shorts = {
-                $elemMatch: {
-                    publishedAt: { $gte: twoWeeksAgo }
-                }
-            };
-            // Also ensure we have at least 4 recent videos (we'll filter this in aggregation)
-            matchQuery.enhanced = true; // Active recently requires enhanced data
+            matchQuery.enhanced = true;
+            matchQuery.recent_shorts = { $exists: true, $ne: null, $not: { $size: 0 } };
         }
         
         // Add recent average filters if specified
@@ -2099,8 +2102,64 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
         // Always add _id for consistent pagination
         sortQuery._id = 1;
         
-        // Get total count
-        const totalChannels = await db.collection('channels').countDocuments(matchQuery);
+        let channels, totalChannels;
+        
+        if (activeRecently) {
+            // Use aggregation pipeline for Active Recently filter
+            const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+            
+            const pipeline = [
+                { $match: matchQuery },
+                {
+                    $addFields: {
+                        recentVideosCount: {
+                            $size: {
+                                $filter: {
+                                    input: { $ifNull: ["$recent_shorts", []] },
+                                    cond: { $gte: [{ $dateFromString: { dateString: "$$this.publishedAt" } }, twoWeeksAgo] }
+                                }
+                            }
+                        }
+                    }
+                },
+                { $match: { recentVideosCount: { $gte: 4 } } },
+                { $sort: sortQuery },
+                {
+                    $facet: {
+                        channels: [{ $skip: skip }, { $limit: limit }],
+                        totalCount: [{ $count: "count" }]
+                    }
+                }
+            ];
+            
+            const result = await db.collection('channels').aggregate(pipeline).toArray();
+            channels = result[0].channels;
+            totalChannels = result[0].totalCount[0]?.count || 0;
+        } else {
+            // Use simple query for other filters
+            totalChannels = await db.collection('channels').countDocuments(matchQuery);
+            
+            if (totalChannels === 0) {
+                return res.json({
+                    channels: [],
+                    pagination: {
+                        currentPage: page,
+                        totalPages: 0,
+                        totalChannels: 0,
+                        hasNext: false,
+                        hasPrev: false
+                    }
+                });
+            }
+            
+            channels = await db.collection('channels')
+                .find(matchQuery)
+                .sort(sortQuery)
+                .skip(skip)
+                .limit(limit)
+                .toArray();
+        }
+        
         const totalPages = Math.ceil(totalChannels / limit);
         
         if (totalChannels === 0) {
@@ -2115,14 +2174,6 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
                 }
             });
         }
-        
-        // Get channels
-        const channels = await db.collection('channels')
-            .find(matchQuery)
-            .sort(sortQuery)
-            .skip(skip)
-            .limit(limit)
-            .toArray();
         
         res.json({
             channels,
