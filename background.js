@@ -87,7 +87,7 @@ let state = {
     addAsterisk: true,
     enhancedAnalysis: true, // Default to enabled
     totalProcessed: 0, // Track total channels processed across all batches
-    batchSize: 2000 // Process in batches of 2000 channels
+    batchSize: 500 // Process in batches of 500 channels (reduced for memory optimization)
 };
 
 // Broadcast state to all connected frontend instances
@@ -201,9 +201,14 @@ async function stopProcessing() {
     
     await chrome.storage.local.set({ state: state });
     
-    // Keep tabs open - don't close them when stopping
+    // Close tab when stopping to clean up
     if (state.activeTabId) {
-        console.log('ViewHunt Background: Keeping tab open after stop');
+        try {
+            console.log(`ViewHunt Background: Closing tab ${state.activeTabId} after stop`);
+            await chrome.tabs.remove(state.activeTabId);
+        } catch (error) {
+            console.log(`ViewHunt Background: Tab ${state.activeTabId} already closed or doesn't exist`);
+        }
         state.activeTabId = null;
     }
     
@@ -270,7 +275,7 @@ async function processNextKeyword() {
                 const tabInfo = await chrome.tabs.get(tab.id).catch(() => null);
                 if (!tabInfo || state.activeTabId !== tab.id) {
                     console.log(`ViewHunt Background: Tab ${tab.id} no longer exists or was replaced`);
-                    moveToNextKeyword();
+                    await moveToNextKeyword();
                     return;
                 }
                 
@@ -282,13 +287,13 @@ async function processNextKeyword() {
             } catch (error) {
                 console.error('ViewHunt Background: Error injecting content script:', error);
                 // If injection fails, move to next keyword
-                moveToNextKeyword();
+                await moveToNextKeyword();
             }
         }, 3000);
         
     } catch (error) {
         console.error('ViewHunt Background: Error creating tab:', error);
-        moveToNextKeyword();
+        await moveToNextKeyword();
     }
 }
 
@@ -330,10 +335,15 @@ async function processBatchAndSend() {
 }
 
 // Move to next keyword
-function moveToNextKeyword() {
-    // Keep tabs open - don't close them when moving to next keyword
+async function moveToNextKeyword() {
+    // Close current tab to save memory (only keep 1 tab at a time)
     if (state.activeTabId) {
-        console.log('ViewHunt Background: Keeping tab open, moving to next keyword');
+        try {
+            console.log(`ViewHunt Background: Closing tab ${state.activeTabId} to save memory`);
+            await chrome.tabs.remove(state.activeTabId);
+        } catch (error) {
+            console.log(`ViewHunt Background: Tab ${state.activeTabId} already closed or doesn't exist`);
+        }
         state.activeTabId = null;
     }
     
@@ -359,7 +369,7 @@ async function handleScrapingComplete(data) {
     
     // Check if we need to pause and process a batch
     if (state.results.length >= state.batchSize) {
-        console.log(`ViewHunt Background: Reached batch size of ${state.results.length}. Pausing scraping to process batch.`);
+        console.log(`ViewHunt Background: Reached batch size of ${state.results.length}/500. Pausing scraping to process batch and free memory.`);
         state.status = `Pausing scraping to process batch of ${state.results.length} channels...`;
         broadcastState();
         
@@ -376,7 +386,7 @@ async function handleScrapingComplete(data) {
     }
     
     // Move to next keyword
-    moveToNextKeyword();
+    await moveToNextKeyword();
 }
 
 // Process subscriber data using YouTube API
