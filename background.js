@@ -77,6 +77,7 @@ let state = {
     isProcessing: false,
     stopRequested: false,
     minViewThreshold: 0, // Default: no minimum view threshold
+    lastUpdateTime: Date.now(), // Track last activity
     status: 'Idle',
     currentKeywordIndex: 0,
     activeTabId: null,
@@ -95,6 +96,9 @@ function broadcastState() {
     const currentBatchSize = state.results.length;
     const totalProcessed = state.totalProcessed;
     
+    // Update timestamp for recovery mechanism
+    state.lastUpdateTime = Date.now();
+    
     const stateData = {
         status: state.status,
         isProcessing: state.isProcessing,
@@ -112,6 +116,30 @@ function broadcastState() {
         console.log("ViewHunt Background: Could not broadcast to popup (popup may be closed)");
     });
 }
+
+// Recovery mechanism - check if processing got stuck
+setInterval(async () => {
+    if (state.isProcessing && state.status && !state.status.includes('Processing') && !state.status.includes('Scraping')) {
+        const timeSinceLastUpdate = Date.now() - (state.lastUpdateTime || 0);
+        if (timeSinceLastUpdate > 60000) { // 1 minute without updates
+            console.log('ViewHunt Background: Processing appears stuck, attempting recovery...');
+            try {
+                await moveToNextKeyword();
+            } catch (error) {
+                console.error('ViewHunt Background: Recovery failed:', error);
+                state.isProcessing = false;
+                state.status = 'Processing stopped. Click Start to retry.';
+                await chrome.storage.local.set({ state: state });
+                broadcastState();
+            }
+        }
+    }
+}, 30000); // Check every 30 seconds
+
+// Keep service worker alive with periodic heartbeat
+setInterval(() => {
+    console.log('ViewHunt Background: Heartbeat - keeping service worker alive');
+}, 25000); // Every 25 seconds
 
 // Listen for messages from popup or content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -163,8 +191,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
         sendResponse({ success: true });
     } else if (message.type === 'scraping-complete') {
-        handleScrapingComplete(message.data);
-        sendResponse({ success: true });
+        try {
+            await handleScrapingComplete(message.data);
+            sendResponse({ success: true });
+        } catch (error) {
+            console.error('ViewHunt Background: Error handling scraping complete:', error);
+            // Continue processing despite error
+            try {
+                await moveToNextKeyword();
+            } catch (moveError) {
+                console.error('ViewHunt Background: Error moving to next keyword:', moveError);
+                state.isProcessing = false;
+                state.status = 'Processing stopped due to error. Click Start to retry.';
+                await chrome.storage.local.set({ state: state });
+                broadcastState();
+            }
+            sendResponse({ success: false, error: error.message });
+        }
     } else if (message.type === 'scraping-status') {
         state.status = message.status;
         broadcastState();
@@ -190,7 +233,15 @@ async function startProcessing() {
     await chrome.storage.local.set({ state: state });
     broadcastState();
     
-    processNextKeyword();
+    try {
+        await processNextKeyword();
+    } catch (error) {
+        console.error('ViewHunt Background: Error starting processing:', error);
+        state.isProcessing = false;
+        state.status = 'Error starting. Please try again.';
+        await chrome.storage.local.set({ state: state });
+        broadcastState();
+    }
 }
 
 // Stop processing
@@ -348,7 +399,23 @@ async function moveToNextKeyword() {
     }
     
     state.currentKeywordIndex++;
-    setTimeout(() => processNextKeyword(), 1000);
+    
+    // Save state before continuing
+    await chrome.storage.local.set({ state: state });
+    
+    // Continue with next keyword after a short delay
+    setTimeout(async () => {
+        try {
+            await processNextKeyword();
+        } catch (error) {
+            console.error('ViewHunt Background: Error processing next keyword:', error);
+            // Reset processing state on error
+            state.isProcessing = false;
+            state.status = 'Error occurred. Click Start to retry.';
+            await chrome.storage.local.set({ state: state });
+            broadcastState();
+        }
+    }, 1000);
 }
 
 // Handle completed scraping data
