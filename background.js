@@ -117,24 +117,18 @@ function broadcastState() {
     });
 }
 
-// Recovery mechanism - check if processing got stuck
-setInterval(async () => {
-    if (state.isProcessing && state.status && !state.status.includes('Processing') && !state.status.includes('Scraping')) {
-        const timeSinceLastUpdate = Date.now() - (state.lastUpdateTime || 0);
-        if (timeSinceLastUpdate > 60000) { // 1 minute without updates
-            console.log('ViewHunt Background: Processing appears stuck, attempting recovery...');
-            try {
-                await moveToNextKeyword();
-            } catch (error) {
-                console.error('ViewHunt Background: Recovery failed:', error);
-                state.isProcessing = false;
-                state.status = 'Processing stopped. Click Start to retry.';
-                await chrome.storage.local.set({ state: state });
-                broadcastState();
-            }
+// Recovery mechanism - check if processing got stuck (simplified)
+setInterval(() => {
+    if (state.isProcessing && state.lastUpdateTime) {
+        const timeSinceLastUpdate = Date.now() - state.lastUpdateTime;
+        if (timeSinceLastUpdate > 120000) { // 2 minutes without updates
+            console.log('ViewHunt Background: Processing appears stuck for 2+ minutes');
+            state.isProcessing = false;
+            state.status = 'Processing timed out. Click Start to retry.';
+            broadcastState();
         }
     }
-}, 30000); // Check every 30 seconds
+}, 60000); // Check every 60 seconds
 
 // Keep service worker alive with periodic heartbeat
 setInterval(() => {
@@ -151,11 +145,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     
     if (message.command === 'start') {
-        startProcessing();
-        sendResponse({ success: true });
+        startProcessing().then(() => {
+            sendResponse({ success: true });
+        }).catch(error => {
+            console.error('ViewHunt Background: Error starting:', error);
+            sendResponse({ success: false, error: error.message });
+        });
+        return true; // Keep message channel open for async response
     } else if (message.command === 'stop') {
-        stopProcessing();
-        sendResponse({ success: true });
+        stopProcessing().then(() => {
+            sendResponse({ success: true });
+        }).catch(error => {
+            console.error('ViewHunt Background: Error stopping:', error);
+            sendResponse({ success: false, error: error.message });
+        });
+        return true; // Keep message channel open for async response
     } else if (message.command === 'get-status') {
         sendResponse({ 
             isProcessing: state.isProcessing, 
@@ -191,26 +195,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
         sendResponse({ success: true });
     } else if (message.type === 'scraping-complete') {
-        try {
-            await handleScrapingComplete(message.data);
+        handleScrapingComplete(message.data).then(() => {
             sendResponse({ success: true });
-        } catch (error) {
+        }).catch(async (error) => {
             console.error('ViewHunt Background: Error handling scraping complete:', error);
             // Continue processing despite error
             try {
                 await moveToNextKeyword();
+                sendResponse({ success: true });
             } catch (moveError) {
                 console.error('ViewHunt Background: Error moving to next keyword:', moveError);
                 state.isProcessing = false;
                 state.status = 'Processing stopped due to error. Click Start to retry.';
                 await chrome.storage.local.set({ state: state });
                 broadcastState();
+                sendResponse({ success: false, error: error.message });
             }
-            sendResponse({ success: false, error: error.message });
-        }
+        });
+        return true; // Keep message channel open for async response
     } else if (message.type === 'scraping-status') {
         state.status = message.status;
         broadcastState();
+        sendResponse({ success: true });
     } else {
         console.warn('ViewHunt Background: Unknown message:', message);
         sendResponse({ success: false, error: 'Unknown command' });
