@@ -88,8 +88,73 @@ let state = {
     addAsterisk: true,
     enhancedAnalysis: true, // Default to enabled
     totalProcessed: 0, // Track total channels processed across all batches
-    batchSize: 500 // Process in batches of 500 channels (reduced for memory optimization)
+    batchSize: 500, // Process in batches of 500 channels (reduced for memory optimization)
+    // Persistence tracking for overnight processing
+    sessionId: Date.now(), // Unique session ID
+    completedKeywords: [], // Track which keywords are fully processed
+    failedKeywords: [], // Track keywords that failed
+    startTime: null, // When processing started
+    lastSaveTime: null, // When state was last saved
+    processedChannelUrlsArray: [] // Serializable version of Set
 };
+
+// Save state to persistent storage
+async function saveState() {
+    try {
+        // Convert Set to Array for storage
+        state.processedChannelUrlsArray = Array.from(state.processedChannelUrls);
+        state.lastSaveTime = Date.now();
+        
+        await chrome.storage.local.set({ 
+            persistentState: state,
+            sessionId: state.sessionId
+        });
+        
+        console.log(`ViewHunt Background: State saved - Keyword ${state.currentKeywordIndex}/${state.keywords.length}, ${state.totalProcessed} processed`);
+    } catch (error) {
+        console.error('ViewHunt Background: Error saving state:', error);
+    }
+}
+
+// Load state from persistent storage
+async function loadState() {
+    try {
+        const result = await chrome.storage.local.get(['persistentState', 'sessionId']);
+        
+        if (result.persistentState && result.sessionId) {
+            const savedState = result.persistentState;
+            
+            // Restore state
+            Object.assign(state, savedState);
+            
+            // Restore Set from Array
+            state.processedChannelUrls = new Set(savedState.processedChannelUrlsArray || []);
+            
+            console.log(`ViewHunt Background: State loaded - Session ${state.sessionId}, Keyword ${state.currentKeywordIndex}/${state.keywords.length}`);
+            
+            // If we were processing, attempt to resume
+            if (state.isProcessing && state.currentKeywordIndex < state.keywords.length) {
+                console.log('ViewHunt Background: Resuming interrupted processing...');
+                state.status = 'Resuming processing...';
+                broadcastState();
+                
+                // Resume after a short delay
+                setTimeout(async () => {
+                    try {
+                        await processNextKeyword();
+                    } catch (error) {
+                        console.error('ViewHunt Background: Error resuming processing:', error);
+                        state.isProcessing = false;
+                        state.status = 'Resume failed. Click Start to retry.';
+                        broadcastState();
+                    }
+                }, 2000);
+            }
+        }
+    } catch (error) {
+        console.error('ViewHunt Background: Error loading state:', error);
+    }
+}
 
 // Broadcast state to all connected frontend instances
 function broadcastState() {
@@ -99,12 +164,20 @@ function broadcastState() {
     // Update timestamp for recovery mechanism
     state.lastUpdateTime = Date.now();
     
+    // Save state periodically during processing
+    if (state.isProcessing && (!state.lastSaveTime || Date.now() - state.lastSaveTime > 30000)) {
+        saveState(); // Save every 30 seconds during processing
+    }
+    
     const stateData = {
         status: state.status,
         isProcessing: state.isProcessing,
         results: state.results,
         totalProcessed: totalProcessed,
-        currentBatchSize: currentBatchSize
+        currentBatchSize: currentBatchSize,
+        currentKeyword: state.currentKeywordIndex,
+        totalKeywords: state.keywords.length,
+        completedKeywords: state.completedKeywords.length
     };
     
     console.log(`ViewHunt Background: Broadcasting state - ${currentBatchSize} in current batch, ${totalProcessed} total processed`);
@@ -130,9 +203,16 @@ setInterval(() => {
     }
 }, 60000); // Check every 60 seconds
 
+// Initialize state on startup
+loadState();
+
 // Keep service worker alive with periodic heartbeat
 setInterval(() => {
     console.log('ViewHunt Background: Heartbeat - keeping service worker alive');
+    // Also save state periodically if processing
+    if (state.isProcessing) {
+        saveState();
+    }
 }, 25000); // Every 25 seconds
 
 // Listen for messages from popup or content scripts
@@ -227,16 +307,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function startProcessing() {
     if (state.isProcessing) return;
     
-    console.log('ViewHunt Background: Starting processing...');
+    console.log('ViewHunt Background: Starting robust processing...');
     state.isProcessing = true;
     state.stopRequested = false;
     state.currentKeywordIndex = 0;
     state.results = [];
     state.processedChannelUrls.clear();
-    state.totalProcessed = 0; // Reset batch counter
-    state.status = 'Starting processing...';
+    state.totalProcessed = 0;
+    state.completedKeywords = [];
+    state.failedKeywords = [];
+    state.startTime = Date.now();
+    state.sessionId = Date.now(); // New session ID
+    state.status = 'Starting robust processing...';
     
-    await chrome.storage.local.set({ state: state });
+    // Save initial state
+    await saveState();
     broadcastState();
     
     try {
@@ -245,7 +330,7 @@ async function startProcessing() {
         console.error('ViewHunt Background: Error starting processing:', error);
         state.isProcessing = false;
         state.status = 'Error starting. Please try again.';
-        await chrome.storage.local.set({ state: state });
+        await saveState();
         broadcastState();
     }
 }
@@ -300,11 +385,15 @@ async function processNextKeyword() {
         
         state.isProcessing = false;
         const totalChannels = state.totalProcessed;
+        const duration = state.startTime ? Math.round((Date.now() - state.startTime) / 1000 / 60) : 0;
+        
         state.status = totalChannels > 0 ? 
-            `Complete! Processed ${totalChannels} total channels.` : 
+            `🎉 COMPLETE! Processed ${totalChannels} channels from ${state.completedKeywords.length} keywords in ${duration}min. Failed: ${state.failedKeywords.length}` : 
             'Complete. No results found.';
         
-        await chrome.storage.local.set({ state: state });
+        console.log(`ViewHunt Background: Processing complete! Total: ${totalChannels}, Duration: ${duration}min, Failed keywords: ${state.failedKeywords.length}`);
+        
+        await saveState();
         broadcastState();
         return;
     }
@@ -404,10 +493,17 @@ async function moveToNextKeyword() {
         state.activeTabId = null;
     }
     
+    // Mark current keyword as completed
+    const completedKeyword = state.keywords[state.currentKeywordIndex];
+    if (completedKeyword && !state.completedKeywords.includes(completedKeyword)) {
+        state.completedKeywords.push(completedKeyword);
+        console.log(`ViewHunt Background: Completed keyword "${completedKeyword}" (${state.completedKeywords.length}/${state.keywords.length})`);
+    }
+    
     state.currentKeywordIndex++;
     
-    // Save state before continuing
-    await chrome.storage.local.set({ state: state });
+    // Save state before continuing (critical for recovery)
+    await saveState();
     
     // Continue with next keyword after a short delay
     setTimeout(async () => {
@@ -415,11 +511,25 @@ async function moveToNextKeyword() {
             await processNextKeyword();
         } catch (error) {
             console.error('ViewHunt Background: Error processing next keyword:', error);
-            // Reset processing state on error
-            state.isProcessing = false;
-            state.status = 'Error occurred. Click Start to retry.';
-            await chrome.storage.local.set({ state: state });
-            broadcastState();
+            // Mark keyword as failed but continue
+            const failedKeyword = state.keywords[state.currentKeywordIndex - 1];
+            if (failedKeyword && !state.failedKeywords.includes(failedKeyword)) {
+                state.failedKeywords.push(failedKeyword);
+            }
+            
+            // Try to continue with next keyword
+            if (state.currentKeywordIndex < state.keywords.length) {
+                state.status = `Error with keyword, continuing... (${state.currentKeywordIndex + 1}/${state.keywords.length})`;
+                await saveState();
+                broadcastState();
+                setTimeout(() => processNextKeyword(), 2000);
+            } else {
+                // All keywords processed (with some failures)
+                state.isProcessing = false;
+                state.status = `Complete with ${state.failedKeywords.length} failures. Total processed: ${state.totalProcessed}`;
+                await saveState();
+                broadcastState();
+            }
         }
     }, 1000);
 }
