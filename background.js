@@ -88,7 +88,7 @@ let state = {
     addAsterisk: true,
     enhancedAnalysis: true, // Default to enabled
     totalProcessed: 0, // Track total channels processed across all batches
-    batchSize: 500, // Process in batches of 500 channels (reduced for memory optimization)
+    batchSize: 200, // Process in batches of 200 channels (ultra-conservative for crash prevention)
     // Persistence tracking for overnight processing
     sessionId: Date.now(), // Unique session ID
     completedKeywords: [], // Track which keywords are fully processed
@@ -500,6 +500,21 @@ async function moveToNextKeyword() {
         console.log(`ViewHunt Background: Completed keyword "${completedKeyword}" (${state.completedKeywords.length}/${state.keywords.length})`);
     }
     
+    // CRASH PREVENTION: Send any remaining channels to database after each keyword
+    if (state.results.length > 0) {
+        console.log(`ViewHunt Background: CRASH PREVENTION - Sending ${state.results.length} remaining channels after keyword completion`);
+        state.status = `Saving ${state.results.length} channels after keyword completion...`;
+        broadcastState();
+        
+        try {
+            await processBatchAndSend();
+            console.log(`ViewHunt Background: Successfully saved ${state.results.length} channels after keyword`);
+        } catch (error) {
+            console.error('ViewHunt Background: Error saving channels after keyword:', error);
+            // Continue anyway - don't let this stop the process
+        }
+    }
+    
     state.currentKeywordIndex++;
     
     // Save state before continuing (critical for recovery)
@@ -552,7 +567,7 @@ async function handleScrapingComplete(data) {
     
     // Check if we need to pause and process a batch
     if (state.results.length >= state.batchSize) {
-        console.log(`ViewHunt Background: Reached batch size of ${state.results.length}/500. Pausing scraping to process batch and free memory.`);
+        console.log(`ViewHunt Background: Reached batch size of ${state.results.length}/200. CRASH PREVENTION - Processing batch and freeing memory.`);
         state.status = `Pausing scraping to process batch of ${state.results.length} channels...`;
         broadcastState();
         
