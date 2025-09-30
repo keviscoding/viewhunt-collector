@@ -363,8 +363,9 @@ async function stopProcessing() {
     
     state.isProcessing = false;
     const totalChannels = state.totalProcessed;
+    const thresholdText = state.minViewThreshold > 0 ? ` (${(state.minViewThreshold/1000).toFixed(0)}K+ avg views filter)` : '';
     state.status = totalChannels > 0 ? 
-        `Stopped. Processed ${totalChannels} total channels.` : 
+        `Stopped. Analyzed ${totalChannels} total channels${thresholdText}.` : 
         'Stopped. No results found.';
     
     await chrome.storage.local.set({ state: state });
@@ -386,9 +387,10 @@ async function processNextKeyword() {
         state.isProcessing = false;
         const totalChannels = state.totalProcessed;
         const duration = state.startTime ? Math.round((Date.now() - state.startTime) / 1000 / 60) : 0;
+        const thresholdText = state.minViewThreshold > 0 ? ` (${(state.minViewThreshold/1000).toFixed(0)}K+ avg views filter)` : '';
         
         state.status = totalChannels > 0 ? 
-            `🎉 COMPLETE! Processed ${totalChannels} channels from ${state.completedKeywords.length} keywords in ${duration}min. Failed: ${state.failedKeywords.length}` : 
+            `🎉 COMPLETE! Analyzed ${totalChannels} channels from ${state.completedKeywords.length} keywords in ${duration}min${thresholdText}. Failed: ${state.failedKeywords.length}` : 
             'Complete. No results found.';
         
         console.log(`ViewHunt Background: Processing complete! Total: ${totalChannels}, Duration: ${duration}min, Failed keywords: ${state.failedKeywords.length}`);
@@ -468,6 +470,12 @@ async function processBatchAndSend() {
     
     const thresholdText = state.minViewThreshold > 0 ? `${(state.minViewThreshold/1000).toFixed(0)}K+` : 'all';
     console.log(`ViewHunt: Filtered ${state.results.length} channels to ${qualifiedChannels.length} qualified channels (${thresholdText} avg views)`);
+    
+    // Update status to show accurate numbers
+    if (state.minViewThreshold > 0 && qualifiedChannels.length < state.results.length) {
+        state.status = `Processing batch: ${state.results.length} found, ${qualifiedChannels.length} qualify (${thresholdText} avg views)`;
+        broadcastState();
+    }
     
     // Send to backend
     await sendToBackend(qualifiedChannels);
@@ -657,6 +665,12 @@ async function processSubscriberData() {
     
     const thresholdText = state.minViewThreshold > 0 ? `${(state.minViewThreshold/1000).toFixed(0)}K+` : 'all';
     console.log(`ViewHunt: Filtered ${state.results.length} channels to ${qualifiedChannels.length} qualified channels (${thresholdText} avg views)`);
+    
+    // Update status to show accurate filtering numbers
+    if (state.minViewThreshold > 0 && qualifiedChannels.length < state.results.length) {
+        state.status = `API processing: ${state.results.length} analyzed, ${qualifiedChannels.length} qualify (${thresholdText} avg views)`;
+        broadcastState();
+    }
     
     // Send data to backend server
     await sendToBackend(qualifiedChannels);
@@ -935,10 +949,10 @@ async function sendToBackend(results) {
         if (response.ok) {
             const result = await response.json();
             console.log(`ViewHunt Background: Successfully sent to backend - ${result.inserted} inserted, ${result.errors} errors`);
-            state.status = `Complete! Found ${results.length} videos. Data sent to mobile app.`;
+            state.status = `Batch complete! ${results.length} qualified channels sent to database (${result.inserted} saved, ${result.errors} errors)`;
         } else {
             console.error('ViewHunt Background: Failed to send to backend:', response.status);
-            state.status = `Complete! Found ${results.length} videos. (Backend sync failed)`;
+            state.status = `Batch complete! ${results.length} qualified channels (Backend sync failed)`;
         }
     } catch (error) {
         console.error('ViewHunt Background: Error sending to backend:', error);
