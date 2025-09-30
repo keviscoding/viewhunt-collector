@@ -471,16 +471,9 @@ async function processBatchAndSend() {
     const thresholdText = state.minViewThreshold > 0 ? `${(state.minViewThreshold/1000).toFixed(0)}K+` : 'all';
     console.log(`ViewHunt: Filtered ${state.results.length} channels to ${qualifiedChannels.length} qualified channels (${thresholdText} avg views)`);
     
-    // Check if any channels have quota exceeded flag
-    const quotaExceededChannels = state.results.filter(ch => ch.quotaExceeded).length;
-    
     // Update status to show accurate numbers
     if (state.minViewThreshold > 0 && qualifiedChannels.length < state.results.length) {
-        const quotaWarning = quotaExceededChannels > 0 ? ` (⚠️ API quota exceeded - using fallback data)` : '';
-        state.status = `Processing batch: ${state.results.length} found, ${qualifiedChannels.length} qualify (${thresholdText} avg views)${quotaWarning}`;
-        broadcastState();
-    } else if (quotaExceededChannels > 0) {
-        state.status = `Processing batch: ${state.results.length} channels (⚠️ API quota exceeded - using fallback data)`;
+        state.status = `Processing batch: ${state.results.length} found, ${qualifiedChannels.length} qualify (${thresholdText} avg views)`;
         broadcastState();
     }
     
@@ -606,20 +599,22 @@ async function handleScrapingComplete(data) {
 async function processSubscriberData() {
     console.log(`ViewHunt Background: Starting API processing for ${state.results.length} videos`);
     
-    // Quick quota check with a simple API call
+    // Test API key with a simple request first
+    console.log(`ViewHunt API: Testing API key: ${state.apiKey.substring(0, 10)}...${state.apiKey.substring(state.apiKey.length - 4)}`);
     try {
         const testResponse = await fetch(`${YOUTUBE_API_BASE}/channels?part=id&id=UC_x5XG1OV2P6uZZ5FSM9Ttw&key=${state.apiKey}`);
-        if (!testResponse.ok && testResponse.status === 403) {
-            const errorData = await testResponse.json();
-            if (errorData.error?.message?.includes('quota')) {
-                console.warn(`ViewHunt API: QUOTA ALREADY EXCEEDED - Will use fallback data for all channels`);
-                state.status = `⚠️ YouTube API quota exceeded - using fallback data (channels will still be processed)`;
-                broadcastState();
-            }
+        console.log(`ViewHunt API: Test response status: ${testResponse.status}`);
+        if (!testResponse.ok) {
+            const testError = await testResponse.json();
+            console.error(`ViewHunt API: Test failed:`, testError);
+        } else {
+            console.log(`ViewHunt API: Test successful - API key is working`);
         }
     } catch (error) {
-        console.log(`ViewHunt API: Quota check failed, continuing with normal processing`);
+        console.error(`ViewHunt API: Test request failed:`, error);
     }
+    
+
     
     // Get unique channels
     const uniqueChannels = new Map();
@@ -688,16 +683,9 @@ async function processSubscriberData() {
     const thresholdText = state.minViewThreshold > 0 ? `${(state.minViewThreshold/1000).toFixed(0)}K+` : 'all';
     console.log(`ViewHunt: Filtered ${state.results.length} channels to ${qualifiedChannels.length} qualified channels (${thresholdText} avg views)`);
     
-    // Check if any channels have quota exceeded flag  
-    const quotaExceededChannels = state.results.filter(ch => ch.quotaExceeded).length;
-    
     // Update status to show accurate filtering numbers
     if (state.minViewThreshold > 0 && qualifiedChannels.length < state.results.length) {
-        const quotaWarning = quotaExceededChannels > 0 ? ` (⚠️ API quota exceeded)` : '';
-        state.status = `API processing: ${state.results.length} analyzed, ${qualifiedChannels.length} qualify (${thresholdText} avg views)${quotaWarning}`;
-        broadcastState();
-    } else if (quotaExceededChannels > 0) {
-        state.status = `API processing: ${state.results.length} channels (⚠️ API quota exceeded - using fallback data)`;
+        state.status = `API processing: ${state.results.length} analyzed, ${qualifiedChannels.length} qualify (${thresholdText} avg views)`;
         broadcastState();
     }
     
@@ -1079,30 +1067,24 @@ async function processBatch(channels) {
         try {
             const channelIds = channelsWithIds.map(ch => ch.realChannelId);
             console.log(`ViewHunt API: Fetching stats for: ${channelIds.slice(0, 3).join(', ')}${channelIds.length > 3 ? '...' : ''}`);
+            console.log(`ViewHunt API: Using API key: ${state.apiKey.substring(0, 10)}...${state.apiKey.substring(state.apiKey.length - 4)}`);
             
-            const response = await fetch(
-                `${YOUTUBE_API_BASE}/channels?part=statistics,snippet&id=${channelIds.join(',')}&key=${state.apiKey}`
-            );
+            const apiUrl = `${YOUTUBE_API_BASE}/channels?part=statistics,snippet&id=${channelIds.join(',')}&key=${state.apiKey}`;
+            console.log(`ViewHunt API: Full request URL: ${apiUrl.replace(state.apiKey, 'API_KEY_HIDDEN')}`);
+            
+            const response = await fetch(apiUrl);
             
             if (!response.ok) {
                 const errorData = await response.json();
                 console.error(`ViewHunt API: Error response:`, errorData);
                 
-                // Handle quota exceeded specifically
-                if (response.status === 403 && errorData.error?.message?.includes('quota')) {
-                    console.warn(`ViewHunt API: QUOTA EXCEEDED - Switching to fallback mode`);
-                    // Set default values for all channels so they can still be processed
-                    channelsWithIds.forEach(ch => {
-                        ch.subscriberCount = 1000000; // Default 1M subs so they pass filters
-                        ch.totalViews = 100000000; // Default 100M total views
-                        ch.videoCount = 1000; // Default 1000 videos
-                        ch.averageViews = 100000; // Default 100K average (will pass most filters)
-                        ch.avatarUrl = null;
-                        ch.quotaExceeded = true; // Mark for user awareness
-                    });
-                    console.log(`ViewHunt API: Applied fallback stats to ${channelsWithIds.length} channels`);
-                    return; // Skip the API processing, use fallback values
-                }
+                // Log the full error for debugging
+                console.error(`ViewHunt API: Full error details:`, {
+                    status: response.status,
+                    statusText: response.statusText,
+                    errorData: errorData,
+                    url: response.url
+                });
                 
                 throw new Error(`API Error: ${errorData.error?.message || 'Unknown error'}`);
             }
@@ -1135,32 +1117,15 @@ async function processBatch(channels) {
         } catch (error) {
             console.error('ViewHunt API: Error fetching channel stats:', error);
             
-            // Check if this is a quota error
-            if (error.message.includes('quota')) {
-                console.warn(`ViewHunt API: QUOTA EXCEEDED - Using fallback values`);
-                // Set reasonable fallback values so processing can continue
-                channelsWithIds.forEach(ch => {
-                    if (ch.subscriberCount === undefined) {
-                        ch.subscriberCount = 1000000; // Default 1M subs
-                        ch.totalViews = 100000000; // Default 100M total views  
-                        ch.videoCount = 1000; // Default 1000 videos
-                        ch.averageViews = 100000; // Default 100K average
-                        ch.avatarUrl = null;
-                        ch.quotaExceeded = true;
-                    }
-                });
-                console.log(`ViewHunt API: Applied quota fallback to ${channelsWithIds.length} channels`);
-            } else {
-                // For other errors, mark as 0 subscribers (will be filtered out)
-                channelsWithIds.forEach(ch => {
-                    if (ch.subscriberCount === undefined) {
-                        ch.subscriberCount = 0;
-                        ch.totalViews = 0;
-                        ch.videoCount = 0;
-                        ch.averageViews = 0;
-                    }
-                });
-            }
+            // Mark failed channels as 0 subscribers (will be filtered out)
+            channelsWithIds.forEach(ch => {
+                if (ch.subscriberCount === undefined) {
+                    ch.subscriberCount = 0;
+                    ch.totalViews = 0;
+                    ch.videoCount = 0;
+                    ch.averageViews = 0;
+                }
+            });
         }
     }
     
