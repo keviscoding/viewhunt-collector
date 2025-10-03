@@ -607,82 +607,19 @@
         </div>
     </section>
 
-    <section class="pricing" id="pricing">
+    <section class="access" id="access">
         <div class="container">
             <div class="section-header fade-in">
-                <h2 class="section-title">ViewHunt Plans</h2>
-                <p class="section-subtitle">For existing members - sign in to access your ViewHunt dashboard and tools.</p>
+                <h2 class="section-title">Access ViewHunt</h2>
+                <p class="section-subtitle">Sign in to your ViewHunt account to discover profitable YouTube Shorts niches with advanced data insights.</p>
             </div>
             
-<div style="text-align: center; margin-bottom: 20px; padding: 10px;"><input type="text" id="promo-code-input" placeholder="Enter Promo Code (Optional)" style="padding: 12px; border-radius: 6px; border: 1px solid #4A5568; background-color: #2D3748; color: white; width: 250px; font-size: 16px;" /></div>
-            <div class="pricing-grid stagger-container">
-                <div class="pricing-card scale-in stagger-item">
-                    <div class="popular-badge">PRO PLAN</div>
-                    <h3 class="pricing-title">Pro</h3>
-                    <div class="pricing-price">
-                        $25<span class="pricing-period">/month</span>
-                    </div>
-                    <p class="pricing-description">For serious creators ready to find profitable niches</p>
-                    
-                    <div class="pricing-features">
-
-                        <div class="pricing-feature">
-                            <span class="pricing-check">✓</span>
-                            <span>Advanced filtering options</span>
-                        </div>
-                        <div class="pricing-feature">
-                            <span class="pricing-check">✓</span>
-                            <span>Expanded channel access</span>
-                        </div>
-                        <div class="pricing-feature">
-                            <span class="pricing-check">✓</span>
-                            <span>Full database access</span>
-                        </div>
-                        <div class="pricing-feature">
-                            <span class="pricing-check">✓</span>
-                            <span>Email support</span>
-                        </div>
-                    </div>
-                    
-                    <a href="/login" class="btn pulse">Sign In</a>
-                </div>
-                
-                <div class="pricing-card popular fade-in-right stagger-item">
-                    <div class="popular-badge">MOST POPULAR</div>
-                    <h3 class="pricing-title">Max</h3>
-                    <div class="pricing-price">
-                        $37<span class="pricing-period">/month</span>
-                    </div>
-                    <p class="pricing-description">Complete system to build your dream Shorts income</p>
-                    
-                    <div class="pricing-features">
-                        <div class="pricing-feature">
-                            <span class="pricing-check">✓</span>
-                            <span>Everything in Pro plan</span>
-                        </div>
-                        <div class="pricing-feature">
-                            <span class="pricing-check">✓</span>
-                            <span>Private community access</span>
-                        </div>
-                        <div class="pricing-feature">
-                            <span class="pricing-check">✓</span>
-                            <span>View Mastery course included</span>
-                        </div>
-                        <div class="pricing-feature">
-                            <span class="pricing-check">✓</span>
-                            <span>Weekly strategy calls with founder</span>
-                        </div>
-                        <div class="pricing-feature">
-                            <span class="pricing-check">✓</span>
-                            <span>Pattern recognition framework & AI access</span>
-                        </div>
-                        <div class="pricing-feature">
-                            <span class="pricing-check">✓</span>
-                            <span>Actionable starter plan for $0k-10k goal</span>
-                        </div>
-                    </div>
-                    
-                    <a href="/login" class="btn">Sign In</a>
+            <div class="access-content fade-in" style="text-align: center; padding: 60px 0;">
+                <div class="access-card" style="max-width: 500px; margin: 0 auto; padding: 40px; background: rgba(255, 255, 255, 0.05); border-radius: 16px; backdrop-filter: blur(10px);">
+                    <div class="access-icon" style="font-size: 64px; margin-bottom: 24px;">🚀</div>
+                    <h3 style="font-size: 28px; margin-bottom: 16px; color: white;">Ready to Find Your Next Viral Niche?</h3>
+                    <p style="font-size: 18px; margin-bottom: 32px; color: rgba(255, 255, 255, 0.8);">Access our database of 250,000+ analyzed channels and discover untapped opportunities before they saturate.</p>
+                    <a href="/login" class="btn btn-lg pulse" style="font-size: 18px; padding: 16px 32px;">Sign In to ViewHunt</a>
                 </div>
             </div>
         </div>
@@ -716,7 +653,7 @@
                         <li class="footer-link"><a href="/app">Launch App</a></li>
                         <li class="footer-link"><a href="#features">Features</a></li>
                         <li class="footer-link"><a href="#how-it-works">How It Works</a></li>
-                        <li class="footer-link"><a href="/pricing">Pricing</a></li>
+                        <li class="footer-link"><a href="/login">Sign In</a></li>
                     </ul>
                 </div>
                 
@@ -757,9 +694,8 @@
 <script src="/js/viewmastery-modal.js?v=2"></script>
 <script src="/js/scroll-play-video.js"></script>
   <script>
-    // Modify pricing Get Started buttons to handle redirect for both login and register
     document.addEventListener("DOMContentLoaded", function() {
-      // ViewMastery Modal Function
+      // ViewMastery Modal Function (keeping for existing functionality)
       window.showViewMasteryModal = function() {
         console.log("showViewMasteryModal called");
         const viewmasteryModal = document.getElementById("viewmasteryModal");
@@ -769,48 +705,6 @@
           console.error("ViewMastery modal not found");
         }
       };
-      // Get all pricing Get Started buttons
-      document.querySelectorAll(".pricing-get-started").forEach(button => {
-        if (button.id === "maxPlanGetStartedBtn") return; // Skip the Max button, handled by viewmastery-modal.js
-        button.addEventListener("click", function(e) {
-          e.preventDefault();
-          
-          // Check if user is logged in (you can determine this based on your own logic)
-          const isLoggedIn = document.cookie.includes("authToken=");
-          
-          if (isLoggedIn) {
-            // If logged in, go directly to pricing
-            window.location.href = "/pricing";
-          } else {
-            // If not logged in, redirect to login page with redirect parameter
-            window.location.href = "/login?redirect=/pricing";
-          }
-        });
-      });
-      
-      // Make login link from register page preserve the redirect
-      const loginLink = document.querySelector(".auth-footer a[href="/login"]");
-      if (loginLink) {
-        loginLink.addEventListener("click", function(e) {
-          const currentRedirect = new URLSearchParams(window.location.search).get("redirect");
-          if (currentRedirect) {
-            e.preventDefault();
-            window.location.href = "/login?redirect=" + encodeURIComponent(currentRedirect);
-          }
-        });
-      }
-      
-      // Make register link from login page preserve the redirect
-      const registerLink = document.querySelector(".auth-footer a[href="/register"]");
-      if (registerLink) {
-        registerLink.addEventListener("click", function(e) {
-          const currentRedirect = new URLSearchParams(window.location.search).get("redirect");
-          if (currentRedirect) {
-            e.preventDefault();
-            window.location.href = "/register?redirect=" + encodeURIComponent(currentRedirect);
-          }
-        });
-      }
     });
   </script>
 </body>
