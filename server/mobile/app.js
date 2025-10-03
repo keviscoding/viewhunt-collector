@@ -1464,7 +1464,11 @@ class ViewHuntApp {
 
     showLogin() {
         document.getElementById('login-form').style.display = 'block';
-        document.getElementById('register-form').style.display = 'none';
+        // Register form is disabled, so don't try to access it
+        const registerForm = document.getElementById('register-form');
+        if (registerForm) {
+            registerForm.style.display = 'none';
+        }
         document.getElementById('auth-overlay').style.display = 'flex';
         
         // Clear forms
