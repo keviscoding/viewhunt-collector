@@ -2337,10 +2337,10 @@ class ViewHuntApp {
                 content.innerHTML = `
                     <div class="subscription-required">
                         <div class="lock-icon">🔒</div>
-                        <h4>Subscription Required</h4>
-                        <p>Kevis's exclusive picks are available to subscribers only.</p>
-                        <button class="btn btn-primary" onclick="window.open('/pricing', '_blank')">
-                            Subscribe Now
+                        <h4>Member Access Required</h4>
+                        <p>Kevis's exclusive picks are available to ViewHunt members only.</p>
+                        <button class="btn btn-secondary" onclick="window.app.showMessage('Already have an account? Try signing in again or contact support for assistance.', 'info')">
+                            Already Have Access?
                         </button>
                     </div>
                 `;
