@@ -149,10 +149,11 @@ class ViewHuntApp {
             this.handleLogin();
         });
 
-        document.getElementById('register-form-element').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.handleRegister();
-        });
+        // Registration form disabled
+        // document.getElementById('register-form-element').addEventListener('submit', (e) => {
+        //     e.preventDefault();
+        //     this.handleRegister();
+        // });
 
         // Close auth modal when clicking overlay
         document.getElementById('auth-overlay').addEventListener('click', (e) => {
@@ -1471,12 +1472,8 @@ class ViewHuntApp {
     }
 
     showRegister() {
-        document.getElementById('login-form').style.display = 'none';
-        document.getElementById('register-form').style.display = 'block';
-        document.getElementById('auth-overlay').style.display = 'flex';
-        
-        // Clear forms
-        document.getElementById('register-form-element').reset();
+        // Registration disabled - redirect to login
+        this.showLogin();
     }
 
     closeAuth() {
@@ -1531,6 +1528,11 @@ class ViewHuntApp {
     }
 
     async handleRegister() {
+        // Registration disabled
+        this.showMessage('Registration is currently closed. Please sign in if you have an existing account.', 'error');
+        return;
+        
+        /* Original registration code disabled
         const displayName = document.getElementById('register-display-name').value;
         const email = document.getElementById('register-email').value;
         const password = document.getElementById('register-password').value;
@@ -1585,6 +1587,7 @@ class ViewHuntApp {
             submitBtn.disabled = false;
             submitBtn.textContent = 'Create Account';
         }
+        */
     }
 
     toggleUserMenu() {

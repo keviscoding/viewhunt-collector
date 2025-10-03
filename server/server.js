@@ -739,8 +739,14 @@ const migrateV1UserToV2 = async (v1User) => {
 
 // Authentication Routes
 
-// Register new user
+// Register new user - DISABLED (No new admissions)
 app.post('/api/auth/register', authLimiter, async (req, res) => {
+    return res.status(403).json({ 
+        error: 'Registration is currently closed. Please sign in if you have an existing account.' 
+    });
+    
+    // Original registration code disabled
+    /*
     try {
         const { email, password, display_name } = req.body;
 
@@ -824,6 +830,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         console.error('Registration error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
+    */
 });
 
 // Login user

@@ -57,8 +57,7 @@
 
                 <!-- Auth Buttons (when not logged in) -->
                 <div class="auth-buttons" id="auth-buttons">
-                    <button class="auth-btn-header" onclick="window.app.showLogin()">Sign In</button>
-                    <button class="auth-btn-header auth-btn-primary" onclick="window.app.showRegister()">Sign Up</button>
+                    <button class="auth-btn-header auth-btn-primary" onclick="window.app.showLogin()">Sign In</button>
                 </div>
             </div>
         </header>
@@ -330,12 +329,12 @@
                     </button>
                     
                     <p class="auth-switch">
-                        Don't have an account? 
-                        <button type="button" class="auth-link" onclick="window.app.showRegister()">Sign Up</button>
+                        Need access? Contact support for account assistance.
                     </p>
                 </div>
 
-                <!-- Register Form -->
+                <!-- Register Form - DISABLED (No new admissions) -->
+                <!--
                 <div class="auth-form" id="register-form" style="display: none;">
                     <h2>Join ViewHunt!</h2>
                     <p class="auth-subtitle">Create your account to start discovering channels</p>
@@ -373,6 +372,7 @@
                         <button type="button" class="auth-link" onclick="window.app.showLogin()">Sign In</button>
                     </p>
                 </div>
+                -->
 
                 <button class="auth-close" onclick="window.app.closeAuth()">×</button>
             </div>
