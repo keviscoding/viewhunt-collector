@@ -1130,7 +1130,7 @@ class ViewHuntApp {
             document.querySelectorAll('.nav-btn').forEach(btn => {
                 if (btn.dataset.view === view) {
                     btn.classList.add('locked');
-                    this.showToast('🔒 Subscription required for ' + (view === 'approved' ? "Kevis' Picks" : 'Trending Today'));
+                    this.showToast('🔒 Member access required for ' + (view === 'approved' ? "Kevis' Picks" : 'Trending Today'));
                 }
             });
             return;
@@ -1389,7 +1389,7 @@ class ViewHuntApp {
             tabs.forEach(tab => {
                 if (tab.dataset.view === 'approved' || tab.dataset.view === 'trending') {
                     tab.classList.add('locked');
-                    tab.title = 'Subscription required';
+                    tab.title = 'Member access required';
                 }
             });
             
@@ -1424,8 +1424,8 @@ class ViewHuntApp {
                 <div id="subscription-gate" class="subscription-gate">
                     <div class="gate-content">
                         <div class="gate-icon">🔒</div>
-                        <h3>Subscription Required</h3>
-                        <p>Subscribe to hunt your next viral niche with exclusive access to curated channels and trending discoveries.</p>
+                        <h3>Member Access Required</h3>
+                        <p>This feature is available to ViewHunt members. Contact support if you need access assistance.</p>
                         <div class="gate-buttons">
                             <button class="btn btn-primary" onclick="window.open('/pricing', '_blank')">
                                 Subscribe to Hunt Viral Niches
@@ -1640,7 +1640,7 @@ class ViewHuntApp {
             }
         } else {
             statusIndicator.style.color = '#ef4444'; // Red
-            statusText.textContent = reason || 'Subscription Required';
+            statusText.textContent = reason || 'Member Access Required';
             subscriptionActions.style.display = 'none';
         }
     }
@@ -2362,10 +2362,10 @@ class ViewHuntApp {
                     content.innerHTML = `
                         <div class="subscription-required">
                             <div class="lock-icon">🔒</div>
-                            <h4>Subscription Required</h4>
-                            <p>Kevis's exclusive picks are available to subscribers only.</p>
-                            <button class="btn btn-primary" onclick="window.open('/pricing', '_blank')">
-                                Subscribe Now
+                            <h4>Member Access Required</h4>
+                            <p>Kevis's exclusive picks are available to ViewHunt members only.</p>
+                            <button class="btn btn-secondary" onclick="window.app.showMessage('Contact support for access assistance', 'info')">
+                                Need Access?
                             </button>
                         </div>
                     `;
@@ -2423,10 +2423,10 @@ class ViewHuntApp {
                 content.innerHTML = `
                     <div class="subscription-required">
                         <div class="lock-icon">🔒</div>
-                        <h4>Subscription Required</h4>
-                        <p>Trending channels are available to subscribers only.</p>
-                        <button class="btn btn-primary" onclick="window.open('/pricing', '_blank')">
-                            Subscribe Now
+                        <h4>Member Access Required</h4>
+                        <p>Trending channels are available to ViewHunt members only.</p>
+                        <button class="btn btn-secondary" onclick="window.app.showMessage('Contact support for access assistance', 'info')">
+                            Need Access?
                         </button>
                     </div>
                 `;
@@ -2440,14 +2440,14 @@ class ViewHuntApp {
             if (response.ok) {
                 channels = await response.json();
             } else if (response.status === 403) {
-                // Handle subscription required error
+                // Handle member access required error
                 content.innerHTML = `
                     <div class="subscription-required">
                         <div class="lock-icon">🔒</div>
-                        <h4>Subscription Required</h4>
-                        <p>Trending channels are available to subscribers only.</p>
-                        <button class="btn btn-primary" onclick="window.open('/pricing', '_blank')">
-                            Subscribe Now
+                        <h4>Member Access Required</h4>
+                        <p>Trending channels are available to ViewHunt members only.</p>
+                        <button class="btn btn-secondary" onclick="window.app.showMessage('Contact support for access assistance', 'info')">
+                            Need Access?
                         </button>
                     </div>
                 `;
