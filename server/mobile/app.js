@@ -2339,7 +2339,7 @@ class ViewHuntApp {
                         <div class="lock-icon">🔒</div>
                         <h4>Member Access Required</h4>
                         <p>Kevis's exclusive picks are available to ViewHunt members only.</p>
-                        <button class="btn btn-secondary" onclick="window.app.showMessage('Already have an account? Try signing in again or contact support for assistance.', 'info')">
+                        <button class="btn btn-secondary" onclick="window.app.showLogin()">
                             Already Have Access?
                         </button>
                     </div>
