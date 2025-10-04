@@ -1366,8 +1366,35 @@ class ViewHuntApp {
             this.subscriptionStatus = this.user.subscription;
             console.log('Subscription status:', this.subscriptionStatus);
             this.updateSubscriptionUI();
+            
+            // Check admin status after subscription status is loaded
+            this.updateAdminUI();
         } else {
             console.log('No subscription data in user:', this.user);
+            // Still check admin status even without subscription data
+            this.updateAdminUI();
+        }
+    }
+
+    updateAdminUI() {
+        // Show admin panel button for admin users
+        console.log('Updating admin UI:', {
+            userEmail: this.user?.email,
+            subscriptionType: this.subscriptionStatus?.type
+        });
+        
+        if (this.user && (
+            this.user.email === 'kevis@keviscoding.com' || 
+            this.user.email?.toLowerCase() === 'kevis@keviscoding.com' ||
+            this.subscriptionStatus?.type === 'admin'
+        )) {
+            const adminBtn = document.getElementById('admin-panel-btn');
+            if (adminBtn) {
+                adminBtn.style.display = 'block';
+                console.log('Admin panel button shown');
+            } else {
+                console.log('Admin panel button not found in DOM');
+            }
         }
     }
 
@@ -1453,12 +1480,25 @@ class ViewHuntApp {
         document.getElementById('user-approved-count').textContent = this.user.stats.channels_approved;
         document.getElementById('user-rejected-count').textContent = this.user.stats.channels_rejected;
         
-        // Show admin panel button for admin users
-        if (this.user.email === 'kevis@keviscoding.com' || this.subscriptionStatus?.type === 'admin') {
+        // Show admin panel button for admin users (check multiple conditions)
+        console.log('Checking admin status:', {
+            userEmail: this.user.email,
+            subscriptionType: this.subscriptionStatus?.type,
+            adminEmail: 'kevis@keviscoding.com'
+        });
+        
+        if (this.user.email === 'kevis@keviscoding.com' || 
+            this.user.email?.toLowerCase() === 'kevis@keviscoding.com' ||
+            this.subscriptionStatus?.type === 'admin') {
             const adminBtn = document.getElementById('admin-panel-btn');
             if (adminBtn) {
                 adminBtn.style.display = 'block';
+                console.log('Admin panel button shown');
+            } else {
+                console.log('Admin panel button not found in DOM');
             }
+        } else {
+            console.log('User is not admin');
         }
         
         // Check subscription status and update UI
