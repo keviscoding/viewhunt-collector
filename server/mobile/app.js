@@ -638,10 +638,7 @@ class ViewHuntApp {
             loading.style.display = 'none';
             
             // Check if this is a subscription error
-            if (error.message.includes('subscription') || 
-                (this.subscriptionStatus && !this.subscriptionStatus.hasAccess && 
-                 this.subscriptionStatus.type !== 'admin' && 
-                 this.subscriptionStatus.type !== 'beta')) {
+            if (error.message.includes('subscription') || !this.hasSubscriptionAccess()) {
                 this.showSubscriptionGate();
             } else {
                 emptyState.style.display = 'block';
@@ -745,10 +742,7 @@ class ViewHuntApp {
             loading.style.display = 'none';
             
             // Check if this is a subscription error
-            if (error.message.includes('subscription') || 
-                (this.subscriptionStatus && !this.subscriptionStatus.hasAccess && 
-                 this.subscriptionStatus.type !== 'admin' && 
-                 this.subscriptionStatus.type !== 'beta')) {
+            if (error.message.includes('subscription') || !this.hasSubscriptionAccess()) {
                 this.showSubscriptionGate();
             } else {
                 emptyState.style.display = 'block';
@@ -1120,11 +1114,8 @@ class ViewHuntApp {
     }
 
     switchView(view) {
-        // Check subscription access for restricted views (but allow admin and beta users)
-        if ((view === 'approved' || view === 'trending') && this.subscriptionStatus && 
-            !this.subscriptionStatus.hasAccess && 
-            this.subscriptionStatus.type !== 'admin' && 
-            this.subscriptionStatus.type !== 'beta') {
+        // Check subscription access for restricted views (but allow admin, beta, and invite users)
+        if ((view === 'approved' || view === 'trending') && !this.hasSubscriptionAccess()) {
             this.showSubscriptionGate();
             // Update active nav button to show locked state but don't switch
             document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -1398,6 +1389,16 @@ class ViewHuntApp {
         }
     }
 
+    // Helper function to check if user has access (admin, beta, or invite users)
+    hasSubscriptionAccess() {
+        if (!this.subscriptionStatus) return false;
+        
+        return this.subscriptionStatus.hasAccess || 
+               this.subscriptionStatus.type === 'admin' || 
+               this.subscriptionStatus.type === 'beta' || 
+               this.subscriptionStatus.type === 'invite';
+    }
+
     updateSubscriptionUI() {
         const tabs = document.querySelectorAll('.nav-btn'); // Changed from .tab-button to .nav-btn
         const subscriptionGate = document.getElementById('subscription-gate');
@@ -1405,11 +1406,8 @@ class ViewHuntApp {
         // Update user menu subscription info
         this.updateUserMenuSubscriptionInfo();
         
-        // Check if user needs subscription (exclude admin and beta users)
-        const needsSubscription = !this.subscriptionStatus || 
-            (!this.subscriptionStatus.hasAccess && 
-             this.subscriptionStatus.type !== 'admin' && 
-             this.subscriptionStatus.type !== 'beta');
+        // Check if user needs subscription (exclude admin, beta, and invite users)
+        const needsSubscription = !this.hasSubscriptionAccess();
         
         if (needsSubscription) {
             // Show subscription gate for restricted tabs
@@ -1837,6 +1835,8 @@ class ViewHuntApp {
                 statusText.textContent = 'Admin Access';
             } else if (type === 'beta') {
                 statusText.textContent = 'Beta Access';
+            } else if (type === 'invite') {
+                statusText.textContent = 'Invite Access';
             } else if (type === 'stripe') {
                 statusText.textContent = 'Pro Subscription';
                 subscriptionActions.style.display = 'block';
@@ -2533,10 +2533,8 @@ class ViewHuntApp {
         content.innerHTML = '<div class="social-loading">Loading Kevis\'s picks...</div>';
         
         try {
-            // Check subscription access first (but allow admin and beta users)
-            if (!this.subscriptionStatus || (!this.subscriptionStatus.hasAccess && 
-                this.subscriptionStatus.type !== 'admin' && 
-                this.subscriptionStatus.type !== 'beta')) {
+            // Check subscription access first (but allow admin, beta, and invite users)
+            if (!this.hasSubscriptionAccess()) {
                 content.innerHTML = `
                     <div class="subscription-required">
                         <div class="lock-icon">🔒</div>
@@ -2619,10 +2617,8 @@ class ViewHuntApp {
         content.innerHTML = '<div class="social-loading">Loading trending channels...</div>';
         
         try {
-            // Check subscription access first (but allow admin and beta users)
-            if (!this.subscriptionStatus || (!this.subscriptionStatus.hasAccess && 
-                this.subscriptionStatus.type !== 'admin' && 
-                this.subscriptionStatus.type !== 'beta')) {
+            // Check subscription access first (but allow admin, beta, and invite users)
+            if (!this.hasSubscriptionAccess()) {
                 content.innerHTML = `
                     <div class="subscription-required">
                         <div class="lock-icon">🔒</div>

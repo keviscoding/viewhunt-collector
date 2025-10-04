@@ -378,6 +378,12 @@ const requireSubscription = async (req, res, next) => {
             });
         }
         
+        // INVITE USERS get free access (registered with invite codes)
+        if (fullUser.invited_by_code) {
+            console.log('Invite user, granting free access:', user.email, 'invited by code:', fullUser.invited_by_code);
+            return next();
+        }
+        
         // V2 Beta users (existing users before cutoff date) get free access
         // New users after a certain date need subscription
         const BETA_CUTOFF_DATE = new Date('2025-07-21'); // No more free beta access after today
@@ -1342,6 +1348,16 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
                 type: 'admin',
                 status: 'active',
                 reason: 'Admin access'
+            };
+        }
+        // INVITE USERS get free access
+        else if (user.invited_by_code) {
+            subscriptionStatus = {
+                hasAccess: true,
+                type: 'invite',
+                status: 'active',
+                reason: 'Invite access',
+                inviteCode: user.invited_by_code
             };
         }
         // V2 Beta users (created before cutoff) get free access
