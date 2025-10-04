@@ -149,11 +149,11 @@ class ViewHuntApp {
             this.handleLogin();
         });
 
-        // Registration form disabled
-        // document.getElementById('register-form-element').addEventListener('submit', (e) => {
-        //     e.preventDefault();
-        //     this.handleRegister();
-        // });
+        // Registration form with invite codes
+        document.getElementById('register-form-element').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleRegister();
+        });
 
         // Close auth modal when clicking overlay
         document.getElementById('auth-overlay').addEventListener('click', (e) => {
@@ -1453,6 +1453,14 @@ class ViewHuntApp {
         document.getElementById('user-approved-count').textContent = this.user.stats.channels_approved;
         document.getElementById('user-rejected-count').textContent = this.user.stats.channels_rejected;
         
+        // Show admin panel button for admin users
+        if (this.user.email === 'kevis@keviscoding.com' || this.subscriptionStatus?.type === 'admin') {
+            const adminBtn = document.getElementById('admin-panel-btn');
+            if (adminBtn) {
+                adminBtn.style.display = 'block';
+            }
+        }
+        
         // Check subscription status and update UI
         this.checkSubscriptionStatus();
     }
@@ -1476,8 +1484,18 @@ class ViewHuntApp {
     }
 
     showRegister() {
-        // Registration disabled - redirect to login
-        this.showLogin();
+        document.getElementById('login-form').style.display = 'none';
+        const registerForm = document.getElementById('register-form');
+        if (registerForm) {
+            registerForm.style.display = 'block';
+        }
+        document.getElementById('auth-overlay').style.display = 'flex';
+        
+        // Clear forms
+        const registerFormElement = document.getElementById('register-form-element');
+        if (registerFormElement) {
+            registerFormElement.reset();
+        }
     }
 
     closeAuth() {
@@ -1532,15 +1550,39 @@ class ViewHuntApp {
     }
 
     async handleRegister() {
-        // Registration disabled
-        this.showMessage('Registration is currently closed. Please sign in if you have an existing account.', 'error');
-        return;
-        
-        /* Original registration code disabled
+        const inviteCode = document.getElementById('register-invite-code').value;
         const displayName = document.getElementById('register-display-name').value;
         const email = document.getElementById('register-email').value;
         const password = document.getElementById('register-password').value;
         const submitBtn = document.querySelector('#register-form button[type="submit"]');
+
+        if (!inviteCode || !displayName || !email || !password) {
+            this.showToast('Please fill in all fields including invite code ❌');
+            return;
+        }
+
+        // Validate invite code first
+        try {
+            const validateResponse = await fetch(`${this.apiBase}/auth/validate-invite`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ invite_code: inviteCode })
+            });
+
+            const validateData = await validateResponse.json();
+            
+            if (!validateResponse.ok || !validateData.valid) {
+                this.showToast(validateData.error || 'Invalid invite code ❌');
+                return;
+            }
+            
+            this.showToast(`✅ Valid invite code: ${validateData.description}`);
+        } catch (error) {
+            this.showToast('Error validating invite code ❌');
+            return;
+        }
 
         if (!displayName || !email || !password) {
             this.showToast('Please fill in all fields ❌');
@@ -1562,6 +1604,7 @@ class ViewHuntApp {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
+                    invite_code: inviteCode,
                     display_name: displayName,
                     email,
                     password
@@ -1591,7 +1634,127 @@ class ViewHuntApp {
             submitBtn.disabled = false;
             submitBtn.textContent = 'Create Account';
         }
-        */
+    }
+
+    // Admin Panel Functions
+    showAdminPanel() {
+        document.getElementById('admin-overlay').style.display = 'flex';
+        this.loadInviteCodes();
+        
+        // Set up form handler
+        document.getElementById('invite-code-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.generateInviteCode();
+        });
+    }
+
+    closeAdminPanel() {
+        document.getElementById('admin-overlay').style.display = 'none';
+    }
+
+    async generateInviteCode() {
+        const description = document.getElementById('invite-description').value;
+        const maxUses = document.getElementById('invite-max-uses').value;
+        const expiresDays = document.getElementById('invite-expires-days').value;
+        const submitBtn = document.querySelector('#invite-code-form button[type="submit"]');
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Generating...';
+
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/admin/invite-codes`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    description: description,
+                    max_uses: maxUses ? parseInt(maxUses) : null,
+                    expires_in_days: expiresDays ? parseInt(expiresDays) : null
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.showToast(`✅ Generated invite code: ${data.invite_code}`);
+                
+                // Copy to clipboard
+                navigator.clipboard.writeText(data.invite_code).then(() => {
+                    this.showToast('📋 Code copied to clipboard!');
+                });
+                
+                // Clear form and reload list
+                document.getElementById('invite-code-form').reset();
+                this.loadInviteCodes();
+            } else {
+                this.showToast(data.error || 'Failed to generate invite code ❌');
+            }
+        } catch (error) {
+            console.error('Error generating invite code:', error);
+            this.showToast('Error generating invite code ❌');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Generate Code';
+        }
+    }
+
+    async loadInviteCodes() {
+        const listContainer = document.getElementById('invite-codes-list');
+        
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/admin/invite-codes`);
+            const data = await response.json();
+
+            if (response.ok) {
+                const codes = data.invite_codes;
+                
+                if (codes.length === 0) {
+                    listContainer.innerHTML = '<p style="color: #888;">No invite codes yet.</p>';
+                    return;
+                }
+
+                listContainer.innerHTML = codes.map(code => `
+                    <div style="border: 1px solid #333; padding: 10px; margin: 5px 0; border-radius: 5px; background: #1a1a1a;">
+                        <div style="font-weight: bold; color: #4ade80;">${code.code}</div>
+                        <div style="font-size: 12px; color: #888;">${code.description}</div>
+                        <div style="font-size: 11px; color: #666;">
+                            Used: ${code.used_count}${code.max_uses ? `/${code.max_uses}` : ''} | 
+                            Created: ${new Date(code.created_at).toLocaleDateString()} |
+                            ${code.active ? '<span style="color: #4ade80;">Active</span>' : '<span style="color: #ef4444;">Inactive</span>'}
+                        </div>
+                        ${code.active ? `<button onclick="window.app.deactivateInviteCode('${code.code}')" style="background: #ef4444; color: white; border: none; padding: 2px 8px; border-radius: 3px; font-size: 11px; margin-top: 5px;">Deactivate</button>` : ''}
+                    </div>
+                `).join('');
+            } else {
+                listContainer.innerHTML = '<p style="color: #ef4444;">Failed to load invite codes</p>';
+            }
+        } catch (error) {
+            console.error('Error loading invite codes:', error);
+            listContainer.innerHTML = '<p style="color: #ef4444;">Error loading invite codes</p>';
+        }
+    }
+
+    async deactivateInviteCode(code) {
+        if (!confirm(`Deactivate invite code ${code}?`)) return;
+
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/admin/invite-codes/${code}/deactivate`, {
+                method: 'PATCH'
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.showToast(`✅ Deactivated invite code: ${code}`);
+                this.loadInviteCodes();
+            } else {
+                this.showToast(data.error || 'Failed to deactivate invite code ❌');
+            }
+        } catch (error) {
+            console.error('Error deactivating invite code:', error);
+            this.showToast('Error deactivating invite code ❌');
+        }
     }
 
     toggleUserMenu() {

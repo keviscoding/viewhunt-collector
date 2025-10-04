@@ -739,31 +739,57 @@ const migrateV1UserToV2 = async (v1User) => {
 
 // Authentication Routes
 
-// Register new user - DISABLED (No new admissions)
+// Register new user - INVITE ONLY
 app.post('/api/auth/register', authLimiter, async (req, res) => {
-    return res.status(403).json({ 
-        error: 'Registration is currently closed. Please sign in if you have an existing account.' 
-    });
-    
-    // Original registration code disabled
-    /*
     try {
-        const { email, password, display_name } = req.body;
+        const { email, password, display_name, invite_code } = req.body;
+
+        // Check if invite code is provided and valid
+        if (!invite_code) {
+            return res.status(403).json({ 
+                error: 'Registration requires a valid invite code. Contact support for access.' 
+            });
+        }
+
+        // Validate invite code
+        const inviteCodeDoc = await db.collection('invite_codes').findOne({ 
+            code: invite_code,
+            active: true,
+            $or: [
+                { expires_at: { $exists: false } },
+                { expires_at: { $gt: new Date() } }
+            ]
+        });
+
+        if (!inviteCodeDoc) {
+            return res.status(403).json({ 
+                error: 'Invalid or expired invite code.' 
+            });
+        }
+
+        // Check if invite code has usage limit
+        if (inviteCodeDoc.max_uses && inviteCodeDoc.used_count >= inviteCodeDoc.max_uses) {
+            return res.status(403).json({ 
+                error: 'This invite code has reached its usage limit.' 
+            });
+        }
+
+        const { email: reqEmail, password: reqPassword, display_name: reqDisplayName } = req.body;
 
         // Validation
-        if (!email || !password || !display_name) {
+        if (!reqEmail || !reqPassword || !reqDisplayName) {
             return res.status(400).json({ error: 'Email, password, and display name are required' });
         }
 
-        if (!validateEmail(email)) {
+        if (!validateEmail(reqEmail)) {
             return res.status(400).json({ error: 'Invalid email format' });
         }
 
-        if (password.length < 8) {
+        if (reqPassword.length < 8) {
             return res.status(400).json({ error: 'Password must be at least 8 characters long' });
         }
 
-        const displayNameError = validateDisplayName(display_name);
+        const displayNameError = validateDisplayName(reqDisplayName);
         if (displayNameError) {
             return res.status(400).json({ error: displayNameError });
         }
@@ -771,13 +797,13 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         // Check if user already exists
         const existingUser = await db.collection('users').findOne({
             $or: [
-                { email: email.toLowerCase() },
-                { display_name: display_name }
+                { email: reqEmail.toLowerCase() },
+                { display_name: reqDisplayName }
             ]
         });
 
         if (existingUser) {
-            if (existingUser.email === email.toLowerCase()) {
+            if (existingUser.email === reqEmail.toLowerCase()) {
                 return res.status(400).json({ error: 'Email already registered' });
             } else {
                 return res.status(400).json({ error: 'Display name already taken' });
@@ -786,15 +812,16 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 
         // Hash password
         const saltRounds = 12;
-        const hashedPassword = await bcrypt.hash(password, saltRounds);
+        const hashedPassword = await bcrypt.hash(reqPassword, saltRounds);
 
-        // Create user
+        // Create user with invite code tracking
         const newUser = {
-            email: email.toLowerCase(),
+            email: reqEmail.toLowerCase(),
             password: hashedPassword,
-            display_name: display_name,
+            display_name: reqDisplayName,
             created_at: new Date(),
             updated_at: new Date(),
+            invited_by_code: invite_code,
             stats: {
                 channels_approved: 0,
                 channels_rejected: 0,
@@ -804,24 +831,39 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 
         const result = await db.collection('users').insertOne(newUser);
 
+        // Update invite code usage
+        await db.collection('invite_codes').updateOne(
+            { code: invite_code },
+            { 
+                $inc: { used_count: 1 },
+                $push: { 
+                    used_by: {
+                        user_id: result.insertedId,
+                        email: reqEmail.toLowerCase(),
+                        used_at: new Date()
+                    }
+                }
+            }
+        );
+
         // Generate JWT token
         const token = jwt.sign(
             { 
                 userId: result.insertedId, 
-                email: email.toLowerCase(),
-                display_name: display_name
+                email: reqEmail.toLowerCase(),
+                display_name: reqDisplayName
             },
             process.env.JWT_SECRET,
             { expiresIn: '7d' }
         );
 
         res.status(201).json({
-            message: 'User registered successfully',
+            message: 'User registered successfully with invite code',
             token,
             user: {
                 id: result.insertedId,
-                email: email.toLowerCase(),
-                display_name: display_name,
+                email: reqEmail.toLowerCase(),
+                display_name: reqDisplayName,
                 stats: newUser.stats
             }
         });
@@ -830,7 +872,6 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         console.error('Registration error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
-    */
 });
 
 // Login user
@@ -2768,6 +2809,166 @@ app.delete('/api/collections/:id', authenticateToken, async (req, res) => {
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// INVITE CODE MANAGEMENT (Admin only)
+
+// Generate new invite code
+app.post('/api/admin/invite-codes', authenticateToken, async (req, res) => {
+    try {
+        // Check if user is admin
+        const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        if (!user || user.email !== process.env.ADMIN_EMAIL?.toLowerCase()) {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+
+        const { 
+            description, 
+            max_uses = null, 
+            expires_in_days = null,
+            code_prefix = 'VH'
+        } = req.body;
+
+        // Generate unique invite code
+        const randomPart = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const inviteCode = `${code_prefix}-${randomPart}`;
+
+        // Calculate expiration date if specified
+        let expires_at = null;
+        if (expires_in_days) {
+            expires_at = new Date();
+            expires_at.setDate(expires_at.getDate() + expires_in_days);
+        }
+
+        const inviteCodeDoc = {
+            code: inviteCode,
+            description: description || 'Community invite',
+            created_by: req.user.userId,
+            created_at: new Date(),
+            expires_at: expires_at,
+            max_uses: max_uses,
+            used_count: 0,
+            used_by: [],
+            active: true
+        };
+
+        await db.collection('invite_codes').insertOne(inviteCodeDoc);
+
+        res.json({
+            success: true,
+            invite_code: inviteCode,
+            details: {
+                description: inviteCodeDoc.description,
+                max_uses: max_uses,
+                expires_at: expires_at
+            }
+        });
+
+    } catch (error) {
+        console.error('Error creating invite code:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// List all invite codes (Admin only)
+app.get('/api/admin/invite-codes', authenticateToken, async (req, res) => {
+    try {
+        // Check if user is admin
+        const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        if (!user || user.email !== process.env.ADMIN_EMAIL?.toLowerCase()) {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+
+        const inviteCodes = await db.collection('invite_codes')
+            .find({})
+            .sort({ created_at: -1 })
+            .toArray();
+
+        res.json({ invite_codes: inviteCodes });
+
+    } catch (error) {
+        console.error('Error fetching invite codes:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Deactivate invite code (Admin only)
+app.patch('/api/admin/invite-codes/:code/deactivate', authenticateToken, async (req, res) => {
+    try {
+        // Check if user is admin
+        const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        if (!user || user.email !== process.env.ADMIN_EMAIL?.toLowerCase()) {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+
+        const { code } = req.params;
+
+        const result = await db.collection('invite_codes').updateOne(
+            { code: code },
+            { 
+                $set: { 
+                    active: false,
+                    deactivated_at: new Date(),
+                    deactivated_by: req.user.userId
+                }
+            }
+        );
+
+        if (result.matchedCount === 0) {
+            return res.status(404).json({ error: 'Invite code not found' });
+        }
+
+        res.json({ success: true, message: 'Invite code deactivated' });
+
+    } catch (error) {
+        console.error('Error deactivating invite code:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Validate invite code (public endpoint for registration form)
+app.post('/api/auth/validate-invite', async (req, res) => {
+    try {
+        const { invite_code } = req.body;
+
+        if (!invite_code) {
+            return res.status(400).json({ error: 'Invite code is required' });
+        }
+
+        const inviteCodeDoc = await db.collection('invite_codes').findOne({ 
+            code: invite_code,
+            active: true,
+            $or: [
+                { expires_at: { $exists: false } },
+                { expires_at: { $gt: new Date() } }
+            ]
+        });
+
+        if (!inviteCodeDoc) {
+            return res.status(404).json({ 
+                error: 'Invalid or expired invite code',
+                valid: false 
+            });
+        }
+
+        // Check usage limit
+        if (inviteCodeDoc.max_uses && inviteCodeDoc.used_count >= inviteCodeDoc.max_uses) {
+            return res.status(403).json({ 
+                error: 'This invite code has reached its usage limit',
+                valid: false 
+            });
+        }
+
+        res.json({ 
+            valid: true,
+            description: inviteCodeDoc.description,
+            remaining_uses: inviteCodeDoc.max_uses ? (inviteCodeDoc.max_uses - inviteCodeDoc.used_count) : null
+        });
+
+    } catch (error) {
+        console.error('Error validating invite code:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
 });
 
 // Subscription Routes
