@@ -392,7 +392,7 @@ const requireSubscription = async (req, res, next) => {
             } else {
                 console.log('Invite user with deactivated code, access revoked:', user.email, 'code:', fullUser.invited_by_code);
                 return res.status(403).json({ 
-                    error: 'Your invite code has been deactivated. Contact support for assistance.',
+                    error: 'Access unavailable. Please check your invite code or contact support.',
                     redirect: '/pricing',
                     userType: 'revoked_invite'
                 });
