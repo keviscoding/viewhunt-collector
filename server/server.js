@@ -379,9 +379,24 @@ const requireSubscription = async (req, res, next) => {
         }
         
         // INVITE USERS get free access (registered with invite codes)
+        // BUT only if their invite code is still active
         if (fullUser.invited_by_code) {
-            console.log('Invite user, granting free access:', user.email, 'invited by code:', fullUser.invited_by_code);
-            return next();
+            // Check if the invite code is still active
+            const inviteCode = await db.collection('invite_codes').findOne({ 
+                code: fullUser.invited_by_code 
+            });
+            
+            if (inviteCode && inviteCode.active) {
+                console.log('Invite user with active code, granting free access:', user.email, 'code:', fullUser.invited_by_code);
+                return next();
+            } else {
+                console.log('Invite user with deactivated code, access revoked:', user.email, 'code:', fullUser.invited_by_code);
+                return res.status(403).json({ 
+                    error: 'Your invite code has been deactivated. Contact support for assistance.',
+                    redirect: '/pricing',
+                    userType: 'revoked_invite'
+                });
+            }
         }
         
         // V2 Beta users (existing users before cutoff date) get free access
@@ -1350,15 +1365,30 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
                 reason: 'Admin access'
             };
         }
-        // INVITE USERS get free access
+        // INVITE USERS get free access (but only if code is still active)
         else if (user.invited_by_code) {
-            subscriptionStatus = {
-                hasAccess: true,
-                type: 'invite',
-                status: 'active',
-                reason: 'Invite access',
-                inviteCode: user.invited_by_code
-            };
+            // Check if the invite code is still active
+            const inviteCode = await db.collection('invite_codes').findOne({ 
+                code: user.invited_by_code 
+            });
+            
+            if (inviteCode && inviteCode.active) {
+                subscriptionStatus = {
+                    hasAccess: true,
+                    type: 'invite',
+                    status: 'active',
+                    reason: 'Invite access',
+                    inviteCode: user.invited_by_code
+                };
+            } else {
+                subscriptionStatus = {
+                    hasAccess: false,
+                    type: 'invite_revoked',
+                    status: 'inactive',
+                    reason: 'Invite code deactivated',
+                    inviteCode: user.invited_by_code
+                };
+            }
         }
         // V2 Beta users (created before cutoff) get free access
         else if (!user.migrated_from_v1 && userCreatedAt < BETA_CUTOFF_DATE) {

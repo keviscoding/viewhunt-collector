@@ -1761,7 +1761,7 @@ class ViewHuntApp {
                             Created: ${new Date(code.created_at).toLocaleDateString()} |
                             ${code.active ? '<span style="color: #4ade80;">Active</span>' : '<span style="color: #ef4444;">Inactive</span>'}
                         </div>
-                        ${code.active ? `<button onclick="window.app.deactivateInviteCode('${code.code}')" style="background: #ef4444; color: white; border: none; padding: 2px 8px; border-radius: 3px; font-size: 11px; margin-top: 5px;">Deactivate</button>` : ''}
+                        ${code.active ? `<button onclick="window.app.deactivateInviteCode('${code.code}', ${code.used_count})" style="background: #ef4444; color: white; border: none; padding: 2px 8px; border-radius: 3px; font-size: 11px; margin-top: 5px;">Deactivate (${code.used_count} users affected)</button>` : ''}
                     </div>
                 `).join('');
             } else {
@@ -1773,8 +1773,12 @@ class ViewHuntApp {
         }
     }
 
-    async deactivateInviteCode(code) {
-        if (!confirm(`Deactivate invite code ${code}?`)) return;
+    async deactivateInviteCode(code, usedCount) {
+        const message = usedCount > 0 
+            ? `Deactivate invite code ${code}?\n\nThis will revoke access for ${usedCount} user(s) who registered with this code.`
+            : `Deactivate invite code ${code}?`;
+            
+        if (!confirm(message)) return;
 
         try {
             const response = await this.fetchWithAuth(`${this.apiBase}/admin/invite-codes/${code}/deactivate`, {
