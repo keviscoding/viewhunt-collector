@@ -676,7 +676,8 @@ class ViewHuntApp {
 
             // Build query parameters for admin filtering
             let url = `${this.apiBase}/channels/approved`;
-            if (this.user && (this.user.email === 'nwalikelv@gmail.com' || this.user.email === 'kevis@viewhunt.com')) {
+            // Admin OR Student account get the full view with filters
+            if (this.user && (this.user.email === 'nwalikelv@gmail.com' || this.user.email === 'kevis@viewhunt.com' || this.user.email === 'students@viewhunt.com')) {
                 const params = new URLSearchParams();
                 
                 // Get filter values
@@ -1196,8 +1197,8 @@ class ViewHuntApp {
         const secondaryApprovalsDesc = secondarySort ? secondarySort.querySelector('option[value="approvals-desc"]') : null;
         const secondaryApprovalsAsc = secondarySort ? secondarySort.querySelector('option[value="approvals-asc"]') : null;
 
-        // Check if user is admin
-        const isAdmin = this.user && (this.user.email === 'nwalikelv@gmail.com' || this.user.email === 'kevis@viewhunt.com');
+        // Check if user is admin or student account
+        const isAdmin = this.user && (this.user.email === 'nwalikelv@gmail.com' || this.user.email === 'kevis@viewhunt.com' || this.user.email === 'students@viewhunt.com');
 
         if (view === 'approved' && isAdmin) {
             // Show approval time and approvals count options for approved view (admin only)
@@ -1392,6 +1393,11 @@ class ViewHuntApp {
     // Helper function to check if user has access (admin, beta, or invite users)
     hasSubscriptionAccess() {
         if (!this.subscriptionStatus) return false;
+        
+        // Student account always has access
+        if (this.user && this.user.email === 'students@viewhunt.com') {
+            return true;
+        }
         
         return this.subscriptionStatus.hasAccess || 
                this.subscriptionStatus.type === 'admin' || 
