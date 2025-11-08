@@ -1978,6 +1978,11 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
             });
             const adminUserId = adminUser ? adminUser._id : null;
             
+            // Pagination parameters
+            const page = parseInt(req.query.page) || 1;
+            const limit = parseInt(req.query.limit) || 50; // 50 channels per page
+            const skip = (page - 1) * limit;
+            
             // Get filter parameters for admin
             const enhancedOnly = req.query.enhancedOnly === 'true';
             const activeRecently = req.query.activeRecently === 'true';
@@ -2106,13 +2111,41 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
                         $match: { recentVideosCount: { $gte: 4 } }
                     }] : []),
                     { $sort: { first_approval_time: -1, approval_count: -1 } },
-                    { $limit: 200 }
+                    {
+                        $facet: {
+                            channels: [
+                                { $skip: skip },
+                                { $limit: limit }
+                            ],
+                            totalCount: [
+                                { $count: 'count' }
+                            ]
+                        }
+                    }
                 ])
                 .toArray();
             
-            res.json(channels);
+            const result = channels[0];
+            const totalChannels = result.totalCount[0]?.count || 0;
+            const totalPages = Math.ceil(totalChannels / limit);
+            
+            res.json({
+                channels: result.channels,
+                pagination: {
+                    currentPage: page,
+                    totalPages,
+                    totalChannels,
+                    hasMore: page < totalPages,
+                    limit
+                }
+            });
         } else {
             // Regular users see only their approved channels
+            // Pagination parameters
+            const page = parseInt(req.query.page) || 1;
+            const limit = parseInt(req.query.limit) || 50;
+            const skip = (page - 1) * limit;
+            
             const userApprovals = await db.collection('user_channel_actions')
                 .aggregate([
                     {
@@ -2131,18 +2164,48 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
                     },
                     { $unwind: '$channel' },
                     { $sort: { created_at: -1 } },
-                    { $limit: 50 },
                     {
-                        $replaceRoot: {
-                            newRoot: {
-                                $mergeObjects: ['$channel', { approved_at: '$created_at' }]
-                            }
+                        $facet: {
+                            channels: [
+                                { $skip: skip },
+                                { $limit: limit }
+                            ],
+                            totalCount: [
+                                { $count: 'count' }
+                            ]
+                        }
+                    },
+                    {
+                        $project: {
+                            channels: {
+                                $map: {
+                                    input: '$channels',
+                                    as: 'item',
+                                    in: {
+                                        $mergeObjects: ['$$item.channel', { approved_at: '$$item.created_at' }]
+                                    }
+                                }
+                            },
+                            totalCount: 1
                         }
                     }
                 ])
                 .toArray();
             
-            res.json(userApprovals);
+            const result = userApprovals[0];
+            const totalChannels = result.totalCount[0]?.count || 0;
+            const totalPages = Math.ceil(totalChannels / limit);
+            
+            res.json({
+                channels: result.channels,
+                pagination: {
+                    currentPage: page,
+                    totalPages,
+                    totalChannels,
+                    hasMore: page < totalPages,
+                    limit
+                }
+            });
         }
     } catch (error) {
         console.error('Error fetching approved channels:', error);

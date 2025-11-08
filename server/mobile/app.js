@@ -655,14 +655,18 @@ class ViewHuntApp {
         await this.loadPendingChannels(1);
     }
 
-    async loadApprovedChannels() {
+    async loadApprovedChannels(page = 1, append = false) {
         const loading = document.getElementById('loading');
         const emptyState = document.getElementById('empty-state');
         const channelGrid = document.getElementById('channel-grid');
 
-        loading.style.display = 'flex';
-        emptyState.style.display = 'none';
-        channelGrid.innerHTML = '';
+        if (!append) {
+            loading.style.display = 'flex';
+            emptyState.style.display = 'none';
+            channelGrid.innerHTML = '';
+            this.approvedPage = 1;
+            this.approvedHasMore = true;
+        }
 
         try {
             if (!this.authToken) {
@@ -679,6 +683,10 @@ class ViewHuntApp {
             // Admin OR Student account get the full view with filters
             if (this.user && (this.user.email === 'nwalikelv@gmail.com' || this.user.email === 'kevis@viewhunt.com' || this.user.email === 'students@viewhunt.com')) {
                 const params = new URLSearchParams();
+                
+                // Add pagination
+                params.append('page', page.toString());
+                params.append('limit', '50');
                 
                 // Get filter values
                 const primarySort = document.getElementById('primary-sort')?.value || 'approval-time-desc';
@@ -705,6 +713,12 @@ class ViewHuntApp {
                 if (maxVideos) params.append('maxVideos', maxVideos.toString());
 
                 url += `?${params}`;
+            } else {
+                // Regular users also get pagination
+                const params = new URLSearchParams();
+                params.append('page', page.toString());
+                params.append('limit', '50');
+                url += `?${params}`;
             }
 
             const response = await this.fetchWithAuth(url);
@@ -727,16 +741,37 @@ class ViewHuntApp {
                 throw new Error(`HTTP ${response.status}`);
             }
 
-            this.channels = await response.json();
+            const data = await response.json();
+            const newChannels = data.channels || data; // Handle both paginated and non-paginated responses
+            const pagination = data.pagination;
+
+            if (append) {
+                this.channels = [...this.channels, ...newChannels];
+            } else {
+                this.channels = newChannels;
+            }
+
+            // Store pagination info
+            if (pagination) {
+                this.approvedPage = pagination.currentPage;
+                this.approvedHasMore = pagination.hasMore;
+                this.approvedTotalPages = pagination.totalPages;
+                this.approvedTotalChannels = pagination.totalChannels;
+            }
 
             loading.style.display = 'none';
 
-            if (this.channels.length === 0) {
+            if (this.channels.length === 0 && !append) {
                 emptyState.style.display = 'block';
                 emptyState.querySelector('h2').textContent = 'No Approved Channels';
                 emptyState.querySelector('p').textContent = 'Start reviewing channels to build your approved list.';
             } else {
                 this.renderChannels();
+                
+                // Show load more button if there are more pages
+                if (pagination && pagination.hasMore) {
+                    this.showLoadMoreButton();
+                }
             }
         } catch (error) {
             console.error('Error loading approved channels:', error);
@@ -874,6 +909,41 @@ class ViewHuntApp {
     renderChannels() {
         // Apply filters by default (which sorts by best ratio first)
         this.applyFilters();
+    }
+
+    showLoadMoreButton() {
+        const channelGrid = document.getElementById('channel-grid');
+        let loadMoreBtn = document.getElementById('load-more-btn');
+        
+        // Remove existing button if any
+        if (loadMoreBtn) {
+            loadMoreBtn.remove();
+        }
+        
+        // Create new load more button
+        loadMoreBtn = document.createElement('div');
+        loadMoreBtn.id = 'load-more-btn';
+        loadMoreBtn.className = 'load-more-container';
+        loadMoreBtn.innerHTML = `
+            <button class="load-more-btn" onclick="app.loadMoreApprovedChannels()">
+                <span>Load More Channels</span>
+                <span class="load-more-info">(${this.approvedPage} of ${this.approvedTotalPages} pages • ${this.channels.length} of ${this.approvedTotalChannels} total)</span>
+            </button>
+        `;
+        
+        channelGrid.parentElement.appendChild(loadMoreBtn);
+    }
+
+    async loadMoreApprovedChannels() {
+        if (!this.approvedHasMore) return;
+        
+        const loadMoreBtn = document.querySelector('.load-more-btn');
+        if (loadMoreBtn) {
+            loadMoreBtn.disabled = true;
+            loadMoreBtn.innerHTML = '<span>Loading...</span>';
+        }
+        
+        await this.loadApprovedChannels(this.approvedPage + 1, true);
     }
 
     createChannelCard(channel) {
