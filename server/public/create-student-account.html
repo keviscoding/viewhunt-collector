@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Student Account - ViewHunt Admin</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2rem;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .info-box {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        
+        .info-box h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.1rem;
+        }
+        
+        .info-box p {
+            color: #666;
+            line-height: 1.6;
+        }
+        
+        .credentials {
+            background: #e8f5e9;
+            border-left: 4px solid #4caf50;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            display: none;
+        }
+        
+        .credentials.show {
+            display: block;
+        }
+        
+        .credentials strong {
+            color: #2e7d32;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: transform 0.2s;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .message.show {
+            display: block;
+        }
+        
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .login-form {
+            margin-bottom: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎓 Create Student Account</h1>
+        <p class="subtitle">Admin Tool - ViewHunt</p>
+        
+        <div class="info-box">
+            <h3>What This Does</h3>
+            <p>Creates a shared student account that can view all approved channels (like admin view) with indicators showing which channels you personally approved.</p>
+        </div>
+        
+        <div class="login-form">
+            <h3 style="margin-bottom: 15px;">Admin Login Required</h3>
+            <div class="form-group">
+                <label for="email">Admin Email</label>
+                <input type="email" id="email" placeholder="your-admin@email.com" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Admin Password</label>
+                <input type="password" id="password" placeholder="Your password" required>
+            </div>
+        </div>
+        
+        <button class="btn" id="createBtn" onclick="createStudentAccount()">
+            Create Student Account
+        </button>
+        
+        <div class="message" id="message"></div>
+        
+        <div class="credentials" id="credentials">
+            <h3>✅ Student Account Ready!</h3>
+            <p style="margin: 10px 0;"><strong>Email:</strong> students@viewhunt.com</p>
+            <p style="margin: 10px 0;"><strong>Password:</strong> ViewHunt2025!Students</p>
+            <p style="margin: 10px 0;"><strong>Login URL:</strong> <a href="/app" target="_blank">https://viewhunt-backend-4fur6.ondigitalocean.app/app</a></p>
+            <p style="margin-top: 15px; color: #666;">Share these credentials with your students!</p>
+        </div>
+    </div>
+    
+    <script>
+        async function createStudentAccount() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const btn = document.getElementById('createBtn');
+            const message = document.getElementById('message');
+            const credentials = document.getElementById('credentials');
+            
+            if (!email || !password) {
+                showMessage('Please enter your admin email and password', 'error');
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.textContent = 'Logging in...';
+            message.classList.remove('show');
+            credentials.classList.remove('show');
+            
+            try {
+                // First, login as admin
+                const loginResponse = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                if (!loginResponse.ok) {
+                    throw new Error('Invalid admin credentials');
+                }
+                
+                const loginData = await loginResponse.json();
+                const token = loginData.token;
+                
+                btn.textContent = 'Creating student account...';
+                
+                // Now create student account
+                const createResponse = await fetch('/api/admin/create-student-account', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await createResponse.json();
+                
+                if (createResponse.ok && data.success) {
+                    showMessage(data.message, 'success');
+                    credentials.classList.add('show');
+                    btn.textContent = '✅ Account Created!';
+                } else {
+                    throw new Error(data.error || 'Failed to create account');
+                }
+                
+            } catch (error) {
+                showMessage('Error: ' + error.message, 'error');
+                btn.disabled = false;
+                btn.textContent = 'Create Student Account';
+            }
+        }
+        
+        function showMessage(text, type) {
+            const message = document.getElementById('message');
+            message.textContent = text;
+            message.className = 'message show ' + type;
+        }
+        
+        // Allow Enter key to submit
+        document.getElementById('password').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                createStudentAccount();
+            }
+        });
+    </script>
+</body>
+</html>

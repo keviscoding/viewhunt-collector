@@ -368,6 +368,12 @@ const requireSubscription = async (req, res, next) => {
             return next();
         }
         
+        // Student account always has access (for viewing approved channels)
+        if (user.email === 'students@viewhunt.com') {
+            console.log('Student account access granted');
+            return next();
+        }
+        
         // Get full user data from database to check migration status
         const fullUser = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
         
@@ -1852,6 +1858,54 @@ app.put('/api/channels/:id/approve', authenticateToken, requireSubscription, asy
             }
         );
         
+        // AUTO-SYNC TO STUDENT ACCOUNT: If admin approves, also approve for student account
+        const isAdmin = req.user.email === process.env.ADMIN_EMAIL;
+        if (isAdmin) {
+            try {
+                // Find the student account
+                const studentAccount = await db.collection('users').findOne({ 
+                    email: 'students@viewhunt.com' 
+                });
+                
+                if (studentAccount) {
+                    // Check if student account already approved this channel
+                    const studentExistingAction = await db.collection('user_channel_actions').findOne({
+                        user_id: studentAccount._id,
+                        channel_id: new ObjectId(channelId)
+                    });
+                    
+                    // Only add if student hasn't already acted on it
+                    if (!studentExistingAction) {
+                        await db.collection('user_channel_actions').insertOne({
+                            user_id: studentAccount._id,
+                            channel_id: new ObjectId(channelId),
+                            action: 'approved',
+                            created_at: new Date(),
+                            user_name: 'Student Account (Auto-synced)',
+                            synced_from_admin: true
+                        });
+                        
+                        // Update student account stats
+                        await db.collection('users').updateOne(
+                            { _id: studentAccount._id },
+                            { 
+                                $inc: { 
+                                    'stats.channels_approved': 1,
+                                    'stats.total_reviews': 1
+                                },
+                                $set: { updated_at: new Date() }
+                            }
+                        );
+                        
+                        console.log(`✅ Auto-synced approval to student account for channel: ${channel.channel_name}`);
+                    }
+                }
+            } catch (syncError) {
+                console.error('Error syncing to student account:', syncError);
+                // Don't fail the main approval if sync fails
+            }
+        }
+        
         res.json({ message: 'Channel approved' });
     } catch (error) {
         console.error('Error approving channel:', error);
@@ -1914,8 +1968,16 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
     try {
         const userId = new ObjectId(req.user.userId);
         const isAdmin = req.user.email === 'nwalikelv@gmail.com' || req.user.email === 'kevis@viewhunt.com';
+        const isStudentAccount = req.user.email === 'students@viewhunt.com';
         
-        if (isAdmin) {
+        // Admin OR Student account get the full approved list
+        if (isAdmin || isStudentAccount) {
+            // Get admin user ID for marking admin-approved channels
+            const adminUser = await db.collection('users').findOne({ 
+                email: process.env.ADMIN_EMAIL 
+            });
+            const adminUserId = adminUser ? adminUser._id : null;
+            
             // Get filter parameters for admin
             const enhancedOnly = req.query.enhancedOnly === 'true';
             const activeRecently = req.query.activeRecently === 'true';
@@ -2005,6 +2067,15 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
                             first_approval_time: { $min: '$approvals.created_at' },
                             latest_approval_time: { $max: '$approvals.created_at' },
                             admin_approved: {
+                                $anyElementTrue: {
+                                    $map: {
+                                        input: '$approvals',
+                                        as: 'approval',
+                                        in: { $eq: ['$$approval.user_id', adminUserId] }
+                                    }
+                                }
+                            },
+                            current_user_approved: {
                                 $anyElementTrue: {
                                     $map: {
                                         input: '$approvals',
@@ -3013,6 +3084,85 @@ app.post('/api/auth/validate-invite', async (req, res) => {
 
     } catch (error) {
         console.error('Error validating invite code:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Create student account (Admin only)
+app.post('/api/admin/create-student-account', authenticateToken, async (req, res) => {
+    try {
+        // Check if user is admin
+        const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        if (!user || user.email !== process.env.ADMIN_EMAIL?.toLowerCase()) {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+
+        const STUDENT_EMAIL = 'students@viewhunt.com';
+        const STUDENT_PASSWORD = 'ViewHunt2025!Students';
+        const STUDENT_DISPLAY_NAME = 'ViewHunt_Students';
+
+        // Check if student account already exists
+        const existingStudent = await db.collection('users').findOne({ 
+            email: STUDENT_EMAIL 
+        });
+
+        if (existingStudent) {
+            // Check if password needs updating
+            const isValidPassword = await bcrypt.compare(STUDENT_PASSWORD, existingStudent.password);
+            
+            if (!isValidPassword) {
+                // Update password
+                const hashedPassword = await bcrypt.hash(STUDENT_PASSWORD, 12);
+                await db.collection('users').updateOne(
+                    { _id: existingStudent._id },
+                    { $set: { password: hashedPassword, updated_at: new Date() } }
+                );
+                
+                return res.json({
+                    success: true,
+                    message: 'Student account already exists - password updated',
+                    email: STUDENT_EMAIL,
+                    userId: existingStudent._id
+                });
+            }
+            
+            return res.json({
+                success: true,
+                message: 'Student account already exists',
+                email: STUDENT_EMAIL,
+                userId: existingStudent._id
+            });
+        }
+
+        // Create new student account
+        const hashedPassword = await bcrypt.hash(STUDENT_PASSWORD, 12);
+        
+        const studentAccount = {
+            email: STUDENT_EMAIL,
+            password: hashedPassword,
+            display_name: STUDENT_DISPLAY_NAME,
+            created_at: new Date(),
+            updated_at: new Date(),
+            is_student_account: true,
+            stats: {
+                channels_approved: 0,
+                channels_rejected: 0,
+                total_reviews: 0
+            }
+        };
+
+        const result = await db.collection('users').insertOne(studentAccount);
+
+        res.json({
+            success: true,
+            message: 'Student account created successfully',
+            email: STUDENT_EMAIL,
+            password: STUDENT_PASSWORD,
+            userId: result.insertedId
+        });
+
+    } catch (error) {
+        console.error('Error creating student account:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
