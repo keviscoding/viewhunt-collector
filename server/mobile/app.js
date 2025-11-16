@@ -121,6 +121,38 @@ class ViewHuntApp {
             }
         });
 
+        // Video Title Search toggle
+        document.getElementById('video-title-search-enabled').addEventListener('change', (e) => {
+            const searchInput = document.getElementById('video-title-search');
+            searchInput.disabled = !e.target.checked;
+            if (!e.target.checked) {
+                searchInput.value = '';
+            }
+            // Auto-apply when toggled off
+            if (!e.target.checked) {
+                if (this.currentView === 'pending') {
+                    this.loadPendingChannels(1);
+                } else if (this.currentView === 'approved') {
+                    this.loadApprovedChannels();
+                }
+            }
+        });
+
+        // Video Title Search input (with debounce)
+        let searchTimeout;
+        document.getElementById('video-title-search').addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                if (document.getElementById('video-title-search-enabled').checked) {
+                    if (this.currentView === 'pending') {
+                        this.loadPendingChannels(1);
+                    } else if (this.currentView === 'approved') {
+                        this.loadApprovedChannels();
+                    }
+                }
+            }, 500); // Wait 500ms after user stops typing
+        });
+
         // Apply Filters button
         document.getElementById('apply-filters-btn').addEventListener('click', () => {
             if (this.currentView === 'pending') {
@@ -565,6 +597,8 @@ class ViewHuntApp {
             const secondarySort = document.getElementById('secondary-sort').value;
             const enhancedOnly = document.getElementById('enhanced-only').checked;
             const activeRecently = document.getElementById('active-recently').checked;
+            const videoTitleSearchEnabled = document.getElementById('video-title-search-enabled').checked;
+            const videoTitleSearch = videoTitleSearchEnabled ? document.getElementById('video-title-search').value.trim() : '';
             const minRecentAvg = this.parseFormattedNumber(document.getElementById('min-recent-avg').value) || 0;
             const maxRecentAvg = document.getElementById('max-recent-avg').value ? this.parseFormattedNumber(document.getElementById('max-recent-avg').value) : null;
 
@@ -587,6 +621,7 @@ class ViewHuntApp {
             // Add filter parameters if they have values
             if (enhancedOnly) params.append('enhancedOnly', 'true');
             if (activeRecently) params.append('activeRecently', 'true');
+            if (videoTitleSearch) params.append('videoTitle', videoTitleSearch);
             if (minRecentAvg > 0) params.append('minRecentAvg', minRecentAvg.toString());
             if (maxRecentAvg) params.append('maxRecentAvg', maxRecentAvg.toString());
 
@@ -692,6 +727,8 @@ class ViewHuntApp {
                 const primarySort = document.getElementById('primary-sort')?.value || 'approval-time-desc';
                 const enhancedOnly = document.getElementById('enhanced-only')?.checked || false;
                 const activeRecently = document.getElementById('active-recently')?.checked || false;
+                const videoTitleSearchEnabled = document.getElementById('video-title-search-enabled')?.checked || false;
+                const videoTitleSearch = videoTitleSearchEnabled ? document.getElementById('video-title-search')?.value.trim() : '';
                 const minRecentAvg = this.parseFormattedNumber(document.getElementById('min-recent-avg')?.value || '0');
                 const maxRecentAvg = document.getElementById('max-recent-avg')?.value ? this.parseFormattedNumber(document.getElementById('max-recent-avg').value) : null;
                 const minViews = this.parseFormattedNumber(document.getElementById('min-views')?.value || '0');
@@ -704,6 +741,7 @@ class ViewHuntApp {
                 params.append('sortBy', primarySort);
                 if (enhancedOnly) params.append('enhancedOnly', 'true');
                 if (activeRecently) params.append('activeRecently', 'true');
+                if (videoTitleSearch) params.append('videoTitle', videoTitleSearch);
                 if (minRecentAvg > 0) params.append('minRecentAvg', minRecentAvg.toString());
                 if (maxRecentAvg) params.append('maxRecentAvg', maxRecentAvg.toString());
 

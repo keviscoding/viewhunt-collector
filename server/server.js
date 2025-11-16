@@ -1986,6 +1986,7 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
             // Get filter parameters for admin
             const enhancedOnly = req.query.enhancedOnly === 'true';
             const activeRecently = req.query.activeRecently === 'true';
+            const videoTitleSearch = req.query.videoTitle ? req.query.videoTitle.trim() : null;
             const minRecentAvg = parseInt(req.query.minRecentAvg) || 0;
             const maxRecentAvg = req.query.maxRecentAvg ? parseInt(req.query.maxRecentAvg) : null;
             const minViews = parseInt(req.query.minViews) || 0;
@@ -1999,6 +2000,11 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
             const approvedMatchQuery = {
                 'approvals.action': 'approved'
             };
+            
+            // Add video title search filter (case-insensitive partial match)
+            if (videoTitleSearch) {
+                approvedMatchQuery.video_title = { $regex: videoTitleSearch, $options: 'i' };
+            }
             
             // Add enhanced filter
             if (enhancedOnly) {
@@ -2230,6 +2236,7 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
         // Filter parameters
         const enhancedOnly = req.query.enhancedOnly === 'true';
         const activeRecently = req.query.activeRecently === 'true';
+        const videoTitleSearch = req.query.videoTitle ? req.query.videoTitle.trim() : null;
         const minRecentAvg = parseInt(req.query.minRecentAvg) || 0;
         const maxRecentAvg = req.query.maxRecentAvg ? parseInt(req.query.maxRecentAvg) : null;
         const minViews = parseInt(req.query.minViews) || 0;
@@ -2251,6 +2258,11 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
             status: 'pending',
             _id: { $nin: reviewedChannelIds }
         };
+        
+        // Add video title search filter (case-insensitive partial match)
+        if (videoTitleSearch) {
+            matchQuery.video_title = { $regex: videoTitleSearch, $options: 'i' };
+        }
         
         // Add enhanced filter if specified
         if (enhancedOnly) {

@@ -331,7 +331,8 @@ body {
 }
 
 .filter-select,
-.filter-input {
+.filter-input,
+.search-input {
     padding: 0.75rem;
     border: 2px solid var(--border-color);
     border-radius: 12px;
@@ -339,6 +340,23 @@ body {
     background: var(--bg-card);
     color: var(--text-primary);
     transition: all 0.2s ease;
+}
+
+.search-input {
+    margin-top: 0.5rem;
+    width: 100%;
+}
+
+.search-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--bg-secondary);
+}
+
+.search-input:not(:disabled):focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 .filter-select:focus,
