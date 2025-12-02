@@ -1713,7 +1713,7 @@ class ViewHuntApp {
             return;
         }
 
-        // Validate invite code first
+        // Validate invite code first (skip if endpoint not available - backend will validate)
         try {
             const validateResponse = await fetch(`${this.apiBase}/auth/validate-invite`, {
                 method: 'POST',
@@ -1723,17 +1723,20 @@ class ViewHuntApp {
                 body: JSON.stringify({ invite_code: inviteCode })
             });
 
-            const validateData = await validateResponse.json();
-            
-            if (!validateResponse.ok || !validateData.valid) {
-                this.showToast(validateData.error || 'Invalid invite code ❌');
-                return;
+            if (validateResponse.ok) {
+                const validateData = await validateResponse.json();
+                
+                if (!validateData.valid) {
+                    this.showToast(validateData.error || 'Invalid invite code ❌');
+                    return;
+                }
+                
+                this.showToast(`✅ Valid invite code: ${validateData.description}`);
             }
-            
-            this.showToast(`✅ Valid invite code: ${validateData.description}`);
+            // If 404 or other error, continue anyway - backend will validate during registration
         } catch (error) {
-            this.showToast('Error validating invite code ❌');
-            return;
+            console.log('Skipping frontend validation, backend will validate during registration');
+            // Continue anyway - backend will validate
         }
 
         if (!displayName || !email || !password) {
