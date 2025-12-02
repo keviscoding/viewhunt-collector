@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Invite Code - ViewHunt Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        h1 { color: #333; margin-bottom: 10px; font-size: 2rem; }
+        .subtitle { color: #666; margin-bottom: 30px; }
+        .form-group { margin-bottom: 20px; }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 500;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: transform 0.2s;
+        }
+        .btn:hover { transform: translateY(-2px); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+        .message.show { display: block; }
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .code-display {
+            background: #f8f9fa;
+            border: 2px solid #667eea;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+            display: none;
+        }
+        .code-display.show { display: block; }
+        .code-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #667eea;
+            text-align: center;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+        }
+        .copy-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            margin-top: 10px;
+        }
+        .copy-btn:hover { background: #5568d3; }
+        small { color: #666; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎫 Create Invite Code</h1>
+        <p class="subtitle">Admin Tool - ViewHunt</p>
+        
+        <div class="form-group">
+            <label for="email">Admin Email</label>
+            <input type="email" id="email" placeholder="your-admin@email.com" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="password">Admin Password</label>
+            <input type="password" id="password" placeholder="Your password" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="description">Description</label>
+            <input type="text" id="description" placeholder="e.g., For students, For beta testers" value="Community invite">
+        </div>
+        
+        <div class="form-group">
+            <label for="max_uses">Max Uses (optional)</label>
+            <input type="number" id="max_uses" placeholder="Leave empty for unlimited">
+            <small>How many people can use this code</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="expires_in_days">Expires In Days (optional)</label>
+            <input type="number" id="expires_in_days" placeholder="Leave empty for never expires">
+            <small>Code will expire after this many days</small>
+        </div>
+        
+        <button class="btn" id="createBtn" onclick="createInviteCode()">
+            Create Invite Code
+        </button>
+        
+        <div class="message" id="message"></div>
+        
+        <div class="code-display" id="codeDisplay">
+            <h3 style="margin-bottom: 10px;">✅ Invite Code Created!</h3>
+            <div class="code-value" id="codeValue"></div>
+            <button class="copy-btn" onclick="copyCode()">📋 Copy Code</button>
+            <p style="margin-top: 15px; color: #666;">Share this code with users to let them register!</p>
+        </div>
+    </div>
+    
+    <script>
+        async function createInviteCode() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const description = document.getElementById('description').value;
+            const max_uses = document.getElementById('max_uses').value;
+            const expires_in_days = document.getElementById('expires_in_days').value;
+            
+            const btn = document.getElementById('createBtn');
+            const message = document.getElementById('message');
+            const codeDisplay = document.getElementById('codeDisplay');
+            
+            if (!email || !password) {
+                showMessage('Please enter your admin email and password', 'error');
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.textContent = 'Logging in...';
+            message.classList.remove('show');
+            codeDisplay.classList.remove('show');
+            
+            try {
+                // Login as admin
+                const loginResponse = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                if (!loginResponse.ok) {
+                    throw new Error('Invalid admin credentials');
+                }
+                
+                const loginData = await loginResponse.json();
+                const token = loginData.token;
+                
+                btn.textContent = 'Creating invite code...';
+                
+                // Create invite code
+                const body = { description };
+                if (max_uses) body.max_uses = parseInt(max_uses);
+                if (expires_in_days) body.expires_in_days = parseInt(expires_in_days);
+                
+                const createResponse = await fetch('/api/admin/invite-codes', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(body)
+                });
+                
+                const data = await createResponse.json();
+                
+                if (createResponse.ok && data.success) {
+                    document.getElementById('codeValue').textContent = data.invite_code;
+                    codeDisplay.classList.add('show');
+                    btn.textContent = '✅ Code Created!';
+                    btn.disabled = false;
+                } else {
+                    throw new Error(data.error || 'Failed to create code');
+                }
+                
+            } catch (error) {
+                showMessage('Error: ' + error.message, 'error');
+                btn.disabled = false;
+                btn.textContent = 'Create Invite Code';
+            }
+        }
+        
+        function showMessage(text, type) {
+            const message = document.getElementById('message');
+            message.textContent = text;
+            message.className = 'message show ' + type;
+        }
+        
+        function copyCode() {
+            const code = document.getElementById('codeValue').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                alert('Code copied to clipboard!');
+            });
+        }
+        
+        // Allow Enter key to submit
+        document.getElementById('password').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                createInviteCode();
+            }
+        });
+    </script>
+</body>
+</html>
