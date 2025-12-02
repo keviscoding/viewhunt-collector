@@ -784,6 +784,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
             active: true,
             $or: [
                 { expires_at: { $exists: false } },
+                { expires_at: null },
                 { expires_at: { $gt: new Date() } }
             ]
         });
@@ -3147,6 +3148,7 @@ app.post('/api/auth/validate-invite', async (req, res) => {
             active: true,
             $or: [
                 { expires_at: { $exists: false } },
+                { expires_at: null },
                 { expires_at: { $gt: new Date() } }
             ]
         });
