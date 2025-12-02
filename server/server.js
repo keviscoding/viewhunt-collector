@@ -3000,7 +3000,17 @@ app.delete('/api/collections/:id', authenticateToken, async (req, res) => {
 
 // Health check
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'OK', timestamp: new Date().toISOString() });
+    res.json({ 
+        status: 'OK', 
+        timestamp: new Date().toISOString(),
+        version: '2.0.1',
+        features: {
+            inviteCodes: true,
+            studentAccount: true,
+            pagination: true,
+            videoSearch: true
+        }
+    });
 });
 
 // INVITE CODE MANAGEMENT (Admin only)
