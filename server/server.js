@@ -3128,6 +3128,11 @@ app.patch('/api/admin/invite-codes/:code/deactivate', authenticateToken, async (
     }
 });
 
+// Test endpoint to verify routing
+app.get('/api/auth/test-invite', (req, res) => {
+    res.json({ message: 'Invite endpoints are working!', timestamp: new Date() });
+});
+
 // Validate invite code (public endpoint for registration form)
 app.post('/api/auth/validate-invite', async (req, res) => {
     try {
