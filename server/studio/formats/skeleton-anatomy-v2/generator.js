@@ -584,49 +584,69 @@ Format your response as JSON:
             const scenes = await this.generateScenePrompts(script, skeletonStyle, gradientColors);
             console.log(`✅ Generated ${scenes.length} scenes\n`);
 
-            // Step 2: Generate images for each scene
+            // Step 2: Generate images for each scene IN PARALLEL (batch mode)
             console.log('🎨 Step 2: Generating images with Nano Banana Pro...');
+            console.log(`Starting batch generation of ${scenes.length} images in parallel...`);
             
-            // Generate images with progress updates
-            for (let i = 0; i < scenes.length; i++) {
-                const scene = scenes[i];
-                const progress = Math.round(((i + 1) / scenes.length) * 100);
-                console.log(`\n[${i + 1}/${scenes.length}] Generating image for scene ${i + 1} (${progress}% complete)...`);
-                
+            // Create all image generation tasks at once
+            const imagePromises = scenes.map(async (scene, index) => {
                 try {
-                    scene.imageUrl = await this.generateImage(scene.imagePrompt, i + 1);
-                    console.log(`✅ Scene ${i + 1}/${scenes.length} image complete`);
+                    console.log(`[${index + 1}/${scenes.length}] Starting image generation for scene ${index + 1}...`);
+                    scene.imageUrl = await this.generateImage(scene.imagePrompt, index + 1);
+                    console.log(`✅ Scene ${index + 1}/${scenes.length} image complete`);
+                    return { success: true, sceneNumber: index + 1 };
                 } catch (error) {
-                    console.error(`❌ Scene ${i + 1} image failed:`, error.message);
+                    console.error(`❌ Scene ${index + 1} image failed:`, error.message);
                     scene.imageError = error.message;
-                    
-                    // If it's a credits error, stop trying
-                    if (error.message.includes('credit') || error.message.includes('quota')) {
-                        console.error('⛔ Out of credits, stopping image generation');
-                        break;
-                    }
+                    return { success: false, sceneNumber: index + 1, error: error.message };
                 }
+            });
+            
+            // Wait for all images to complete
+            const imageResults = await Promise.all(imagePromises);
+            
+            // Check for credit errors
+            const creditErrors = imageResults.filter(r => 
+                !r.success && (r.error?.includes('credit') || r.error?.includes('quota'))
+            );
+            
+            if (creditErrors.length > 0) {
+                console.error('⛔ Out of credits detected');
             }
+            
+            const successCount = imageResults.filter(r => r.success).length;
+            console.log(`\n✅ Batch complete: ${successCount}/${scenes.length} images generated successfully\n`);
 
-            // Step 3: Generate videos (optional, can be done separately)
+            // Step 3: Generate videos (optional, can be done separately) IN PARALLEL
             if (generateVideos) {
                 console.log('\n🎥 Step 3: Generating videos with Veo 3.1...');
-                for (let i = 0; i < scenes.length; i++) {
-                    const scene = scenes[i];
-                    if (scene.imageUrl) {
-                        try {
-                            scene.videoUrl = await this.generateVideo(
-                                scene.imageUrl,
-                                scene.videoPrompt,
-                                i + 1
-                            );
-                            console.log(`✅ Scene ${i + 1}/${scenes.length} video complete`);
-                        } catch (error) {
-                            console.error(`❌ Scene ${i + 1} video failed:`, error.message);
-                            scene.videoError = error.message;
-                        }
+                
+                // Only generate videos for scenes that have images
+                const scenesWithImages = scenes.filter(scene => scene.imageUrl);
+                console.log(`Starting batch generation of ${scenesWithImages.length} videos in parallel...`);
+                
+                const videoPromises = scenesWithImages.map(async (scene, index) => {
+                    const sceneNumber = scenes.indexOf(scene) + 1;
+                    try {
+                        console.log(`[${index + 1}/${scenesWithImages.length}] Starting video generation for scene ${sceneNumber}...`);
+                        scene.videoUrl = await this.generateVideo(
+                            scene.imageUrl,
+                            scene.videoPrompt,
+                            sceneNumber
+                        );
+                        console.log(`✅ Scene ${sceneNumber} video complete`);
+                        return { success: true, sceneNumber };
+                    } catch (error) {
+                        console.error(`❌ Scene ${sceneNumber} video failed:`, error.message);
+                        scene.videoError = error.message;
+                        return { success: false, sceneNumber, error: error.message };
                     }
-                }
+                });
+                
+                // Wait for all videos to complete
+                const videoResults = await Promise.all(videoPromises);
+                const videoSuccessCount = videoResults.filter(r => r.success).length;
+                console.log(`\n✅ Batch complete: ${videoSuccessCount}/${scenesWithImages.length} videos generated successfully\n`);
             }
 
             console.log('\n✅ Generation complete!');
