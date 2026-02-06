@@ -216,15 +216,23 @@ Now, when I give you a script, break it into scenes and generate the prompts fol
             const totalFrames = trainingImages.files.length;
             console.log(`Including ${totalFrames} reference frames for Claude to analyze...`);
             
-            // Add all reference frames as image blocks
+            // Add all reference frames as image blocks using URLs
+            // Note: Anthropic changed their API - file_id is no longer supported
+            // We need to use the file URL instead
             for (const file of trainingImages.files) {
-                content.push({
-                    type: 'image',
-                    source: {
-                        type: 'file',
-                        file_id: file.fileId
-                    }
-                });
+                // Skip videos for now - only include images
+                if (file.filename && (file.filename.endsWith('.png') || file.filename.endsWith('.jpg') || file.filename.endsWith('.jpeg'))) {
+                    // Get file URL from Anthropic
+                    const fileUrl = `https://api.anthropic.com/v1/files/${file.fileId}/content`;
+                    
+                    content.push({
+                        type: 'image',
+                        source: {
+                            type: 'url',
+                            url: fileUrl
+                        }
+                    });
+                }
             }
             
             content.push({
