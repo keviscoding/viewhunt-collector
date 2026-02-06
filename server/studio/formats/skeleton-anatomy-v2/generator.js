@@ -499,51 +499,63 @@ Format your response as JSON:
             const elapsed = Math.floor((Date.now() - startTime) / 1000);
             
             try {
+                // CORRECT ENDPOINT: /api/v1/jobs/recordInfo with taskId as query param
                 const response = await axios.get(
-                    `${this.kieBaseUrl}/api/v1/jobs/getTask/${taskId}`,
+                    `${this.kieBaseUrl}/api/v1/jobs/recordInfo`,
                     {
+                        params: { taskId },
                         headers: {
                             'Authorization': `Bearer ${this.kieApiKey}`
                         }
                     }
                 );
 
-                const status = response.data.data.status;
-                
-                // Log progress every 30 seconds
-                if (pollCount % 6 === 0) {
-                    console.log(`Task ${taskId} status: ${status} (${elapsed}s elapsed)`);
-                }
-                
-                if (status === 'completed') {
-                    const resultUrl = response.data.data.info.resultUrls;
-                    // Parse the result URL (it's returned as a string array)
-                    const urls = JSON.parse(resultUrl);
-                    console.log(`✅ Task completed in ${elapsed}s`);
-                    return urls[0];
-                }
-                
-                if (status === 'failed') {
-                    const errorMsg = response.data.data.info?.error || response.data.msg || 'Unknown error';
-                    throw new Error('Task failed: ' + errorMsg);
-                }
-                
-                // Check for out of credits error
+                // Check API response code
                 if (response.data.code !== 200) {
                     throw new Error(`Kie.ai API error: ${response.data.msg}`);
                 }
+
+                const state = response.data.data.state;
                 
-                // Still processing, wait and retry
+                // Log progress every 30 seconds
+                if (pollCount % 6 === 0) {
+                    console.log(`Task ${taskId} state: ${state} (${elapsed}s elapsed)`);
+                }
+                
+                if (state === 'success') {
+                    const resultJson = JSON.parse(response.data.data.resultJson);
+                    const resultUrls = resultJson.resultUrls;
+                    console.log(`✅ Task completed in ${elapsed}s`);
+                    return resultUrls[0];
+                }
+                
+                if (state === 'fail') {
+                    const errorMsg = response.data.data.failMsg || 'Unknown error';
+                    const errorCode = response.data.data.failCode || 'N/A';
+                    throw new Error(`Task failed (${errorCode}): ${errorMsg}`);
+                }
+                
+                // state === 'waiting' - still processing, wait and retry
                 await new Promise(resolve => setTimeout(resolve, pollInterval));
                 
             } catch (error) {
-                if (error.response?.status === 404) {
+                // Check for specific error types
+                if (error.response?.status === 401) {
+                    throw new Error('Kie.ai authentication failed. Check your API key.');
+                } else if (error.response?.status === 402) {
+                    throw new Error('Out of Kie.ai credits. Please add more credits to your account.');
+                } else if (error.response?.status === 429) {
+                    console.warn('Rate limit hit, waiting 10 seconds...');
+                    await new Promise(resolve => setTimeout(resolve, 10000));
+                } else if (error.response?.status === 404) {
                     // Task not found yet, wait and retry
                     await new Promise(resolve => setTimeout(resolve, pollInterval));
-                } else if (error.response?.data?.msg?.includes('credit') || error.response?.data?.msg?.includes('quota')) {
-                    throw new Error('Out of Kie.ai credits. Please add more credits to your account.');
-                } else {
+                } else if (error.message.includes('Kie.ai')) {
+                    // Already formatted error, rethrow
                     throw error;
+                } else {
+                    console.error('Polling error:', error.message);
+                    await new Promise(resolve => setTimeout(resolve, pollInterval));
                 }
             }
         }
