@@ -1,11 +1,13 @@
 /**
- * Upload training images to Anthropic Files API
- * Run this once to upload all training images and cache the file IDs
+ * Upload training images AND videos to Anthropic Files API
+ * Run this once to upload all training materials and cache the file IDs
  */
 
 const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('fs');
 const path = require('path');
+const FormData = require('form-data');
+const axios = require('axios');
 require('dotenv').config();
 
 const anthropic = new Anthropic({
@@ -26,29 +28,69 @@ const TRAINING_IMAGES = [
     'Screenshot 2026-02-06 at 12.11.04.png', // Action shot
 ];
 
+// Select key training videos (full examples)
+const TRAINING_VIDEOS = [
+    'Training LEGS Only？(1).mp4',
+    'What If You Were Raised by Lions_ [DownSub.com].txt', // Transcript
+];
+
 const CACHE_FILE = path.join(__dirname, 'training-files-cache.json');
 
-async function uploadTrainingImages() {
-    console.log('🎨 Uploading training images to Anthropic Files API...\n');
+async function uploadFileToAnthropic(filePath, filename) {
+    console.log(`📤 Uploading: ${filename}...`);
+    
+    try {
+        const formData = new FormData();
+        formData.append('file', fs.createReadStream(filePath), filename);
+        
+        const response = await axios.post(
+            'https://api.anthropic.com/v1/files',
+            formData,
+            {
+                headers: {
+                    ...formData.getHeaders(),
+                    'anthropic-version': '2023-06-01',
+                    'anthropic-beta': 'files-api-2025-04-14',
+                    'X-Api-Key': process.env.ANTHROPIC_API_KEY
+                }
+            }
+        );
+        
+        console.log(`✅ Uploaded: ${filename} (ID: ${response.data.id})`);
+        return response.data;
+        
+    } catch (error) {
+        console.error(`❌ Failed to upload ${filename}:`, error.response?.data || error.message);
+        throw error;
+    }
+}
+
+async function uploadTrainingMaterials() {
+    console.log('🎨 Uploading training materials to Anthropic Files API...\n');
     
     // Check if we already have cached file IDs
     if (fs.existsSync(CACHE_FILE)) {
         console.log('✅ Found cached file IDs');
         const cache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
-        console.log(`Cached ${cache.fileIds.length} file IDs from ${cache.uploadedAt}`);
+        console.log(`Cached ${cache.images.length} images and ${cache.videos.length} videos from ${cache.uploadedAt}`);
         console.log('\nTo re-upload, delete:', CACHE_FILE);
-        return cache.fileIds;
+        return cache;
     }
     
-    const fileIds = [];
-    const trainingDir = path.join(__dirname, '../../../../../Broll Images/What happens if you train legs only');
+    const uploadedImages = [];
+    const uploadedVideos = [];
     
-    console.log('Training images directory:', trainingDir);
+    const imagesDir = path.join(__dirname, '../../../../../Broll Images/What happens if you train legs only');
+    const videosDir = path.join(__dirname, '../../../../../Skeleton Training DATA');
+    
+    console.log('Images directory:', imagesDir);
+    console.log('Videos directory:', videosDir);
     console.log('');
     
-    for (let i = 0; i < TRAINING_IMAGES.length; i++) {
-        const imageName = TRAINING_IMAGES[i];
-        const imagePath = path.join(trainingDir, imageName);
+    // Upload images
+    console.log('📸 Uploading training images...\n');
+    for (const imageName of TRAINING_IMAGES) {
+        const imagePath = path.join(imagesDir, imageName);
         
         if (!fs.existsSync(imagePath)) {
             console.warn(`⚠️  Image not found: ${imageName}`);
@@ -56,48 +98,63 @@ async function uploadTrainingImages() {
         }
         
         try {
-            console.log(`📤 Uploading ${i + 1}/${TRAINING_IMAGES.length}: ${imageName}...`);
-            
-            // Read file as base64
-            const imageData = fs.readFileSync(imagePath);
-            const base64Image = imageData.toString('base64');
-            
-            // Note: Anthropic Files API might not be available yet
-            // For now, we'll store images as base64 in the cache
-            // When Files API is available, we'll upload them properly
-            
-            fileIds.push({
+            const fileData = await uploadFileToAnthropic(imagePath, imageName);
+            uploadedImages.push({
                 name: imageName,
-                base64: base64Image,
-                mediaType: 'image/png'
+                fileId: fileData.id,
+                mimeType: fileData.mime_type,
+                size: fileData.size_bytes
             });
-            
-            console.log(`✅ Cached: ${imageName}`);
-            
         } catch (error) {
-            console.error(`❌ Failed to process ${imageName}:`, error.message);
+            console.error(`Failed to upload image: ${imageName}`);
+        }
+    }
+    
+    // Upload videos
+    console.log('\n🎥 Uploading training videos...\n');
+    for (const videoName of TRAINING_VIDEOS) {
+        const videoPath = path.join(videosDir, videoName);
+        
+        if (!fs.existsSync(videoPath)) {
+            console.warn(`⚠️  Video not found: ${videoName}`);
+            continue;
+        }
+        
+        try {
+            const fileData = await uploadFileToAnthropic(videoPath, videoName);
+            uploadedVideos.push({
+                name: videoName,
+                fileId: fileData.id,
+                mimeType: fileData.mime_type,
+                size: fileData.size_bytes
+            });
+        } catch (error) {
+            console.error(`Failed to upload video: ${videoName}`);
         }
     }
     
     // Save cache
     const cache = {
         uploadedAt: new Date().toISOString(),
-        fileIds: fileIds,
-        count: fileIds.length
+        images: uploadedImages,
+        videos: uploadedVideos,
+        totalFiles: uploadedImages.length + uploadedVideos.length
     };
     
     fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
-    console.log(`\n✅ Cached ${fileIds.length} training images`);
+    console.log(`\n✅ Uploaded ${cache.totalFiles} files to Anthropic`);
+    console.log(`   - ${uploadedImages.length} images`);
+    console.log(`   - ${uploadedVideos.length} videos`);
     console.log(`Cache saved to: ${CACHE_FILE}`);
     
-    return fileIds;
+    return cache;
 }
 
 // Run if called directly
 if (require.main === module) {
-    uploadTrainingImages()
+    uploadTrainingMaterials()
         .then(() => {
-            console.log('\n🎉 Training images ready!');
+            console.log('\n🎉 Training materials ready!');
             process.exit(0);
         })
         .catch(error => {
@@ -106,4 +163,4 @@ if (require.main === module) {
         });
 }
 
-module.exports = { uploadTrainingImages };
+module.exports = { uploadTrainingMaterials };

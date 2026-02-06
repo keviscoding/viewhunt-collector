@@ -32,14 +32,14 @@ class SkeletonGeneratorV2 {
             const cacheFile = path.join(__dirname, 'training-files-cache.json');
             if (fs.existsSync(cacheFile)) {
                 const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-                console.log(`✅ Loaded ${cache.count} training images from cache`);
-                return cache.fileIds;
+                console.log(`✅ Loaded ${cache.images?.length || 0} images and ${cache.videos?.length || 0} videos from cache`);
+                return cache;
             }
-            console.warn('⚠️  No training images cache found. Run upload-training-images.js first.');
-            return [];
+            console.warn('⚠️  No training materials cache found. Run upload-training-images.js first.');
+            return { images: [], videos: [] };
         } catch (error) {
-            console.error('Failed to load training images:', error.message);
-            return [];
+            console.error('Failed to load training materials:', error.message);
+            return { images: [], videos: [] };
         }
     }
 
@@ -233,29 +233,60 @@ Now, when I give you a script, break it into scenes and generate the prompts fol
     async generateScenePrompts(script, skeletonStyle, gradientColors) {
         console.log('Using Claude to break script into scenes...');
         
-        // Build content array with training images + text prompt
+        // Build content array with training materials + text prompt
         const content = [];
         
-        // Add training images first (if available)
-        if (this.trainingImages && this.trainingImages.length > 0) {
-            console.log(`Including ${this.trainingImages.length} training images for Claude to analyze...`);
+        // Add training materials first (if available)
+        if (this.trainingImages && (this.trainingImages.images?.length > 0 || this.trainingImages.videos?.length > 0)) {
+            const totalImages = this.trainingImages.images?.length || 0;
+            const totalVideos = this.trainingImages.videos?.length || 0;
+            console.log(`Including ${totalImages} images and ${totalVideos} videos for Claude to analyze...`);
             
-            // Add first 5 images (to stay within token limits)
-            for (let i = 0; i < Math.min(5, this.trainingImages.length); i++) {
-                const img = this.trainingImages[i];
-                content.push({
-                    type: 'image',
-                    source: {
-                        type: 'base64',
-                        media_type: img.mediaType,
-                        data: img.base64
+            // Add videos first (most comprehensive examples)
+            if (this.trainingImages.videos && this.trainingImages.videos.length > 0) {
+                for (const video of this.trainingImages.videos) {
+                    if (video.fileId) {
+                        content.push({
+                            type: 'document',
+                            source: {
+                                type: 'file',
+                                file_id: video.fileId
+                            }
+                        });
                     }
-                });
+                }
+            }
+            
+            // Add images (up to 5 to stay within limits)
+            if (this.trainingImages.images && this.trainingImages.images.length > 0) {
+                const imagesToInclude = Math.min(5, this.trainingImages.images.length);
+                for (let i = 0; i < imagesToInclude; i++) {
+                    const img = this.trainingImages.images[i];
+                    if (img.fileId) {
+                        content.push({
+                            type: 'image',
+                            source: {
+                                type: 'file',
+                                file_id: img.fileId
+                            }
+                        });
+                    } else if (img.base64) {
+                        // Fallback to base64 if file ID not available
+                        content.push({
+                            type: 'image',
+                            source: {
+                                type: 'base64',
+                                media_type: img.mediaType,
+                                data: img.base64
+                            }
+                        });
+                    }
+                }
             }
             
             content.push({
                 type: 'text',
-                text: 'Study these reference frames from our training videos. Notice the transparent glass body, skeleton detail, eye expressions, camera angles, lighting, and overall visual style.'
+                text: 'Study these training videos and reference frames. Notice the transparent glass body, skeleton detail, eye expressions, camera angles, lighting, pacing, and overall visual style. Match this exact style in your prompts.'
             });
         }
         
