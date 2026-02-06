@@ -447,7 +447,7 @@ Format your response as JSON:
     }
 
     /**
-     * Step 3: Generate video from image using Kie.ai Veo 3.1
+     * Step 3: Generate video from image using Kie.ai Veo 3.1 Fast
      */
     async generateVideo(imageUrl, videoPrompt, sceneNumber) {
         console.log(`Generating video for scene ${sceneNumber}...`);
@@ -457,24 +457,31 @@ Format your response as JSON:
                 `${this.kieBaseUrl}/api/v1/veo/generate`,
                 {
                     prompt: videoPrompt,
-                    imageUrls: [imageUrl],
-                    model: 'veo3_fast',
-                    generationType: 'FIRST_AND_LAST_FRAMES_2_VIDEO',
-                    aspect_ratio: '9:16',
-                    enableTranslation: true
+                    imageUrls: [imageUrl], // Single image for image-to-video
+                    model: 'veo3_fast', // Using fast model
+                    generationType: 'FIRST_AND_LAST_FRAMES_2_VIDEO', // Animate the image
+                    aspect_ratio: '9:16', // Vertical video
+                    enableTranslation: true // Auto-translate prompts to English
                 },
                 {
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${this.kieApiKey}`
-                    }
+                    },
+                    timeout: 30000 // 30 second timeout for request
                 }
             );
+
+            // Check response structure
+            if (!createResponse.data || createResponse.data.code !== 200) {
+                console.error('Veo API error:', createResponse.data);
+                throw new Error(`Veo API error (${createResponse.data?.code}): ${createResponse.data?.msg}`);
+            }
 
             const taskId = createResponse.data.data.taskId;
             console.log(`Video task created: ${taskId}`);
             
-            // Poll for completion (videos take longer, 5-10 minutes)
+            // Poll for completion (videos take 1-3 minutes typically)
             const videoUrl = await this.pollKieTask(taskId, 600000); // 10 min timeout
             console.log(`Video ${sceneNumber} generated successfully`);
             
@@ -482,6 +489,16 @@ Format your response as JSON:
             
         } catch (error) {
             console.error(`Error generating video ${sceneNumber}:`, error.response?.data || error.message);
+            
+            // Log more details for debugging
+            if (error.response) {
+                console.error('Veo API error response:', {
+                    status: error.response.status,
+                    statusText: error.response.statusText,
+                    data: error.response.data
+                });
+            }
+            
             throw error;
         }
     }

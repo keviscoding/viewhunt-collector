@@ -178,6 +178,63 @@ router.post('/generate/full', requireAuth, async (req, res) => {
     }
 });
 
+// V2: Streaming generation with real-time progress updates
+router.post('/generate/stream', requireAuth, async (req, res) => {
+    try {
+        const { format, script, skeletonStyle, gradientColors, generateVideos } = req.body;
+        
+        if (!format || !script) {
+            return res.status(400).json({ error: 'Format and script are required' });
+        }
+        
+        const generator = getGenerator(format, 'v2');
+        if (!generator) {
+            return res.status(400).json({ error: 'Invalid format or V2 not available' });
+        }
+        
+        // Set up Server-Sent Events
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        
+        const sendEvent = (event, data) => {
+            res.write(`event: ${event}\n`);
+            res.write(`data: ${JSON.stringify(data)}\n\n`);
+        };
+        
+        console.log(`Streaming generation for format: ${format}`);
+        
+        try {
+            // Generate with progress callbacks
+            const result = await generator.generateWithProgress(script, {
+                skeletonStyle,
+                gradientColors,
+                generateVideos: generateVideos !== false,
+                onProgress: (progress) => {
+                    sendEvent('progress', progress);
+                },
+                onSceneComplete: (scene) => {
+                    sendEvent('scene', scene);
+                }
+            });
+            
+            sendEvent('complete', { success: true, ...result });
+            res.end();
+            
+        } catch (error) {
+            console.error('Streaming generation error:', error);
+            sendEvent('error', { error: error.message });
+            res.end();
+        }
+        
+    } catch (error) {
+        console.error('Stream setup error:', error);
+        res.status(500).json({ 
+            error: 'Failed to start generation stream',
+            details: error.message 
+        });
+    }
+});
 // Health check
 router.get('/health', (req, res) => {
     res.json({ 
