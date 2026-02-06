@@ -213,26 +213,21 @@ Now, when I give you a script, break it into scenes and generate the prompts fol
         
         // Add reference frames if available
         if (trainingImages && trainingImages.files && trainingImages.files.length > 0) {
-            const totalFrames = trainingImages.files.length;
-            console.log(`Including ${totalFrames} reference frames for Claude to analyze...`);
+            // Only include images (not videos/docs)
+            const imageFiles = trainingImages.files.filter(f => 
+                f.filename && (f.filename.endsWith('.png') || f.filename.endsWith('.jpg') || f.filename.endsWith('.jpeg'))
+            );
             
-            // Add all reference frames as image blocks using URLs
-            // Note: Anthropic changed their API - file_id is no longer supported
-            // We need to use the file URL instead
-            for (const file of trainingImages.files) {
-                // Skip videos for now - only include images
-                if (file.filename && (file.filename.endsWith('.png') || file.filename.endsWith('.jpg') || file.filename.endsWith('.jpeg'))) {
-                    // Get file URL from Anthropic
-                    const fileUrl = `https://api.anthropic.com/v1/files/${file.fileId}/content`;
-                    
-                    content.push({
-                        type: 'image',
-                        source: {
-                            type: 'url',
-                            url: fileUrl
-                        }
-                    });
-                }
+            console.log(`Including ${imageFiles.length} reference frames for Claude to analyze...`);
+            
+            for (const file of imageFiles) {
+                content.push({
+                    type: 'image',
+                    source: {
+                        type: 'file',
+                        file_id: file.fileId
+                    }
+                });
             }
             
             content.push({
@@ -280,7 +275,12 @@ Format your response as JSON:
         });
 
         try {
-            const response = await this.anthropic.messages.create({
+            // Determine if we need the files beta header
+            const hasFileReferences = content.some(c => 
+                c.type === 'image' && c.source?.type === 'file'
+            );
+            
+            const createParams = {
                 model: 'claude-sonnet-4-20250514',
                 max_tokens: 8000,
                 system: this.masterPrompt,
@@ -288,6 +288,15 @@ Format your response as JSON:
                     role: 'user',
                     content: content
                 }]
+            };
+            
+            // Add beta header if using file references
+            if (hasFileReferences) {
+                createParams.betas = ['files-api-2025-04-14'];
+                console.log('Using files-api beta header for reference frames');
+            }
+            
+            const response = await this.anthropic.messages.create(createParams);
             });
 
             const responseText = response.content[0].text;
