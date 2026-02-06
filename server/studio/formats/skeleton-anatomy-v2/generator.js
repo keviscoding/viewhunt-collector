@@ -768,6 +768,209 @@ Format your response as JSON:
             throw error;
         }
     }
+
+    /**
+     * Generate with real-time progress callbacks for streaming updates
+     */
+    async generateWithProgress(script, options = {}) {
+        const {
+            skeletonStyle = 'realistic translucent glass with ivory skeleton',
+            gradientColors = 'smooth blue to teal gradient background',
+            generateVideos = true,
+            onProgress = () => {},
+            onSceneComplete = () => {}
+        } = options;
+
+        console.log(`\n🎬 Starting Skeleton Video Generation (with progress streaming)\n`);
+        console.log(`Script length: ${script.length} characters`);
+        console.log(`Style: ${skeletonStyle}`);
+        console.log(`Background: ${gradientColors}\n`);
+
+        try {
+            // Step 1: Generate scene prompts with Claude
+            onProgress({ step: 'claude', status: 'processing', message: 'Claude is analyzing your script...' });
+            console.log('📝 Step 1: Generating scene breakdown with Claude...');
+            
+            const scenes = await this.generateScenePrompts(script, skeletonStyle, gradientColors);
+            console.log(`✅ Generated ${scenes.length} scenes\n`);
+            
+            onProgress({ 
+                step: 'claude', 
+                status: 'completed', 
+                message: `Generated ${scenes.length} scenes`,
+                totalScenes: scenes.length
+            });
+
+            // Step 2: Generate images for each scene with progress updates
+            onProgress({ 
+                step: 'images', 
+                status: 'processing', 
+                message: `Generating ${scenes.length} images in parallel...`,
+                total: scenes.length,
+                completed: 0
+            });
+            
+            console.log('🎨 Step 2: Generating images with Nano Banana Pro...');
+            console.log(`Starting batch generation of ${scenes.length} images in parallel...`);
+            
+            let imagesCompleted = 0;
+            
+            const imagePromises = scenes.map(async (scene, index) => {
+                try {
+                    console.log(`[${index + 1}/${scenes.length}] Starting image generation for scene ${index + 1}...`);
+                    scene.imageUrl = await this.generateImage(scene.imagePrompt, index + 1);
+                    console.log(`✅ Scene ${index + 1}/${scenes.length} image complete`);
+                    
+                    imagesCompleted++;
+                    onProgress({
+                        step: 'images',
+                        status: 'processing',
+                        message: `Generated image ${imagesCompleted}/${scenes.length}`,
+                        total: scenes.length,
+                        completed: imagesCompleted
+                    });
+                    
+                    // Send scene update with image
+                    onSceneComplete({
+                        sceneNumber: index + 1,
+                        imageUrl: scene.imageUrl,
+                        imagePrompt: scene.imagePrompt,
+                        videoPrompt: scene.videoPrompt,
+                        scriptLine: scene.scriptLine
+                    });
+                    
+                    return { success: true, sceneNumber: index + 1 };
+                } catch (error) {
+                    console.error(`❌ Scene ${index + 1} image failed:`, error.message);
+                    scene.imageError = error.message;
+                    
+                    imagesCompleted++;
+                    onProgress({
+                        step: 'images',
+                        status: 'processing',
+                        message: `Image ${imagesCompleted}/${scenes.length} (${index + 1} failed)`,
+                        total: scenes.length,
+                        completed: imagesCompleted
+                    });
+                    
+                    return { success: false, sceneNumber: index + 1, error: error.message };
+                }
+            });
+            
+            const imageResults = await Promise.all(imagePromises);
+            const successCount = imageResults.filter(r => r.success).length;
+            console.log(`\n✅ Batch complete: ${successCount}/${scenes.length} images generated successfully\n`);
+            
+            onProgress({
+                step: 'images',
+                status: 'completed',
+                message: `${successCount}/${scenes.length} images generated`,
+                total: scenes.length,
+                completed: scenes.length
+            });
+
+            // Step 3: Generate videos with progress updates
+            if (generateVideos) {
+                const scenesWithImages = scenes.filter(scene => scene.imageUrl);
+                
+                onProgress({
+                    step: 'videos',
+                    status: 'processing',
+                    message: `Generating ${scenesWithImages.length} videos in parallel...`,
+                    total: scenesWithImages.length,
+                    completed: 0
+                });
+                
+                console.log('\n🎥 Step 3: Generating videos with Veo 3.1...');
+                console.log(`Starting batch generation of ${scenesWithImages.length} videos in parallel...`);
+                
+                let videosCompleted = 0;
+                
+                const videoPromises = scenesWithImages.map(async (scene, index) => {
+                    const sceneNumber = scenes.indexOf(scene) + 1;
+                    try {
+                        console.log(`[${index + 1}/${scenesWithImages.length}] Starting video generation for scene ${sceneNumber}...`);
+                        scene.videoUrl = await this.generateVideo(
+                            scene.imageUrl,
+                            scene.videoPrompt,
+                            sceneNumber
+                        );
+                        console.log(`✅ Scene ${sceneNumber} video complete`);
+                        
+                        videosCompleted++;
+                        onProgress({
+                            step: 'videos',
+                            status: 'processing',
+                            message: `Generated video ${videosCompleted}/${scenesWithImages.length}`,
+                            total: scenesWithImages.length,
+                            completed: videosCompleted
+                        });
+                        
+                        // Send scene update with video
+                        onSceneComplete({
+                            sceneNumber: sceneNumber,
+                            videoUrl: scene.videoUrl,
+                            imageUrl: scene.imageUrl,
+                            imagePrompt: scene.imagePrompt,
+                            videoPrompt: scene.videoPrompt,
+                            scriptLine: scene.scriptLine
+                        });
+                        
+                        return { success: true, sceneNumber };
+                    } catch (error) {
+                        console.error(`❌ Scene ${sceneNumber} video failed:`, error.message);
+                        scene.videoError = error.message;
+                        
+                        videosCompleted++;
+                        onProgress({
+                            step: 'videos',
+                            status: 'processing',
+                            message: `Video ${videosCompleted}/${scenesWithImages.length} (${sceneNumber} failed)`,
+                            total: scenesWithImages.length,
+                            completed: videosCompleted
+                        });
+                        
+                        return { success: false, sceneNumber, error: error.message };
+                    }
+                });
+                
+                const videoResults = await Promise.all(videoPromises);
+                const videoSuccessCount = videoResults.filter(r => r.success).length;
+                console.log(`\n✅ Batch complete: ${videoSuccessCount}/${scenesWithImages.length} videos generated successfully\n`);
+                
+                const videoCost = videoSuccessCount * 0.64;
+                console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
+                console.log(`   Videos generated: ${videoSuccessCount}`);
+                console.log(`   Provider: AtlasCloud Veo 3.1 Fast`);
+                console.log(`   Cost: $${videoCost.toFixed(2)} ($0.64 per 8-second video)`);
+                console.log(`   Rate: $0.08 per second`);
+                console.log(`\n`);
+                
+                onProgress({
+                    step: 'videos',
+                    status: 'completed',
+                    message: `${videoSuccessCount}/${scenesWithImages.length} videos generated`,
+                    total: scenesWithImages.length,
+                    completed: scenesWithImages.length,
+                    cost: videoCost
+                });
+            }
+
+            console.log('\n✅ Generation complete!');
+            
+            return {
+                success: true,
+                totalScenes: scenes.length,
+                scenes: scenes,
+                script: script
+            };
+
+        } catch (error) {
+            console.error('❌ Generation failed:', error);
+            onProgress({ step: 'error', status: 'failed', message: error.message });
+            throw error;
+        }
+    }
 }
 
 module.exports = SkeletonGeneratorV2;

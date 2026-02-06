@@ -55,7 +55,7 @@ function initializeGenerateButton() {
     });
 }
 
-// Handle Full Video Generation
+// Handle Full Video Generation with Real-Time Streaming
 async function handleFullGeneration(script, generateVideos) {
     generationInProgress = true;
     currentScenes = [];
@@ -70,12 +70,20 @@ async function handleFullGeneration(script, generateVideos) {
         step.classList.remove('active', 'completed');
     });
     
+    // Clear previous results
+    document.getElementById('scenes-container').innerHTML = '';
+    
     try {
-        // Step 1: Claude - Breaking into scenes
-        updateProgressStep('claude', 'active');
-        updateProgressMessage('🤖 Claude is analyzing your script and breaking it into scenes...');
+        // Use EventSource for Server-Sent Events
+        const eventSource = new EventSource(`/api/studio/generate/stream?${new URLSearchParams({
+            format: 'skeleton-anatomy',
+            script: script,
+            gradientColors: selectedGradient,
+            generateVideos: generateVideos
+        })}`);
         
-        const response = await fetch('/api/studio/generate/full', {
+        // This won't work with POST, so let's use fetch with streaming instead
+        const response = await fetch('/api/studio/generate/stream', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -90,55 +98,36 @@ async function handleFullGeneration(script, generateVideos) {
         });
         
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.details || errorData.error || 'Generation failed');
+            throw new Error('Failed to start generation stream');
         }
         
-        const data = await response.json();
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
         
-        if (!data.success) {
-            throw new Error(data.error || 'Generation failed');
-        }
-        
-        updateProgressStep('claude', 'completed');
-        updateProgressMessage(`✅ Script broken into ${data.scenes.length} scenes!`);
-        
-        // Step 2: Images - Generating images for each scene
-        updateProgressStep('images', 'active');
-        updateProgressMessage(`🎨 Generating ${data.scenes.length} images with Kie.ai Nano Banana Pro...`);
-        
-        // Wait for images to complete (they're already being generated in the backend)
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        updateProgressStep('images', 'completed');
-        updateProgressMessage(`✅ All ${data.scenes.length} images generated!`);
-        
-        // Step 3: Videos (if enabled)
-        if (generateVideos) {
-            updateProgressStep('videos', 'active');
-            updateProgressMessage(`🎥 Creating ${data.scenes.length} videos with Kie.ai Veo 3.1 Fast... (this takes 5-10 min)`);
+        while (true) {
+            const { done, value } = await reader.read();
             
-            // Wait for videos to complete
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            if (done) break;
             
-            updateProgressStep('videos', 'completed');
-            updateProgressMessage(`✅ All ${data.scenes.length} videos created!`);
-        } else {
-            // Skip video step
-            document.querySelector('[data-step="videos"]').style.opacity = '0.3';
+            buffer += decoder.decode(value, { stream: true });
+            
+            // Process complete SSE messages
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop(); // Keep incomplete message in buffer
+            
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                
+                const eventMatch = line.match(/^event: (.+)\ndata: (.+)$/);
+                if (!eventMatch) continue;
+                
+                const [, event, dataStr] = eventMatch;
+                const data = JSON.parse(dataStr);
+                
+                handleStreamEvent(event, data, generateVideos);
+            }
         }
-        
-        // Step 4: Complete
-        updateProgressStep('complete', 'completed');
-        updateProgressMessage('🎉 Generation complete! View your results below.');
-        
-        // Store scenes
-        currentScenes = data.scenes;
-        
-        // Show results after a brief delay
-        setTimeout(() => {
-            showResults(data.scenes, generateVideos);
-        }, 1500);
         
     } catch (error) {
         console.error('Generation error:', error);
@@ -148,6 +137,104 @@ async function handleFullGeneration(script, generateVideos) {
         setTimeout(() => {
             if (confirm('Generation failed. Would you like to try again?')) {
                 resetToConfig();
+            }
+        }, 2000);
+    } finally {
+        generationInProgress = false;
+    }
+}
+
+// Handle streaming events
+function handleStreamEvent(event, data, hasVideos) {
+    console.log('Stream event:', event, data);
+    
+    switch (event) {
+        case 'progress':
+            handleProgressUpdate(data);
+            break;
+            
+        case 'scene':
+            handleSceneComplete(data, hasVideos);
+            break;
+            
+        case 'complete':
+            handleGenerationComplete(data, hasVideos);
+            break;
+            
+        case 'error':
+            throw new Error(data.error || 'Generation failed');
+    }
+}
+
+// Handle progress updates
+function handleProgressUpdate(data) {
+    const { step, status, message, completed, total } = data;
+    
+    if (step === 'claude') {
+        if (status === 'processing') {
+            updateProgressStep('claude', 'active');
+            updateProgressMessage('🤖 ' + message);
+        } else if (status === 'completed') {
+            updateProgressStep('claude', 'completed');
+            updateProgressMessage('✅ ' + message);
+        }
+    } else if (step === 'images') {
+        updateProgressStep('images', 'active');
+        if (completed && total) {
+            updateProgressMessage(`🎨 ${message} (${completed}/${total})`);
+        } else {
+            updateProgressMessage('🎨 ' + message);
+        }
+        
+        if (status === 'completed') {
+            updateProgressStep('images', 'completed');
+        }
+    } else if (step === 'videos') {
+        updateProgressStep('videos', 'active');
+        if (completed && total) {
+            updateProgressMessage(`🎥 ${message} (${completed}/${total})`);
+        } else {
+            updateProgressMessage('🎥 ' + message);
+        }
+        
+        if (status === 'completed') {
+            updateProgressStep('videos', 'completed');
+            if (data.cost) {
+                updateProgressMessage(`✅ ${message} - Cost: $${data.cost.toFixed(2)}`);
+            }
+        }
+    }
+}
+
+// Handle scene completion - show immediately
+function handleSceneComplete(scene, hasVideos) {
+    currentScenes.push(scene);
+    
+    // Show results section if not already visible
+    const resultsSection = document.getElementById('results-section');
+    if (resultsSection.classList.contains('hidden')) {
+        resultsSection.classList.remove('hidden');
+    }
+    
+    // Add scene card to container
+    const container = document.getElementById('scenes-container');
+    const sceneCard = createSceneCard(scene, scene.sceneNumber, hasVideos);
+    container.appendChild(sceneCard);
+    
+    // Scroll to the new scene
+    sceneCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// Handle generation complete
+function handleGenerationComplete(data, hasVideos) {
+    updateProgressStep('complete', 'completed');
+    updateProgressMessage('🎉 Generation complete! All results shown below.');
+    
+    // Store all scenes
+    currentScenes = data.scenes || currentScenes;
+    
+    generationInProgress = false;
+}
             }
         }, 2000);
     } finally {
