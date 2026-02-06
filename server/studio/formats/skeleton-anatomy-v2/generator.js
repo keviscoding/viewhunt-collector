@@ -10,7 +10,11 @@ class SkeletonGeneratorV2 {
             apiKey: process.env.ANTHROPIC_API_KEY
         });
         
-        // Kie.ai API configuration
+        // fal.ai API configuration
+        this.falApiKey = process.env.FALAI_API_KEY;
+        this.falBaseUrl = 'https://fal.run';
+        
+        // Kie.ai API configuration (for images only)
         this.kieApiKey = process.env.KIEAI_API_KEY;
         this.kieBaseUrl = 'https://api.kie.ai';
         
@@ -453,7 +457,7 @@ Format your response as JSON:
             console.log(`Image task created: ${taskId}`);
             
             // Poll for completion (images can take 5-10 minutes during high load)
-            const imageUrl = await this.pollKieTask(taskId, 600000, false); // false = image
+            const imageUrl = await this.pollKieTaskForImage(taskId, 600000);
             console.log(`Image ${sceneNumber} generated successfully`);
             
             return imageUrl;
@@ -475,7 +479,7 @@ Format your response as JSON:
     }
 
     /**
-     * Step 3: Generate video from image using Kie.ai Veo 3.1 Fast
+     * Step 3: Generate video from image using fal.ai Veo 3.1 Fast
      */
     async generateVideo(imageUrl, videoPrompt, sceneNumber) {
         console.log(`\n=== Generating video for scene ${sceneNumber} ===`);
@@ -484,46 +488,42 @@ Format your response as JSON:
         console.log(`===\n`);
         
         try {
-            const createResponse = await axios.post(
-                `${this.kieBaseUrl}/api/v1/veo/generate`,
+            // Use fal.ai's image-to-video endpoint
+            const response = await axios.post(
+                `${this.falBaseUrl}/fal-ai/veo3.1/fast/image-to-video`,
                 {
                     prompt: videoPrompt,
-                    imageUrls: [imageUrl], // Single image for image-to-video
-                    model: 'veo3_fast', // Using fast model
-                    generationType: 'FIRST_AND_LAST_FRAMES_2_VIDEO', // Animate the image
-                    aspect_ratio: '9:16', // Vertical video
-                    enableTranslation: true // Auto-translate prompts to English
+                    image_url: imageUrl,
+                    aspect_ratio: '9:16',
+                    duration: '8s',
+                    resolution: '720p',
+                    generate_audio: true
                 },
                 {
                     headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${this.kieApiKey}`
+                        'Authorization': `Key ${this.falApiKey}`,
+                        'Content-Type': 'application/json'
                     },
-                    timeout: 30000 // 30 second timeout for request
+                    timeout: 300000 // 5 minute timeout
                 }
             );
 
-            // Check response structure
-            if (!createResponse.data || createResponse.data.code !== 200) {
-                console.error('Veo API error:', createResponse.data);
-                throw new Error(`Veo API error (${createResponse.data?.code}): ${createResponse.data?.msg}`);
+            // fal.ai returns the result directly (synchronous)
+            if (response.data && response.data.video && response.data.video.url) {
+                const videoUrl = response.data.video.url;
+                console.log(`✅ Video ${sceneNumber} generated successfully`);
+                return videoUrl;
+            } else {
+                console.error('Unexpected fal.ai response:', response.data);
+                throw new Error('fal.ai did not return a video URL');
             }
-
-            const taskId = createResponse.data.data.taskId;
-            console.log(`Video task created: ${taskId}`);
-            
-            // Poll for completion (videos take 1-3 minutes typically)
-            const videoUrl = await this.pollKieTask(taskId, 600000, true); // true = video
-            console.log(`Video ${sceneNumber} generated successfully`);
-            
-            return videoUrl;
             
         } catch (error) {
             console.error(`Error generating video ${sceneNumber}:`, error.response?.data || error.message);
             
             // Log more details for debugging
             if (error.response) {
-                console.error('Veo API error response:', {
+                console.error('fal.ai API error response:', {
                     status: error.response.status,
                     statusText: error.response.statusText,
                     data: error.response.data
@@ -535,18 +535,14 @@ Format your response as JSON:
     }
 
     /**
-     * Poll Kie.ai task until completion
-     * Different endpoints for images vs videos
+     * Poll Kie.ai task for image generation
      */
-    async pollKieTask(taskId, timeout = 600000, isVideo = false) {
+    async pollKieTaskForImage(taskId, timeout = 600000) {
         const startTime = Date.now();
         const pollInterval = 5000; // 5 seconds
         let pollCount = 0;
         
-        // Different endpoints for images vs videos
-        const endpoint = isVideo 
-            ? `${this.kieBaseUrl}/api/v1/veo/record-info`
-            : `${this.kieBaseUrl}/api/v1/jobs/recordInfo`;
+        const endpoint = `${this.kieBaseUrl}/api/v1/jobs/recordInfo`;
         
         while (Date.now() - startTime < timeout) {
             pollCount++;
@@ -565,64 +561,27 @@ Format your response as JSON:
                     throw new Error(`Kie.ai API error: ${response.data.msg}`);
                 }
 
-                if (isVideo) {
-                    // Video response structure
-                    const successFlag = response.data.data.successFlag;
-                    
-                    // Log progress every 30 seconds
-                    if (pollCount % 6 === 0) {
-                        const statusText = successFlag === 0 ? 'generating' : successFlag === 1 ? 'success' : 'failed';
-                        console.log(`Video task ${taskId} status: ${statusText} (${elapsed}s elapsed)`);
-                    }
-                    
-                    if (successFlag === 1) {
-                        // Success
-                        const resultUrls = JSON.parse(response.data.data.resultUrls);
-                        console.log(`✅ Video task completed in ${elapsed}s`);
-                        return resultUrls[0];
-                    }
-                    
-                    if (successFlag === 2 || successFlag === 3) {
-                        // Failed - get error from data
-                        const errorMsg = response.data.data.errorMessage 
-                            || response.data.data.info?.failMsg 
-                            || response.data.data.failMsg 
-                            || response.data.data.msg
-                            || 'Video generation failed';
-                        const errorCode = response.data.data.errorCode || 'N/A';
-                        console.error(`Video task ${taskId} failed (${errorCode}):`, errorMsg);
-                        console.error(`Full response:`, JSON.stringify(response.data, null, 2));
-                        throw new Error(`Video generation failed (${errorCode}): ${errorMsg}`);
-                    }
-                    
-                    // successFlag === 0 - still processing
-                    
-                } else {
-                    // Image response structure
-                    const state = response.data.data.state;
-                    
-                    // Log progress every 30 seconds
-                    if (pollCount % 6 === 0) {
-                        console.log(`Image task ${taskId} state: ${state} (${elapsed}s elapsed)`);
-                    }
-                    
-                    if (state === 'success') {
-                        const resultJson = JSON.parse(response.data.data.resultJson);
-                        const resultUrls = resultJson.resultUrls;
-                        console.log(`✅ Image task completed in ${elapsed}s`);
-                        return resultUrls[0];
-                    }
-                    
-                    if (state === 'fail') {
-                        const errorMsg = response.data.data.failMsg || 'Unknown error';
-                        const errorCode = response.data.data.failCode || 'N/A';
-                        throw new Error(`Image generation failed (${errorCode}): ${errorMsg}`);
-                    }
-                    
-                    // state === 'waiting' - still processing
+                const state = response.data.data.state;
+                
+                // Log progress every 30 seconds
+                if (pollCount % 6 === 0) {
+                    console.log(`Image task ${taskId} state: ${state} (${elapsed}s elapsed)`);
                 }
                 
-                // Still processing, wait and retry
+                if (state === 'success') {
+                    const resultJson = JSON.parse(response.data.data.resultJson);
+                    const resultUrls = resultJson.resultUrls;
+                    console.log(`✅ Image task completed in ${elapsed}s`);
+                    return resultUrls[0];
+                }
+                
+                if (state === 'fail') {
+                    const errorMsg = response.data.data.failMsg || 'Unknown error';
+                    const errorCode = response.data.data.failCode || 'N/A';
+                    throw new Error(`Image generation failed (${errorCode}): ${errorMsg}`);
+                }
+                
+                // state === 'waiting' - still processing, wait and retry
                 await new Promise(resolve => setTimeout(resolve, pollInterval));
                 
             } catch (error) {
