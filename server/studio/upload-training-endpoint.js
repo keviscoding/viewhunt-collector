@@ -181,6 +181,11 @@ router.post('/upload-training', (req, res, next) => {
         console.log(`✅ Cache saved to ${CACHE_FILE}`);
         console.log(`Cache contains: ${cache.totalFiles} files (${uploadedImages.length} images, ${uploadedVideos.length} videos/docs)`);
         
+        // Also save to in-memory global cache so the generator can always find it
+        // This bypasses any filesystem issues on DigitalOcean
+        global._trainingCache = cache;
+        console.log(`✅ Cache also saved to in-memory global (${cache.totalFiles} files)`);
+        
         // Verify the file was written
         if (fs.existsSync(CACHE_FILE)) {
             const fileSize = fs.statSync(CACHE_FILE).size;
@@ -334,6 +339,60 @@ router.get('/upload-training-form', (req, res) => {
         </body>
         </html>
     `);
+});
+
+// Diagnostic endpoint to check training cache status
+router.get('/training-status', (req, res) => {
+    const results = {
+        timestamp: new Date().toISOString(),
+        cacheFilePath: CACHE_FILE,
+        __dirname: __dirname,
+        cwd: process.cwd()
+    };
+    
+    // Check filesystem cache
+    try {
+        if (fs.existsSync(CACHE_FILE)) {
+            const raw = fs.readFileSync(CACHE_FILE, 'utf8');
+            const data = JSON.parse(raw);
+            results.filesystemCache = {
+                exists: true,
+                fileSize: raw.length,
+                totalFiles: data.totalFiles,
+                uploadedAt: data.uploadedAt,
+                sampleFileIds: data.files?.slice(0, 3).map(f => ({ name: f.filename, id: f.fileId?.substring(0, 20) + '...' }))
+            };
+        } else {
+            results.filesystemCache = { exists: false };
+        }
+    } catch (e) {
+        results.filesystemCache = { error: e.message };
+    }
+    
+    // Check in-memory cache
+    if (global._trainingCache) {
+        results.memoryCache = {
+            exists: true,
+            totalFiles: global._trainingCache.totalFiles,
+            uploadedAt: global._trainingCache.uploadedAt
+        };
+    } else {
+        results.memoryCache = { exists: false };
+    }
+    
+    // Check generator's __dirname
+    const generatorDir = path.join(__dirname, 'formats/skeleton-anatomy-v2');
+    try {
+        const dirFiles = fs.readdirSync(generatorDir);
+        results.generatorDir = {
+            path: generatorDir,
+            files: dirFiles
+        };
+    } catch (e) {
+        results.generatorDir = { path: generatorDir, error: e.message };
+    }
+    
+    res.json(results);
 });
 
 module.exports = router;

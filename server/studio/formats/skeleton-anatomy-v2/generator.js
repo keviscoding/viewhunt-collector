@@ -33,21 +33,49 @@ class SkeletonGeneratorV2 {
     
     loadTrainingImages() {
         try {
-            const referenceIdsFile = path.join(__dirname, 'reference-file-ids.json');
-            console.log(`Looking for reference file IDs at: ${referenceIdsFile}`);
+            // Try multiple possible paths for the reference file
+            const possiblePaths = [
+                path.join(__dirname, 'reference-file-ids.json'),
+                path.resolve(__dirname, 'reference-file-ids.json'),
+                '/workspace/server/studio/formats/skeleton-anatomy-v2/reference-file-ids.json'
+            ];
             
-            if (fs.existsSync(referenceIdsFile)) {
-                const data = JSON.parse(fs.readFileSync(referenceIdsFile, 'utf8'));
-                console.log(`✅ Loaded ${data.files?.length || 0} reference frame IDs`);
-                console.log(`   Uploaded at: ${data.uploadedAt}`);
-                return data;
+            for (const referenceIdsFile of possiblePaths) {
+                console.log(`Checking for reference file IDs at: ${referenceIdsFile}`);
+                
+                if (fs.existsSync(referenceIdsFile)) {
+                    const raw = fs.readFileSync(referenceIdsFile, 'utf8');
+                    console.log(`Found file at ${referenceIdsFile} (${raw.length} bytes)`);
+                    const data = JSON.parse(raw);
+                    console.log(`✅ Loaded ${data.files?.length || 0} reference frame IDs`);
+                    console.log(`   Uploaded at: ${data.uploadedAt}`);
+                    return data;
+                }
             }
             
-            console.warn('⚠️  No reference file IDs found.');
-            console.warn('⚠️  Run: node upload-references.js to upload reference frames');
+            // Also try loading from in-memory cache (set by upload endpoint)
+            if (global._trainingCache && global._trainingCache.files && global._trainingCache.files.length > 0) {
+                console.log(`✅ Loaded ${global._trainingCache.files.length} reference frame IDs from in-memory cache`);
+                return global._trainingCache;
+            }
+            
+            console.warn('⚠️  No reference file IDs found at any path.');
+            console.warn(`⚠️  __dirname = ${__dirname}`);
+            console.warn(`⚠️  cwd = ${process.cwd()}`);
+            
+            // List what files ARE in the directory for debugging
+            try {
+                const dirFiles = fs.readdirSync(__dirname);
+                console.warn(`⚠️  Files in ${__dirname}: ${dirFiles.join(', ')}`);
+            } catch (e) {
+                console.warn(`⚠️  Cannot list directory ${__dirname}: ${e.message}`);
+            }
+            
+            console.warn('⚠️  Upload training materials at /api/studio/upload-training-form');
             return { files: [] };
         } catch (error) {
             console.error('Failed to load reference file IDs:', error.message);
+            console.error('Stack:', error.stack);
             return { files: [] };
         }
     }
@@ -297,7 +325,6 @@ Format your response as JSON:
             }
             
             const response = await this.anthropic.messages.create(createParams);
-            });
 
             const responseText = response.content[0].text;
             console.log('Claude response received, parsing...');
