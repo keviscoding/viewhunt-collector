@@ -301,6 +301,15 @@ Format your response as JSON:
                 }
             );
 
+            // Log full response for debugging
+            console.log(`Kie.ai API response:`, JSON.stringify(createResponse.data, null, 2));
+            
+            // Check if response has the expected structure
+            if (!createResponse.data || !createResponse.data.data || !createResponse.data.data.taskId) {
+                console.error('Unexpected Kie.ai API response structure:', createResponse.data);
+                throw new Error('Kie.ai API did not return a taskId. Response: ' + JSON.stringify(createResponse.data));
+            }
+
             const taskId = createResponse.data.data.taskId;
             console.log(`Image task created: ${taskId}`);
             
@@ -312,6 +321,16 @@ Format your response as JSON:
             
         } catch (error) {
             console.error(`Error generating image ${sceneNumber}:`, error.response?.data || error.message);
+            
+            // Log more details for debugging
+            if (error.response) {
+                console.error('Kie.ai API error response:', {
+                    status: error.response.status,
+                    statusText: error.response.statusText,
+                    data: error.response.data
+                });
+            }
+            
             throw error;
         }
     }
