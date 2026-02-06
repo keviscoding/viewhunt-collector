@@ -45,6 +45,10 @@ app.use('/app', express.static(path.join(__dirname, 'mobile')));
 // Studio API routes
 app.use('/api/studio', studioRoutes);
 
+// Training upload routes
+const trainingUploadRoutes = require('./studio/upload-training-endpoint');
+app.use('/api/studio', trainingUploadRoutes);
+
 // Landing page route
 app.get('/', (req, res) => {
     const indexPath = path.join(__dirname, 'public', 'index.html');
