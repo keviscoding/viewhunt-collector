@@ -30,12 +30,17 @@ class SkeletonGeneratorV2 {
     loadTrainingImages() {
         try {
             const cacheFile = path.join(__dirname, 'training-files-cache.json');
+            console.log(`Looking for training cache at: ${cacheFile}`);
+            
             if (fs.existsSync(cacheFile)) {
                 const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
                 console.log(`✅ Loaded ${cache.images?.length || 0} images and ${cache.videos?.length || 0} videos from cache`);
+                console.log(`Cache uploaded at: ${cache.uploadedAt}`);
                 return cache;
             }
-            console.warn('⚠️  No training materials cache found. Run upload-training-images.js first.');
+            
+            console.warn('⚠️  No training materials cache found at:', cacheFile);
+            console.warn('⚠️  Upload training materials at: https://viewhunt.app/api/studio/upload-training-form');
             return { images: [], videos: [] };
         } catch (error) {
             console.error('Failed to load training materials:', error.message);
@@ -569,14 +574,25 @@ Format your response as JSON:
 
             // Step 2: Generate images for each scene
             console.log('🎨 Step 2: Generating images with Nano Banana Pro...');
+            
+            // Generate images with progress updates
             for (let i = 0; i < scenes.length; i++) {
                 const scene = scenes[i];
+                const progress = Math.round(((i + 1) / scenes.length) * 100);
+                console.log(`\n[${i + 1}/${scenes.length}] Generating image for scene ${i + 1} (${progress}% complete)...`);
+                
                 try {
                     scene.imageUrl = await this.generateImage(scene.imagePrompt, i + 1);
                     console.log(`✅ Scene ${i + 1}/${scenes.length} image complete`);
                 } catch (error) {
                     console.error(`❌ Scene ${i + 1} image failed:`, error.message);
                     scene.imageError = error.message;
+                    
+                    // If it's a credits error, stop trying
+                    if (error.message.includes('credit') || error.message.includes('quota')) {
+                        console.error('⛔ Out of credits, stopping image generation');
+                        break;
+                    }
                 }
             }
 
