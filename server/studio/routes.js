@@ -2,10 +2,17 @@ const express = require('express');
 const router = express.Router();
 const SkeletonGenerator = require('./formats/skeleton-anatomy/generator');
 
-// Initialize generators
-const generators = {
-    'skeleton-anatomy': new SkeletonGenerator()
-};
+// Lazy-load generators (only initialize when needed, not on server startup)
+const generators = {};
+
+function getGenerator(format) {
+    if (!generators[format]) {
+        if (format === 'skeleton-anatomy') {
+            generators[format] = new SkeletonGenerator();
+        }
+    }
+    return generators[format];
+}
 
 // Middleware to check authentication
 const requireAuth = (req, res, next) => {
@@ -29,7 +36,7 @@ router.post('/generate/script', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Format and topic are required' });
         }
         
-        const generator = generators[format];
+        const generator = getGenerator(format);
         if (!generator) {
             return res.status(400).json({ error: 'Invalid format' });
         }
@@ -61,7 +68,7 @@ router.post('/generate/images', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Format and script are required' });
         }
         
-        const generator = generators[format];
+        const generator = getGenerator(format);
         if (!generator) {
             return res.status(400).json({ error: 'Invalid format' });
         }
@@ -93,7 +100,7 @@ router.post('/generate/voice', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Format and script are required' });
         }
         
-        const generator = generators[format];
+        const generator = getGenerator(format);
         if (!generator) {
             return res.status(400).json({ error: 'Invalid format' });
         }
@@ -136,7 +143,7 @@ router.get('/formats', (req, res) => {
 router.get('/health', (req, res) => {
     res.json({ 
         status: 'ok',
-        availableFormats: Object.keys(generators)
+        availableFormats: ['skeleton-anatomy']
     });
 });
 
