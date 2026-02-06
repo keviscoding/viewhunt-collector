@@ -583,14 +583,16 @@ Format your response as JSON:
                     }
                     
                     if (successFlag === 2 || successFlag === 3) {
-                        // Failed - get error from data.info or data itself
-                        const errorMsg = response.data.data.info?.failMsg 
+                        // Failed - get error from data
+                        const errorMsg = response.data.data.errorMessage 
+                            || response.data.data.info?.failMsg 
                             || response.data.data.failMsg 
                             || response.data.data.msg
                             || 'Video generation failed';
-                        console.error(`Video task ${taskId} failed:`, errorMsg);
+                        const errorCode = response.data.data.errorCode || 'N/A';
+                        console.error(`Video task ${taskId} failed (${errorCode}):`, errorMsg);
                         console.error(`Full response:`, JSON.stringify(response.data, null, 2));
-                        throw new Error(`Video generation failed: ${errorMsg}`);
+                        throw new Error(`Video generation failed (${errorCode}): ${errorMsg}`);
                     }
                     
                     // successFlag === 0 - still processing
