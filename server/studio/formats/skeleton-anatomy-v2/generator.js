@@ -33,41 +33,22 @@ class SkeletonGeneratorV2 {
     
     loadTrainingImages() {
         try {
-            const cacheFile = path.join(__dirname, 'training-files-cache.json');
-            console.log(`Looking for training cache at: ${cacheFile}`);
+            const referenceIdsFile = path.join(__dirname, 'reference-file-ids.json');
+            console.log(`Looking for reference file IDs at: ${referenceIdsFile}`);
             
-            // Check if directory exists
-            const cacheDir = path.dirname(cacheFile);
-            if (!fs.existsSync(cacheDir)) {
-                console.error(`❌ Cache directory does not exist: ${cacheDir}`);
-                return { images: [], videos: [] };
+            if (fs.existsSync(referenceIdsFile)) {
+                const data = JSON.parse(fs.readFileSync(referenceIdsFile, 'utf8'));
+                console.log(`✅ Loaded ${data.files?.length || 0} reference frame IDs`);
+                console.log(`   Uploaded at: ${data.uploadedAt}`);
+                return data;
             }
             
-            // List files in directory
-            try {
-                const files = fs.readdirSync(cacheDir);
-                console.log(`Files in cache directory: ${files.join(', ')}`);
-            } catch (err) {
-                console.error(`Failed to list cache directory: ${err.message}`);
-            }
-            
-            if (fs.existsSync(cacheFile)) {
-                const fileSize = fs.statSync(cacheFile).size;
-                console.log(`✅ Cache file found: ${fileSize} bytes`);
-                
-                const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-                console.log(`✅ Loaded ${cache.images?.length || 0} images and ${cache.videos?.length || 0} videos from cache`);
-                console.log(`Cache uploaded at: ${cache.uploadedAt}`);
-                return cache;
-            }
-            
-            console.warn('⚠️  No training materials cache found at:', cacheFile);
-            console.warn('⚠️  Upload training materials at: https://viewhunt.app/api/studio/upload-training-form');
-            return { images: [], videos: [] };
+            console.warn('⚠️  No reference file IDs found.');
+            console.warn('⚠️  Run: node upload-references.js to upload reference frames');
+            return { files: [] };
         } catch (error) {
-            console.error('Failed to load training materials:', error.message);
-            console.error('Stack trace:', error.stack);
-            return { images: [], videos: [] };
+            console.error('Failed to load reference file IDs:', error.message);
+            return { files: [] };
         }
     }
 
@@ -224,69 +205,32 @@ Now, when I give you a script, break it into scenes and generate the prompts fol
     async generateScenePrompts(script, skeletonStyle, gradientColors) {
         console.log('Using Claude to break script into scenes...');
         
-        // Build content array with training materials + text prompt
+        // Build content array with reference frames + text prompt
         const content = [];
         
-        // TEMPORARILY DISABLED: Training materials file format needs to be fixed
-        // The Anthropic Files API format has changed and 'document' type is not supported
-        // For now, we'll generate without training materials
-        /*
-        // Add training materials first (if available)
-        if (this.trainingImages && (this.trainingImages.images?.length > 0 || this.trainingImages.videos?.length > 0)) {
-            const totalImages = this.trainingImages.images?.length || 0;
-            const totalVideos = this.trainingImages.videos?.length || 0;
-            console.log(`Including ${totalImages} images and ${totalVideos} videos for Claude to analyze...`);
+        // Add reference frames if available
+        if (this.trainingImages && this.trainingImages.files && this.trainingImages.files.length > 0) {
+            const totalFrames = this.trainingImages.files.length;
+            console.log(`Including ${totalFrames} reference frames for Claude to analyze...`);
             
-            // Add videos first (most comprehensive examples)
-            if (this.trainingImages.videos && this.trainingImages.videos.length > 0) {
-                for (const video of this.trainingImages.videos) {
-                    if (video.fileId) {
-                        content.push({
-                            type: 'document',
-                            source: {
-                                type: 'file',
-                                file_id: video.fileId
-                            }
-                        });
+            // Add all reference frames as image blocks
+            for (const file of this.trainingImages.files) {
+                content.push({
+                    type: 'image',
+                    source: {
+                        type: 'file',
+                        file_id: file.fileId
                     }
-                }
-            }
-            
-            // Add images (up to 5 to stay within limits)
-            if (this.trainingImages.images && this.trainingImages.images.length > 0) {
-                const imagesToInclude = Math.min(5, this.trainingImages.images.length);
-                for (let i = 0; i < imagesToInclude; i++) {
-                    const img = this.trainingImages.images[i];
-                    if (img.fileId) {
-                        content.push({
-                            type: 'image',
-                            source: {
-                                type: 'file',
-                                file_id: img.fileId
-                            }
-                        });
-                    } else if (img.base64) {
-                        // Fallback to base64 if file ID not available
-                        content.push({
-                            type: 'image',
-                            source: {
-                                type: 'base64',
-                                media_type: img.mediaType,
-                                data: img.base64
-                            }
-                        });
-                    }
-                }
+                });
             }
             
             content.push({
                 type: 'text',
-                text: 'Study these training videos and reference frames. Notice the transparent glass body, skeleton detail, eye expressions, camera angles, lighting, pacing, and overall visual style. Match this exact style in your prompts.'
+                text: 'Study these reference frames carefully. They show the exact visual style, character design, camera angles, and pacing you should match. Notice the transparent glass body, skeleton detail, eye expressions, camera variety, and natural motion. Use these as your ground truth for generating prompts.'
             });
+        } else {
+            console.warn('⚠️  No reference frames loaded. Generating without visual references.');
         }
-        */
-        
-        console.log('⚠️  Training materials temporarily disabled due to API format changes');
         
         // Add the main prompt
         const userPrompt = `I need you to create image and video prompts for this script:
@@ -298,7 +242,7 @@ VISUAL STYLE:
 - Skeleton Style: ${skeletonStyle}
 - Background Gradient: ${gradientColors}
 - Format: 9:16 vertical
-- Style: Hyper-realistic 3D (like the reference images above)
+- Style: Hyper-realistic 3D (like the reference frames above)
 
 Break this into 10-12 scenes (MAXIMUM 12 SCENES - do not exceed this limit). Aim for 4-5 seconds per scene. For each scene, provide:
 1. Scene number and script line
