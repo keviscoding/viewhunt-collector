@@ -10,9 +10,9 @@ class SkeletonGeneratorV2 {
             apiKey: process.env.ANTHROPIC_API_KEY
         });
         
-        // fal.ai API configuration
-        this.falApiKey = process.env.FALAI_API_KEY;
-        this.falBaseUrl = 'https://fal.run';
+        // AtlasCloud API configuration (for videos)
+        this.atlasApiKey = process.env.ATLASCLOUD_API_KEY;
+        this.atlasBaseUrl = 'https://api.atlascloud.ai/api/v1';
         
         // Kie.ai API configuration (for images only)
         this.kieApiKey = process.env.KIEAI_API_KEY;
@@ -479,7 +479,7 @@ Format your response as JSON:
     }
 
     /**
-     * Step 3: Generate video from image using Kie.ai Veo 3.1 Fast
+     * Step 3: Generate video from image using AtlasCloud Veo 3.1 Fast
      */
     async generateVideo(imageUrl, videoPrompt, sceneNumber) {
         console.log(`\n=== Generating video for scene ${sceneNumber} ===`);
@@ -489,41 +489,42 @@ Format your response as JSON:
         
         try {
             // Log API call for billing tracking
-            console.log(`🎬 CALLING Kie.ai Veo 3.1 API - Scene ${sceneNumber}`);
+            console.log(`🎬 CALLING AtlasCloud Veo 3.1 Fast API - Scene ${sceneNumber}`);
             
-            // Create video generation task with Kie.ai
+            // Create video generation task with AtlasCloud
             const createResponse = await axios.post(
-                `${this.kieBaseUrl}/api/v1/veo/generate`,
+                `${this.atlasBaseUrl}/model/generateVideo`,
                 {
+                    model: 'google/veo3.1-fast/image-to-video',
                     prompt: videoPrompt,
-                    imageUrls: [imageUrl], // Single image for image-to-video
-                    model: 'veo3_fast',
-                    generationType: 'FIRST_AND_LAST_FRAMES_2_VIDEO', // Single image mode
+                    image: imageUrl,
                     aspect_ratio: '9:16',
-                    enableTranslation: true
+                    duration: 8,
+                    resolution: '1080p',
+                    generate_audio: true
                 },
                 {
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${this.kieApiKey}`
+                        'Authorization': `Bearer ${this.atlasApiKey}`
                     }
                 }
             );
 
-            console.log(`Kie.ai Veo API response:`, JSON.stringify(createResponse.data, null, 2));
+            console.log(`AtlasCloud API response:`, JSON.stringify(createResponse.data, null, 2));
             
-            if (!createResponse.data || !createResponse.data.data || !createResponse.data.data.taskId) {
-                console.error('Unexpected Kie.ai Veo API response:', createResponse.data);
-                throw new Error('Kie.ai Veo API did not return a taskId');
+            if (!createResponse.data || !createResponse.data.data || !createResponse.data.data.id) {
+                console.error('Unexpected AtlasCloud API response:', createResponse.data);
+                throw new Error('AtlasCloud API did not return a prediction ID');
             }
 
-            const taskId = createResponse.data.data.taskId;
-            console.log(`Video task created: ${taskId}`);
+            const predictionId = createResponse.data.data.id;
+            console.log(`Video task created: ${predictionId}`);
             
             // Poll for completion (videos can take 3-5 minutes)
-            const videoUrl = await this.pollKieTaskForVideo(taskId, 600000);
+            const videoUrl = await this.pollAtlasTask(predictionId, 600000);
             console.log(`✅ Video ${sceneNumber} generated successfully`);
-            console.log(`💰 Kie.ai cost: ~$0.30 (25% of Google pricing)`);
+            console.log(`💰 AtlasCloud cost: ~$0.64 (8 seconds × $0.08/sec)`);
             
             return videoUrl;
             
@@ -531,7 +532,7 @@ Format your response as JSON:
             console.error(`Error generating video ${sceneNumber}:`, error.response?.data || error.message);
             
             if (error.response) {
-                console.error('Kie.ai Veo API error response:', {
+                console.error('AtlasCloud API error response:', {
                     status: error.response.status,
                     statusText: error.response.statusText,
                     data: error.response.data
@@ -618,14 +619,14 @@ Format your response as JSON:
     }
 
     /**
-     * Poll Kie.ai task for video generation
+     * Poll AtlasCloud task for video generation
      */
-    async pollKieTaskForVideo(taskId, timeout = 600000) {
+    async pollAtlasTask(predictionId, timeout = 600000) {
         const startTime = Date.now();
         const pollInterval = 5000; // 5 seconds
         let pollCount = 0;
         
-        const endpoint = `${this.kieBaseUrl}/api/v1/veo/record-info`;
+        const endpoint = `${this.atlasBaseUrl}/model/result/${predictionId}`;
         
         while (Date.now() - startTime < timeout) {
             pollCount++;
@@ -633,56 +634,56 @@ Format your response as JSON:
             
             try {
                 const response = await axios.get(endpoint, {
-                    params: { taskId },
                     headers: {
-                        'Authorization': `Bearer ${this.kieApiKey}`
+                        'Authorization': `Bearer ${this.atlasApiKey}`
                     }
                 });
 
                 // Check API response code
                 if (response.data.code !== 200) {
-                    // Extract actual error message from response
-                    const errorMsg = response.data.msg || response.data.data?.info?.errorMsg || 'Unknown error';
-                    throw new Error(`Kie.ai Veo API error (${response.data.code}): ${errorMsg}`);
+                    throw new Error(`AtlasCloud API error: ${response.data.message || 'Unknown error'}`);
                 }
 
-                const data = response.data.data;
-                const successFlag = data.successFlag;
+                const status = response.data.data.status;
                 
                 // Log progress every 30 seconds
                 if (pollCount % 6 === 0) {
-                    console.log(`Video task ${taskId} status: ${successFlag ? 'processing' : 'waiting'} (${elapsed}s elapsed)`);
+                    console.log(`Video task ${predictionId} status: ${status} (${elapsed}s elapsed)`);
                 }
                 
                 // Check if video is ready
-                if (successFlag === true && data.info && data.info.resultUrls) {
-                    const resultUrls = JSON.parse(data.info.resultUrls);
-                    console.log(`✅ Video task completed in ${elapsed}s`);
-                    return resultUrls[0];
+                if (status === 'completed' || status === 'succeeded') {
+                    const outputs = response.data.data.outputs;
+                    if (outputs && outputs.length > 0) {
+                        console.log(`✅ Video task completed in ${elapsed}s`);
+                        return outputs[0]; // Return first video URL
+                    } else {
+                        throw new Error('Video completed but no outputs found');
+                    }
                 }
                 
                 // Check for failure
-                if (successFlag === false && data.info && data.info.errorMsg) {
-                    const errorMsg = data.info.errorMsg;
-                    throw new Error(`Video generation failed: ${errorMsg}`);
+                if (status === 'failed') {
+                    const error = response.data.data.error || 'Unknown error';
+                    throw new Error(`Video generation failed: ${error}`);
                 }
                 
-                // Still processing, wait and retry
+                // Still processing (status === 'created' or 'processing'), wait and retry
                 await new Promise(resolve => setTimeout(resolve, pollInterval));
                 
             } catch (error) {
                 // Check for specific error types
                 if (error.response?.status === 401) {
-                    throw new Error('Kie.ai authentication failed. Check your API key.');
+                    throw new Error('AtlasCloud authentication failed. Check your API key.');
                 } else if (error.response?.status === 402) {
-                    throw new Error('Out of Kie.ai credits. Please add more credits to your account.');
+                    throw new Error('Out of AtlasCloud credits. Please add more credits to your account.');
                 } else if (error.response?.status === 429) {
                     console.warn('Rate limit hit, waiting 10 seconds...');
                     await new Promise(resolve => setTimeout(resolve, 10000));
                 } else if (error.response?.status === 404) {
                     // Task not found yet, wait and retry
                     await new Promise(resolve => setTimeout(resolve, pollInterval));
-                } else if (error.message.includes('Kie.ai') || error.message.includes('failed')) {
+                } else if (error.message.includes('AtlasCloud') || error.message.includes('failed')) {
                     // Already formatted error, rethrow
                     throw error;
                 } else {
@@ -692,7 +693,7 @@ Format your response as JSON:
             }
         }
         
-        throw new Error(`Video task timeout after ${Math.floor(timeout/1000)}s - Kie.ai servers may be overloaded. Try again later.`);
+        throw new Error(`Video task timeout after ${Math.floor(timeout/1000)}s - AtlasCloud servers may be overloaded. Try again later.`);
     }
 
     /**
@@ -780,13 +781,13 @@ Format your response as JSON:
                 const videoSuccessCount = videoResults.filter(r => r.success).length;
                 console.log(`\n✅ Batch complete: ${videoSuccessCount}/${scenesWithImages.length} videos generated successfully\n`);
                 
-                // Cost summary (Kie.ai pricing: ~$0.30 per video, 25% of Google pricing)
-                const videoCost = videoSuccessCount * 0.30;
+                // Cost summary (AtlasCloud pricing: $0.08/sec × 8 sec = $0.64 per video)
+                const videoCost = videoSuccessCount * 0.64;
                 console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
                 console.log(`   Videos generated: ${videoSuccessCount}`);
-                console.log(`   Provider: Kie.ai Veo 3.1 Fast (25% of Google pricing)`);
-                console.log(`   Cost: $${videoCost.toFixed(2)} (~$0.30 per video)`);
-                console.log(`   Savings vs fal.ai: $${(videoSuccessCount * 0.90).toFixed(2)} (was $${(videoSuccessCount * 1.20).toFixed(2)})`);
+                console.log(`   Provider: AtlasCloud Veo 3.1 Fast`);
+                console.log(`   Cost: $${videoCost.toFixed(2)} ($0.64 per 8-second video)`);
+                console.log(`   Rate: $0.08 per second`);
                 console.log(`\n`);
             }
 
