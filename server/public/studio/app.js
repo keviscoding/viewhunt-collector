@@ -295,17 +295,13 @@ function getAuthToken() {
 function checkAuth() {
     const token = getAuthToken();
     if (!token) {
-        console.warn('No auth token found - studio features may be limited');
-        // Show a warning banner instead of redirecting
-        const banner = document.createElement('div');
-        banner.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; background: #ff9800; color: white; padding: 10px; text-align: center; z-index: 9999;';
-        banner.innerHTML = '⚠️ Not logged in. <a href="/app" style="color: white; text-decoration: underline;">Login to ViewHunt</a> to use the studio.';
-        document.body.prepend(banner);
-        // Don't redirect - let them see the UI
+        console.warn('No auth token found');
+        // Redirect to login instead of showing banner
+        window.location.href = '/app';
         return false;
     }
     return true;
 }
 
 // Check auth on load
-checkAuth();
+const isAuthenticated = checkAuth();

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skeleton Video Generator - ViewHunt Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/studio/styles.css">
+    <style>
+        .gradient-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        .gradient-option {
+            height: 80px;
+            border-radius: 8px;
+            cursor: pointer;
+            border: 3px solid transparent;
+            transition: all 0.2s;
+        }
+        .gradient-option:hover {
+            transform: scale(1.05);
+        }
+        .gradient-option.selected {
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
+        }
+        .gradient-blue-teal { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .gradient-purple-pink { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); }
+        .gradient-orange-red { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
+        .gradient-green-blue { background: linear-gradient(135deg, #30cfd0 0%, #330867 100%); }
+        
+        .scene-card {
+            background: white;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border: 1px solid #e0e0e0;
+        }
+        .scene-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        .scene-status {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .status-pending { background: #f0f0f0; color: #666; }
+        .status-generating { background: #fff3cd; color: #856404; }
+        .status-complete { background: #d4edda; color: #155724; }
+        .status-error { background: #f8d7da; color: #721c24; }
+        
+        .scene-media {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        .media-preview {
+            aspect-ratio: 9/16;
+            background: #f0f0f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .media-preview img, .media-preview video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <a href="/app" class="back-link">← Back to ViewHunt</a>
+                <h1>🦴 Skeleton Video Generator</h1>
+                <p class="subtitle">AI-powered viral video creation</p>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- Step 1: Configuration -->
+            <section id="config-section" class="section">
+                <h2>1. Configure Your Video</h2>
+                
+                <div class="input-panel">
+                    <div class="form-group">
+                        <label>Background Gradient</label>
+                        <div class="gradient-selector">
+                            <div class="gradient-option gradient-blue-teal selected" data-gradient="smooth blue to teal gradient background" title="Blue to Teal"></div>
+                            <div class="gradient-option gradient-purple-pink" data-gradient="smooth purple to pink gradient background" title="Purple to Pink"></div>
+                            <div class="gradient-option gradient-orange-red" data-gradient="smooth orange to red gradient background" title="Orange to Red"></div>
+                            <div class="gradient-option gradient-green-blue" data-gradient="smooth green to blue gradient background" title="Green to Blue"></div>
+                        </div>
+                        <p class="help-text">Choose your brand's signature background color</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="script">Video Script</label>
+                        <textarea 
+                            id="script" 
+                            rows="12" 
+                            placeholder="What actually happens to your eyes if you never blink again?
+
+Minute 1: Your eyes immediately start to sting...
+
+Hour 1: The stinging turns into burning agony...
+
+(Continue with your full script)"
+                            style="width: 100%; padding: 0.75rem; border: 2px solid #e0e0e0; border-radius: 8px; font-family: inherit; font-size: 1rem;"
+                        ></textarea>
+                        <p class="help-text">💡 Tip: Use timeline markers (Day 1, Hour 12, etc.) for best results</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="generateVideos" checked style="margin-right: 0.5rem;">
+                            Generate videos (takes 5-10 min, uncheck for images only in 2-3 min)
+                        </label>
+                    </div>
+
+                    <button id="generate-btn" class="btn-generate">
+                        <span class="btn-text">🎬 Generate Video</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Step 2: Generation Progress -->
+            <section id="progress-section" class="section hidden">
+                <h2>2. Generating Your Video</h2>
+                
+                <div class="progress-panel">
+                    <div class="progress-steps">
+                        <div class="progress-step" data-step="claude">
+                            <div class="step-icon">🤖</div>
+                            <div class="step-label">Breaking into scenes</div>
+                        </div>
+                        <div class="progress-step" data-step="images">
+                            <div class="step-icon">🎨</div>
+                            <div class="step-label">Generating images</div>
+                        </div>
+                        <div class="progress-step" data-step="videos">
+                            <div class="step-icon">🎥</div>
+                            <div class="step-label">Creating videos</div>
+                        </div>
+                        <div class="progress-step" data-step="complete">
+                            <div class="step-icon">✅</div>
+                            <div class="step-label">Complete</div>
+                        </div>
+                    </div>
+                    <p class="progress-message" id="progress-message">Starting generation...</p>
+                </div>
+            </section>
+
+            <!-- Step 3: Results -->
+            <section id="results-section" class="section hidden">
+                <h2>3. Your Generated Scenes</h2>
+                
+                <div id="scenes-container"></div>
+
+                <div style="margin-top: 2rem; text-align: center;">
+                    <button id="download-all-btn" class="btn-primary">📥 Download All Videos</button>
+                    <button id="generate-another-btn" class="btn-secondary" style="margin-left: 1rem;">🔄 Generate Another</button>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p>Powered by ViewHunt • Claude 4.5 • Kie.ai</p>
+        </footer>
+    </div>
+
+    <script src="/studio/v2-app.js"></script>
+</body>
+</html>

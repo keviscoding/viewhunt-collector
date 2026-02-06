@@ -145,6 +145,11 @@ app.get('/studio', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'studio', 'index.html'));
 });
 
+// Studio V2 page route (Skeleton Video Generator)
+app.get('/studio/v2', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'studio', 'v2.html'));
+});
+
 // Subscription success page
 app.get('/subscription-success', async (req, res) => {
     try {
