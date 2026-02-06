@@ -21,8 +21,8 @@ class SkeletonGeneratorV2 {
         // Load master system prompt
         this.masterPrompt = this.loadMasterPrompt();
         
-        // Load training images cache
-        this.trainingImages = this.loadTrainingImages();
+        // DON'T load training images here - load fresh each time in generateScenePrompts()
+        // This ensures we always get the latest uploaded files
         
         // Ensure output directory exists
         this.outputDir = path.join(__dirname, '../../../../public/studio/generated');
@@ -205,16 +205,19 @@ Now, when I give you a script, break it into scenes and generate the prompts fol
     async generateScenePrompts(script, skeletonStyle, gradientColors) {
         console.log('Using Claude to break script into scenes...');
         
+        // Load reference frames fresh each time (don't cache in constructor)
+        const trainingImages = this.loadTrainingImages();
+        
         // Build content array with reference frames + text prompt
         const content = [];
         
         // Add reference frames if available
-        if (this.trainingImages && this.trainingImages.files && this.trainingImages.files.length > 0) {
-            const totalFrames = this.trainingImages.files.length;
+        if (trainingImages && trainingImages.files && trainingImages.files.length > 0) {
+            const totalFrames = trainingImages.files.length;
             console.log(`Including ${totalFrames} reference frames for Claude to analyze...`);
             
             // Add all reference frames as image blocks
-            for (const file of this.trainingImages.files) {
+            for (const file of trainingImages.files) {
                 content.push({
                     type: 'image',
                     source: {
