@@ -260,6 +260,10 @@ Now, when I give you a script, break it into scenes and generate the prompts fol
         // Build content array with training materials + text prompt
         const content = [];
         
+        // TEMPORARILY DISABLED: Training materials file format needs to be fixed
+        // The Anthropic Files API format has changed and 'document' type is not supported
+        // For now, we'll generate without training materials
+        /*
         // Add training materials first (if available)
         if (this.trainingImages && (this.trainingImages.images?.length > 0 || this.trainingImages.videos?.length > 0)) {
             const totalImages = this.trainingImages.images?.length || 0;
@@ -313,6 +317,9 @@ Now, when I give you a script, break it into scenes and generate the prompts fol
                 text: 'Study these training videos and reference frames. Notice the transparent glass body, skeleton detail, eye expressions, camera angles, lighting, pacing, and overall visual style. Match this exact style in your prompts.'
             });
         }
+        */
+        
+        console.log('⚠️  Training materials temporarily disabled due to API format changes');
         
         // Add the main prompt
         const userPrompt = `I need you to create image and video prompts for this script:
