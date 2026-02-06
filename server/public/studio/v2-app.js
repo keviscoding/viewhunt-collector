@@ -218,9 +218,20 @@ function createSceneCard(scene, sceneNumber, hasVideos) {
             <strong>Narration:</strong> ${escapeHtml(scene.narration)}
         </p>
         
-        <p style="color: #888; font-size: 0.85rem; margin-bottom: 1rem;">
-            <strong>Image Prompt:</strong> ${escapeHtml(scene.imagePrompt.substring(0, 100))}...
-        </p>
+        <div style="color: #888; font-size: 0.85rem; margin-bottom: 1rem;">
+            <details style="margin-bottom: 0.5rem;">
+                <summary style="cursor: pointer; color: #666; font-weight: bold;">📸 Image Prompt</summary>
+                <p style="margin-top: 0.5rem; padding: 0.5rem; background: #f5f5f5; border-radius: 4px; white-space: pre-wrap;">
+                    ${escapeHtml(scene.imagePrompt)}
+                </p>
+            </details>
+            <details>
+                <summary style="cursor: pointer; color: #666; font-weight: bold;">🎬 Video Prompt</summary>
+                <p style="margin-top: 0.5rem; padding: 0.5rem; background: #f5f5f5; border-radius: 4px; white-space: pre-wrap;">
+                    ${escapeHtml(scene.videoPrompt || 'No video prompt')}
+                </p>
+            </details>
+        </div>
         
         <div class="scene-media">
             <div class="media-preview">

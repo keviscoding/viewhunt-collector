@@ -337,7 +337,7 @@ VISUAL STYLE:
 - Format: 9:16 vertical
 - Style: Hyper-realistic 3D (like the reference images above)
 
-Break this into 10-18 scenes. For each scene, provide:
+Break this into 10-12 scenes (MAXIMUM 12 SCENES - do not exceed this limit). Aim for 4-5 seconds per scene. For each scene, provide:
 1. Scene number and script line
 2. Shot type (wide/medium/close-up/macro)
 3. IMAGE PROMPT (for Nano Banana Pro - fully self-contained, no text overlays)
@@ -488,6 +488,9 @@ Format your response as JSON:
         console.log(`===\n`);
         
         try {
+            // Log API call for billing tracking
+            console.log(`🎬 CALLING fal.ai API - Scene ${sceneNumber} - 8 seconds will be charged`);
+            
             // Use fal.ai's image-to-video endpoint
             const response = await axios.post(
                 `${this.falBaseUrl}/fal-ai/veo3.1/fast/image-to-video`,
@@ -507,6 +510,8 @@ Format your response as JSON:
                     timeout: 300000 // 5 minute timeout
                 }
             );
+            
+            console.log(`💰 fal.ai API call completed - Scene ${sceneNumber} - Cost: ~$1.20 (8 seconds × $0.15/sec)`);
 
             // fal.ai returns the result directly (synchronous)
             if (response.data && response.data.video && response.data.video.url) {
@@ -693,6 +698,15 @@ Format your response as JSON:
                 const videoResults = await Promise.all(videoPromises);
                 const videoSuccessCount = videoResults.filter(r => r.success).length;
                 console.log(`\n✅ Batch complete: ${videoSuccessCount}/${scenesWithImages.length} videos generated successfully\n`);
+                
+                // Cost summary
+                const totalVideoSeconds = videoSuccessCount * 8;
+                const videoCost = totalVideoSeconds * 0.15;
+                console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
+                console.log(`   Videos generated: ${videoSuccessCount}`);
+                console.log(`   Total duration: ${totalVideoSeconds} seconds`);
+                console.log(`   Cost: $${videoCost.toFixed(2)} (${totalVideoSeconds} sec × $0.15/sec)`);
+                console.log(`\n`);
             }
 
             console.log('\n✅ Generation complete!');
