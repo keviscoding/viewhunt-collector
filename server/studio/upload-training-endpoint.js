@@ -161,6 +161,15 @@ router.post('/upload-training', (req, res, next) => {
         
         fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
         console.log(`✅ Cache saved to ${CACHE_FILE}`);
+        console.log(`Cache contains: ${cache.images.length} images, ${cache.videos.length} videos`);
+        
+        // Verify the file was written
+        if (fs.existsSync(CACHE_FILE)) {
+            const fileSize = fs.statSync(CACHE_FILE).size;
+            console.log(`✅ Cache file verified: ${fileSize} bytes`);
+        } else {
+            console.error('❌ Cache file was not created!');
+        }
         
         res.json({
             success: true,

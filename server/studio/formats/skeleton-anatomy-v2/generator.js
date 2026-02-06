@@ -32,7 +32,25 @@ class SkeletonGeneratorV2 {
             const cacheFile = path.join(__dirname, 'training-files-cache.json');
             console.log(`Looking for training cache at: ${cacheFile}`);
             
+            // Check if directory exists
+            const cacheDir = path.dirname(cacheFile);
+            if (!fs.existsSync(cacheDir)) {
+                console.error(`❌ Cache directory does not exist: ${cacheDir}`);
+                return { images: [], videos: [] };
+            }
+            
+            // List files in directory
+            try {
+                const files = fs.readdirSync(cacheDir);
+                console.log(`Files in cache directory: ${files.join(', ')}`);
+            } catch (err) {
+                console.error(`Failed to list cache directory: ${err.message}`);
+            }
+            
             if (fs.existsSync(cacheFile)) {
+                const fileSize = fs.statSync(cacheFile).size;
+                console.log(`✅ Cache file found: ${fileSize} bytes`);
+                
                 const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
                 console.log(`✅ Loaded ${cache.images?.length || 0} images and ${cache.videos?.length || 0} videos from cache`);
                 console.log(`Cache uploaded at: ${cache.uploadedAt}`);
@@ -44,6 +62,7 @@ class SkeletonGeneratorV2 {
             return { images: [], videos: [] };
         } catch (error) {
             console.error('Failed to load training materials:', error.message);
+            console.error('Stack trace:', error.stack);
             return { images: [], videos: [] };
         }
     }
@@ -427,7 +446,7 @@ Format your response as JSON:
             console.log(`Image task created: ${taskId}`);
             
             // Poll for completion (images can take 5-10 minutes during high load)
-            const imageUrl = await this.pollKieTask(taskId, 600000); // 10 min timeout
+            const imageUrl = await this.pollKieTask(taskId, 600000, false); // false = image
             console.log(`Image ${sceneNumber} generated successfully`);
             
             return imageUrl;
@@ -487,7 +506,7 @@ Format your response as JSON:
             console.log(`Video task created: ${taskId}`);
             
             // Poll for completion (videos take 1-3 minutes typically)
-            const videoUrl = await this.pollKieTask(taskId, 600000); // 10 min timeout
+            const videoUrl = await this.pollKieTask(taskId, 600000, true); // true = video
             console.log(`Video ${sceneNumber} generated successfully`);
             
             return videoUrl;
@@ -510,54 +529,86 @@ Format your response as JSON:
 
     /**
      * Poll Kie.ai task until completion
+     * Different endpoints for images vs videos
      */
-    async pollKieTask(taskId, timeout = 600000) {
+    async pollKieTask(taskId, timeout = 600000, isVideo = false) {
         const startTime = Date.now();
         const pollInterval = 5000; // 5 seconds
         let pollCount = 0;
+        
+        // Different endpoints for images vs videos
+        const endpoint = isVideo 
+            ? `${this.kieBaseUrl}/api/v1/veo/record-info`
+            : `${this.kieBaseUrl}/api/v1/jobs/recordInfo`;
         
         while (Date.now() - startTime < timeout) {
             pollCount++;
             const elapsed = Math.floor((Date.now() - startTime) / 1000);
             
             try {
-                // CORRECT ENDPOINT: /api/v1/jobs/recordInfo with taskId as query param
-                const response = await axios.get(
-                    `${this.kieBaseUrl}/api/v1/jobs/recordInfo`,
-                    {
-                        params: { taskId },
-                        headers: {
-                            'Authorization': `Bearer ${this.kieApiKey}`
-                        }
+                const response = await axios.get(endpoint, {
+                    params: { taskId },
+                    headers: {
+                        'Authorization': `Bearer ${this.kieApiKey}`
                     }
-                );
+                });
 
                 // Check API response code
                 if (response.data.code !== 200) {
                     throw new Error(`Kie.ai API error: ${response.data.msg}`);
                 }
 
-                const state = response.data.data.state;
-                
-                // Log progress every 30 seconds
-                if (pollCount % 6 === 0) {
-                    console.log(`Task ${taskId} state: ${state} (${elapsed}s elapsed)`);
+                if (isVideo) {
+                    // Video response structure
+                    const successFlag = response.data.data.successFlag;
+                    
+                    // Log progress every 30 seconds
+                    if (pollCount % 6 === 0) {
+                        const statusText = successFlag === 0 ? 'generating' : successFlag === 1 ? 'success' : 'failed';
+                        console.log(`Video task ${taskId} status: ${statusText} (${elapsed}s elapsed)`);
+                    }
+                    
+                    if (successFlag === 1) {
+                        // Success
+                        const resultUrls = JSON.parse(response.data.data.resultUrls);
+                        console.log(`✅ Video task completed in ${elapsed}s`);
+                        return resultUrls[0];
+                    }
+                    
+                    if (successFlag === 2 || successFlag === 3) {
+                        // Failed
+                        const errorMsg = response.data.msg || 'Unknown error';
+                        throw new Error(`Video generation failed: ${errorMsg}`);
+                    }
+                    
+                    // successFlag === 0 - still processing
+                    
+                } else {
+                    // Image response structure
+                    const state = response.data.data.state;
+                    
+                    // Log progress every 30 seconds
+                    if (pollCount % 6 === 0) {
+                        console.log(`Image task ${taskId} state: ${state} (${elapsed}s elapsed)`);
+                    }
+                    
+                    if (state === 'success') {
+                        const resultJson = JSON.parse(response.data.data.resultJson);
+                        const resultUrls = resultJson.resultUrls;
+                        console.log(`✅ Image task completed in ${elapsed}s`);
+                        return resultUrls[0];
+                    }
+                    
+                    if (state === 'fail') {
+                        const errorMsg = response.data.data.failMsg || 'Unknown error';
+                        const errorCode = response.data.data.failCode || 'N/A';
+                        throw new Error(`Image generation failed (${errorCode}): ${errorMsg}`);
+                    }
+                    
+                    // state === 'waiting' - still processing
                 }
                 
-                if (state === 'success') {
-                    const resultJson = JSON.parse(response.data.data.resultJson);
-                    const resultUrls = resultJson.resultUrls;
-                    console.log(`✅ Task completed in ${elapsed}s`);
-                    return resultUrls[0];
-                }
-                
-                if (state === 'fail') {
-                    const errorMsg = response.data.data.failMsg || 'Unknown error';
-                    const errorCode = response.data.data.failCode || 'N/A';
-                    throw new Error(`Task failed (${errorCode}): ${errorMsg}`);
-                }
-                
-                // state === 'waiting' - still processing, wait and retry
+                // Still processing, wait and retry
                 await new Promise(resolve => setTimeout(resolve, pollInterval));
                 
             } catch (error) {
@@ -572,7 +623,7 @@ Format your response as JSON:
                 } else if (error.response?.status === 404) {
                     // Task not found yet, wait and retry
                     await new Promise(resolve => setTimeout(resolve, pollInterval));
-                } else if (error.message.includes('Kie.ai')) {
+                } else if (error.message.includes('Kie.ai') || error.message.includes('failed')) {
                     // Already formatted error, rethrow
                     throw error;
                 } else {
