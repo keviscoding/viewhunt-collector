@@ -248,6 +248,8 @@ Now, when I give you a script, break it into scenes and generate the prompts fol
             
             console.log(`Including ${imageFiles.length} reference frames for Claude to analyze...`);
             
+            // Use file references from Anthropic Files API
+            // Requires SDK >= 0.37.0 and files-api-2025-04-14 beta header
             for (const file of imageFiles) {
                 content.push({
                     type: 'image',
