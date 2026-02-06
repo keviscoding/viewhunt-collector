@@ -21,7 +21,7 @@ const upload = multer({
     }
 });
 
-const CACHE_FILE = path.join(__dirname, 'formats/skeleton-anatomy-v2/training-files-cache.json');
+const CACHE_FILE = path.join(__dirname, 'formats/skeleton-anatomy-v2/reference-file-ids.json');
 
 async function uploadToAnthropic(filePath, filename) {
     try {
@@ -144,13 +144,31 @@ router.post('/upload-training', (req, res, next) => {
             }
         }
         
-        // Save cache
+        // Save cache in the new format (compatible with reference-file-ids.json)
+        const allFiles = [];
+        
+        // Add images
+        uploadedImages.forEach(img => {
+            allFiles.push({
+                filename: img.name,
+                fileId: img.fileId,
+                uploadedAt: new Date().toISOString()
+            });
+        });
+        
+        // Add videos/docs
+        uploadedVideos.forEach(vid => {
+            allFiles.push({
+                filename: vid.name,
+                fileId: vid.fileId,
+                uploadedAt: new Date().toISOString()
+            });
+        });
+        
         const cache = {
             uploadedAt: new Date().toISOString(),
-            images: uploadedImages,
-            videos: uploadedVideos,
-            totalFiles: uploadedImages.length + uploadedVideos.length,
-            errors: errors
+            totalFiles: allFiles.length,
+            files: allFiles
         };
         
         // Ensure directory exists
@@ -161,7 +179,7 @@ router.post('/upload-training', (req, res, next) => {
         
         fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
         console.log(`✅ Cache saved to ${CACHE_FILE}`);
-        console.log(`Cache contains: ${cache.images.length} images, ${cache.videos.length} videos`);
+        console.log(`Cache contains: ${cache.totalFiles} files (${uploadedImages.length} images, ${uploadedVideos.length} videos/docs)`);
         
         // Verify the file was written
         if (fs.existsSync(CACHE_FILE)) {
@@ -179,7 +197,7 @@ router.post('/upload-training', (req, res, next) => {
             errors: errors.length,
             message: errors.length > 0 
                 ? `Uploaded ${cache.totalFiles} files with ${errors.length} errors`
-                : 'Training materials uploaded successfully!'
+                : 'Training materials uploaded successfully! Claude can now see your reference frames.'
         });
         
     } catch (error) {
