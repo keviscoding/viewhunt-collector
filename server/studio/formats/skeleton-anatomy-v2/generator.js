@@ -256,20 +256,44 @@ Format your response as JSON:
             });
 
             const content = response.content[0].text;
+            console.log('Claude response received, parsing...');
             
-            // Extract JSON from response
-            const jsonMatch = content.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) {
-                throw new Error('Could not parse Claude response as JSON');
+            // Try to extract JSON - Claude might wrap it in markdown code blocks
+            let jsonText = content;
+            
+            // Remove markdown code blocks if present
+            if (content.includes('```json')) {
+                const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
+                if (jsonMatch) {
+                    jsonText = jsonMatch[1];
+                }
+            } else if (content.includes('```')) {
+                const jsonMatch = content.match(/```\s*([\s\S]*?)\s*```/);
+                if (jsonMatch) {
+                    jsonText = jsonMatch[1];
+                }
+            } else {
+                // Try to find JSON object
+                const jsonMatch = content.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    jsonText = jsonMatch[0];
+                }
             }
             
-            const scenesData = JSON.parse(jsonMatch[0]);
-            console.log(`Claude generated ${scenesData.scenes.length} scenes`);
+            // Parse JSON
+            const scenesData = JSON.parse(jsonText.trim());
+            
+            if (!scenesData.scenes || !Array.isArray(scenesData.scenes)) {
+                throw new Error('Invalid response format: missing scenes array');
+            }
+            
+            console.log(`✅ Generated ${scenesData.scenes.length} scenes`);
             
             return scenesData.scenes;
             
         } catch (error) {
             console.error('Claude scene generation error:', error);
+            console.error('Claude response content:', error.response?.data || 'No response data');
             throw new Error('Failed to generate scene prompts: ' + error.message);
         }
     }
