@@ -419,8 +419,8 @@ Format your response as JSON:
             const taskId = createResponse.data.data.taskId;
             console.log(`Image task created: ${taskId}`);
             
-            // Poll for completion (images can take 2-3 minutes)
-            const imageUrl = await this.pollKieTask(taskId, 180000); // 3 min timeout
+            // Poll for completion (images can take 5-10 minutes during high load)
+            const imageUrl = await this.pollKieTask(taskId, 600000); // 10 min timeout
             console.log(`Image ${sceneNumber} generated successfully`);
             
             return imageUrl;
@@ -469,8 +469,8 @@ Format your response as JSON:
             const taskId = createResponse.data.data.taskId;
             console.log(`Video task created: ${taskId}`);
             
-            // Poll for completion (videos take longer)
-            const videoUrl = await this.pollKieTask(taskId, 180000); // 3 min timeout
+            // Poll for completion (videos take longer, 5-10 minutes)
+            const videoUrl = await this.pollKieTask(taskId, 600000); // 10 min timeout
             console.log(`Video ${sceneNumber} generated successfully`);
             
             return videoUrl;
@@ -484,11 +484,15 @@ Format your response as JSON:
     /**
      * Poll Kie.ai task until completion
      */
-    async pollKieTask(taskId, timeout = 60000) {
+    async pollKieTask(taskId, timeout = 600000) {
         const startTime = Date.now();
-        const pollInterval = 3000; // 3 seconds
+        const pollInterval = 5000; // 5 seconds
+        let pollCount = 0;
         
         while (Date.now() - startTime < timeout) {
+            pollCount++;
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            
             try {
                 const response = await axios.get(
                     `${this.kieBaseUrl}/api/v1/jobs/getTask/${taskId}`,
@@ -501,15 +505,27 @@ Format your response as JSON:
 
                 const status = response.data.data.status;
                 
+                // Log progress every 30 seconds
+                if (pollCount % 6 === 0) {
+                    console.log(`Task ${taskId} status: ${status} (${elapsed}s elapsed)`);
+                }
+                
                 if (status === 'completed') {
                     const resultUrl = response.data.data.info.resultUrls;
                     // Parse the result URL (it's returned as a string array)
                     const urls = JSON.parse(resultUrl);
+                    console.log(`✅ Task completed in ${elapsed}s`);
                     return urls[0];
                 }
                 
                 if (status === 'failed') {
-                    throw new Error('Task failed: ' + response.data.msg);
+                    const errorMsg = response.data.data.info?.error || response.data.msg || 'Unknown error';
+                    throw new Error('Task failed: ' + errorMsg);
+                }
+                
+                // Check for out of credits error
+                if (response.data.code !== 200) {
+                    throw new Error(`Kie.ai API error: ${response.data.msg}`);
                 }
                 
                 // Still processing, wait and retry
@@ -519,13 +535,15 @@ Format your response as JSON:
                 if (error.response?.status === 404) {
                     // Task not found yet, wait and retry
                     await new Promise(resolve => setTimeout(resolve, pollInterval));
+                } else if (error.response?.data?.msg?.includes('credit') || error.response?.data?.msg?.includes('quota')) {
+                    throw new Error('Out of Kie.ai credits. Please add more credits to your account.');
                 } else {
                     throw error;
                 }
             }
         }
         
-        throw new Error('Task timeout - took longer than expected');
+        throw new Error(`Task timeout after ${Math.floor(timeout/1000)}s - Kie.ai servers may be overloaded. Try again later.`);
     }
 
     /**
