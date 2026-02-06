@@ -20,6 +20,8 @@
     "express-rate-limit": "^7.1.5",
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^6.3.0",
+    "openai": "^4.0.0",
+    "replicate": "^0.25.0",
     "stripe": "^18.3.0"
   },
   "devDependencies": {

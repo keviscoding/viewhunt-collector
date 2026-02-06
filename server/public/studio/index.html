@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Content Studio - ViewHunt</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/studio/styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <a href="/app" class="back-link">← Back to ViewHunt</a>
+                <h1>🎬 Content Studio</h1>
+                <p class="subtitle">Generate viral format videos in minutes</p>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Format Selection -->
+            <section id="format-selection" class="section">
+                <h2>Choose a Viral Format</h2>
+                <div class="formats-grid">
+                    <div class="format-card" data-format="skeleton-anatomy">
+                        <div class="format-icon">🦴</div>
+                        <h3>Skeleton Anatomy</h3>
+                        <p>Shocking health facts with dramatic skeleton visuals</p>
+                        <div class="format-stats">
+                            <span class="stat">📊 Avg 2M+ views</span>
+                            <span class="stat">⚡ 5 min generation</span>
+                        </div>
+                        <button class="btn-primary">Use This Format</button>
+                    </div>
+
+                    <!-- Placeholder for future formats -->
+                    <div class="format-card coming-soon">
+                        <div class="format-icon">🔜</div>
+                        <h3>More Formats Coming</h3>
+                        <p>We're constantly adding new viral formats</p>
+                        <div class="format-stats">
+                            <span class="stat">🚀 Stay tuned</span>
+                        </div>
+                        <button class="btn-secondary" disabled>Coming Soon</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Generator Interface (Hidden initially) -->
+            <section id="generator-interface" class="section hidden">
+                <div class="generator-header">
+                    <button id="back-to-formats" class="back-link">← Back to Formats</button>
+                    <h2 id="format-title">Skeleton Anatomy Generator</h2>
+                </div>
+
+                <div class="generator-content">
+                    <!-- Input Form -->
+                    <div class="input-panel">
+                        <h3>Enter Your Topic</h3>
+                        <form id="generation-form">
+                            <div class="form-group">
+                                <label for="topic">What health topic do you want to cover?</label>
+                                <input 
+                                    type="text" 
+                                    id="topic" 
+                                    name="topic" 
+                                    placeholder="e.g., wearing headphones too long, drinking too much coffee"
+                                    required
+                                >
+                                <p class="help-text">💡 Tip: Use everyday habits or common behaviors for best results</p>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="style">Visual Style (Optional)</label>
+                                <select id="style" name="style">
+                                    <option value="dramatic">Dramatic (Default)</option>
+                                    <option value="medical">Medical/Clinical</option>
+                                    <option value="horror">Horror/Dark</option>
+                                </select>
+                            </div>
+
+                            <button type="submit" class="btn-generate" id="generate-btn">
+                                <span class="btn-text">Generate Video Assets</span>
+                                <span class="btn-loader hidden">⏳ Generating...</span>
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Output Panel -->
+                    <div class="output-panel hidden" id="output-panel">
+                        <h3>✅ Generation Complete!</h3>
+                        
+                        <div class="output-section">
+                            <h4>📝 Script</h4>
+                            <div class="script-box" id="script-output"></div>
+                            <button class="btn-copy" data-copy="script">Copy Script</button>
+                        </div>
+
+                        <div class="output-section">
+                            <h4>🎨 Visual Assets</h4>
+                            <div class="images-grid" id="images-output"></div>
+                            <button class="btn-download" id="download-images">Download All Images</button>
+                        </div>
+
+                        <div class="output-section">
+                            <h4>🎤 Voiceover</h4>
+                            <audio controls id="audio-player" class="audio-player"></audio>
+                            <button class="btn-download" id="download-audio">Download Audio</button>
+                        </div>
+
+                        <div class="output-section assembly-guide">
+                            <h4>🎬 Assembly Instructions</h4>
+                            <ol>
+                                <li>Import all images into your video editor (CapCut, Premiere, etc.)</li>
+                                <li>Set each image duration to match the script timing (~10-15 seconds each)</li>
+                                <li>Add the voiceover audio track</li>
+                                <li>Add zoom/pan effects to images for dynamic movement</li>
+                                <li>Export as 9:16 vertical video (1080x1920)</li>
+                            </ol>
+                        </div>
+
+                        <button class="btn-primary" id="generate-another">Generate Another Video</button>
+                    </div>
+
+                    <!-- Progress Indicator -->
+                    <div class="progress-panel hidden" id="progress-panel">
+                        <div class="progress-steps">
+                            <div class="progress-step active" data-step="script">
+                                <div class="step-icon">📝</div>
+                                <div class="step-label">Generating Script</div>
+                            </div>
+                            <div class="progress-step" data-step="images">
+                                <div class="step-icon">🎨</div>
+                                <div class="step-label">Creating Visuals</div>
+                            </div>
+                            <div class="progress-step" data-step="voice">
+                                <div class="step-icon">🎤</div>
+                                <div class="step-label">Recording Voice</div>
+                            </div>
+                            <div class="progress-step" data-step="complete">
+                                <div class="step-icon">✅</div>
+                                <div class="step-label">Complete</div>
+                            </div>
+                        </div>
+                        <p class="progress-message" id="progress-message">Starting generation...</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Powered by ViewHunt • <a href="/app">Discover Channels</a> • <a href="/pricing">Pricing</a></p>
+        </footer>
+    </div>
+
+    <script src="/studio/app.js"></script>
+</body>
+</html>

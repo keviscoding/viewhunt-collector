@@ -1,0 +1,42 @@
+{
+  "format_name": "skeleton-anatomy",
+  "display_name": "Skeleton Anatomy",
+  "description": "Viral health fact shorts with dramatic skeleton visuals",
+  "icon": "🦴",
+  "avg_views": "2M+",
+  "generation_time": "5 min",
+  "apis_required": {
+    "openai": {
+      "models": ["gpt-4", "tts-1-hd"],
+      "purpose": "Script generation and voiceover"
+    },
+    "replicate": {
+      "models": ["black-forest-labs/flux-schnell"],
+      "purpose": "Skeleton image generation"
+    }
+  },
+  "output_specs": {
+    "video_duration": 45,
+    "aspect_ratio": "9:16",
+    "fps": 30,
+    "resolution": "1080x1920",
+    "num_scenes": 4
+  },
+  "style_options": [
+    {
+      "id": "dramatic",
+      "name": "Dramatic",
+      "description": "High contrast, cinematic lighting, fear-based"
+    },
+    {
+      "id": "medical",
+      "name": "Medical/Clinical",
+      "description": "Professional, clean, educational"
+    },
+    {
+      "id": "horror",
+      "name": "Horror/Dark",
+      "description": "Dark, moody, ominous atmosphere"
+    }
+  ]
+}

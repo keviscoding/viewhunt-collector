@@ -7,6 +7,9 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 require('dotenv').config();
 
+// Studio routes
+const studioRoutes = require('./studio/routes');
+
 // Initialize Stripe only if secret key is available
 let stripe;
 if (process.env.STRIPE_SECRET_KEY) {
@@ -38,6 +41,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Serve mobile app static files
 app.use('/mobile', express.static(path.join(__dirname, 'mobile')));
 app.use('/app', express.static(path.join(__dirname, 'mobile')));
+
+// Studio API routes
+app.use('/api/studio', studioRoutes);
 
 // Landing page route
 app.get('/', (req, res) => {
@@ -132,6 +138,11 @@ app.get('/privacy-policy', (req, res) => {
 // Terms of Service page route
 app.get('/terms-of-service', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'terms-of-service.html'));
+});
+
+// Studio page route
+app.get('/studio', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'studio', 'index.html'));
 });
 
 // Subscription success page
