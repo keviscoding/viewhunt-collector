@@ -479,7 +479,7 @@ Format your response as JSON:
     }
 
     /**
-     * Step 3: Generate video from image using fal.ai Veo 3.1 Fast
+     * Step 3: Generate video from image using Kie.ai Veo 3.1 Fast
      */
     async generateVideo(imageUrl, videoPrompt, sceneNumber) {
         console.log(`\n=== Generating video for scene ${sceneNumber} ===`);
@@ -489,46 +489,49 @@ Format your response as JSON:
         
         try {
             // Log API call for billing tracking
-            console.log(`🎬 CALLING fal.ai API - Scene ${sceneNumber} - 8 seconds will be charged`);
+            console.log(`🎬 CALLING Kie.ai Veo 3.1 API - Scene ${sceneNumber}`);
             
-            // Use fal.ai's image-to-video endpoint
-            const response = await axios.post(
-                `${this.falBaseUrl}/fal-ai/veo3.1/fast/image-to-video`,
+            // Create video generation task with Kie.ai
+            const createResponse = await axios.post(
+                `${this.kieBaseUrl}/api/v1/veo/generate`,
                 {
                     prompt: videoPrompt,
-                    image_url: imageUrl,
+                    imageUrls: [imageUrl], // Single image for image-to-video
+                    model: 'veo3_fast',
+                    generationType: 'FIRST_AND_LAST_FRAMES_2_VIDEO', // Single image mode
                     aspect_ratio: '9:16',
-                    duration: '8s',
-                    resolution: '720p',
-                    generate_audio: true
+                    enableTranslation: true
                 },
                 {
                     headers: {
-                        'Authorization': `Key ${this.falApiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 300000 // 5 minute timeout
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.kieApiKey}`
+                    }
                 }
             );
-            
-            console.log(`💰 fal.ai API call completed - Scene ${sceneNumber} - Cost: ~$1.20 (8 seconds × $0.15/sec)`);
 
-            // fal.ai returns the result directly (synchronous)
-            if (response.data && response.data.video && response.data.video.url) {
-                const videoUrl = response.data.video.url;
-                console.log(`✅ Video ${sceneNumber} generated successfully`);
-                return videoUrl;
-            } else {
-                console.error('Unexpected fal.ai response:', response.data);
-                throw new Error('fal.ai did not return a video URL');
+            console.log(`Kie.ai Veo API response:`, JSON.stringify(createResponse.data, null, 2));
+            
+            if (!createResponse.data || !createResponse.data.data || !createResponse.data.data.taskId) {
+                console.error('Unexpected Kie.ai Veo API response:', createResponse.data);
+                throw new Error('Kie.ai Veo API did not return a taskId');
             }
+
+            const taskId = createResponse.data.data.taskId;
+            console.log(`Video task created: ${taskId}`);
+            
+            // Poll for completion (videos can take 3-5 minutes)
+            const videoUrl = await this.pollKieTaskForVideo(taskId, 600000);
+            console.log(`✅ Video ${sceneNumber} generated successfully`);
+            console.log(`💰 Kie.ai cost: ~$0.30 (25% of Google pricing)`);
+            
+            return videoUrl;
             
         } catch (error) {
             console.error(`Error generating video ${sceneNumber}:`, error.response?.data || error.message);
             
-            // Log more details for debugging
             if (error.response) {
-                console.error('fal.ai API error response:', {
+                console.error('Kie.ai Veo API error response:', {
                     status: error.response.status,
                     statusText: error.response.statusText,
                     data: error.response.data
@@ -612,6 +615,84 @@ Format your response as JSON:
         }
         
         throw new Error(`Task timeout after ${Math.floor(timeout/1000)}s - Kie.ai servers may be overloaded. Try again later.`);
+    }
+
+    /**
+     * Poll Kie.ai task for video generation
+     */
+    async pollKieTaskForVideo(taskId, timeout = 600000) {
+        const startTime = Date.now();
+        const pollInterval = 5000; // 5 seconds
+        let pollCount = 0;
+        
+        const endpoint = `${this.kieBaseUrl}/api/v1/veo/record-info`;
+        
+        while (Date.now() - startTime < timeout) {
+            pollCount++;
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            
+            try {
+                const response = await axios.get(endpoint, {
+                    params: { taskId },
+                    headers: {
+                        'Authorization': `Bearer ${this.kieApiKey}`
+                    }
+                });
+
+                // Check API response code
+                if (response.data.code !== 200) {
+                    // Extract actual error message from response
+                    const errorMsg = response.data.msg || response.data.data?.info?.errorMsg || 'Unknown error';
+                    throw new Error(`Kie.ai Veo API error (${response.data.code}): ${errorMsg}`);
+                }
+
+                const data = response.data.data;
+                const successFlag = data.successFlag;
+                
+                // Log progress every 30 seconds
+                if (pollCount % 6 === 0) {
+                    console.log(`Video task ${taskId} status: ${successFlag ? 'processing' : 'waiting'} (${elapsed}s elapsed)`);
+                }
+                
+                // Check if video is ready
+                if (successFlag === true && data.info && data.info.resultUrls) {
+                    const resultUrls = JSON.parse(data.info.resultUrls);
+                    console.log(`✅ Video task completed in ${elapsed}s`);
+                    return resultUrls[0];
+                }
+                
+                // Check for failure
+                if (successFlag === false && data.info && data.info.errorMsg) {
+                    const errorMsg = data.info.errorMsg;
+                    throw new Error(`Video generation failed: ${errorMsg}`);
+                }
+                
+                // Still processing, wait and retry
+                await new Promise(resolve => setTimeout(resolve, pollInterval));
+                
+            } catch (error) {
+                // Check for specific error types
+                if (error.response?.status === 401) {
+                    throw new Error('Kie.ai authentication failed. Check your API key.');
+                } else if (error.response?.status === 402) {
+                    throw new Error('Out of Kie.ai credits. Please add more credits to your account.');
+                } else if (error.response?.status === 429) {
+                    console.warn('Rate limit hit, waiting 10 seconds...');
+                    await new Promise(resolve => setTimeout(resolve, 10000));
+                } else if (error.response?.status === 404) {
+                    // Task not found yet, wait and retry
+                    await new Promise(resolve => setTimeout(resolve, pollInterval));
+                } else if (error.message.includes('Kie.ai') || error.message.includes('failed')) {
+                    // Already formatted error, rethrow
+                    throw error;
+                } else {
+                    console.error('Video polling error:', error.message);
+                    await new Promise(resolve => setTimeout(resolve, pollInterval));
+                }
+            }
+        }
+        
+        throw new Error(`Video task timeout after ${Math.floor(timeout/1000)}s - Kie.ai servers may be overloaded. Try again later.`);
     }
 
     /**
@@ -699,13 +780,13 @@ Format your response as JSON:
                 const videoSuccessCount = videoResults.filter(r => r.success).length;
                 console.log(`\n✅ Batch complete: ${videoSuccessCount}/${scenesWithImages.length} videos generated successfully\n`);
                 
-                // Cost summary
-                const totalVideoSeconds = videoSuccessCount * 8;
-                const videoCost = totalVideoSeconds * 0.15;
+                // Cost summary (Kie.ai pricing: ~$0.30 per video, 25% of Google pricing)
+                const videoCost = videoSuccessCount * 0.30;
                 console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
                 console.log(`   Videos generated: ${videoSuccessCount}`);
-                console.log(`   Total duration: ${totalVideoSeconds} seconds`);
-                console.log(`   Cost: $${videoCost.toFixed(2)} (${totalVideoSeconds} sec × $0.15/sec)`);
+                console.log(`   Provider: Kie.ai Veo 3.1 Fast (25% of Google pricing)`);
+                console.log(`   Cost: $${videoCost.toFixed(2)} (~$0.30 per video)`);
+                console.log(`   Savings vs fal.ai: $${(videoSuccessCount * 0.90).toFixed(2)} (was $${(videoSuccessCount * 1.20).toFixed(2)})`);
                 console.log(`\n`);
             }
 
