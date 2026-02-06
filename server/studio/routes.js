@@ -1,17 +1,19 @@
 const express = require('express');
 const router = express.Router();
 const SkeletonGenerator = require('./formats/skeleton-anatomy/generator');
+const SkeletonGeneratorV2 = require('./formats/skeleton-anatomy-v2/generator');
 
 // Lazy-load generators (only initialize when needed, not on server startup)
 const generators = {};
 
-function getGenerator(format) {
-    if (!generators[format]) {
+function getGenerator(format, version = 'v1') {
+    const key = `${format}-${version}`;
+    if (!generators[key]) {
         if (format === 'skeleton-anatomy') {
-            generators[format] = new SkeletonGenerator();
+            generators[key] = version === 'v2' ? new SkeletonGeneratorV2() : new SkeletonGenerator();
         }
     }
-    return generators[format];
+    return generators[key];
 }
 
 // Middleware to check authentication
@@ -133,10 +135,47 @@ router.get('/formats', (req, res) => {
                 description: 'Shocking health facts with dramatic skeleton visuals',
                 icon: '🦴',
                 avgViews: '2M+',
-                generationTime: '5 min'
+                generationTime: '5 min',
+                versions: ['v1', 'v2']
             }
         ]
     });
+});
+
+// V2: Full video generation (script → scenes → images → videos)
+router.post('/generate/full', requireAuth, async (req, res) => {
+    try {
+        const { format, script, skeletonStyle, gradientColors, generateVideos } = req.body;
+        
+        if (!format || !script) {
+            return res.status(400).json({ error: 'Format and script are required' });
+        }
+        
+        const generator = getGenerator(format, 'v2');
+        if (!generator) {
+            return res.status(400).json({ error: 'Invalid format or V2 not available' });
+        }
+        
+        console.log(`Full generation for format: ${format}`);
+        
+        const result = await generator.generate(script, {
+            skeletonStyle,
+            gradientColors,
+            generateVideos: generateVideos !== false // Default true
+        });
+        
+        res.json({ 
+            success: true,
+            ...result
+        });
+        
+    } catch (error) {
+        console.error('Full generation error:', error);
+        res.status(500).json({ 
+            error: 'Failed to generate video',
+            details: error.message 
+        });
+    }
 });
 
 // Health check
