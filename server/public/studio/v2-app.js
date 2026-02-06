@@ -235,12 +235,6 @@ function handleGenerationComplete(data, hasVideos) {
     
     generationInProgress = false;
 }
-            }
-        }, 2000);
-    } finally {
-        generationInProgress = false;
-    }
-}
 
 // Update Progress Step
 function updateProgressStep(step, status) {
