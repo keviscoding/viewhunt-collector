@@ -337,26 +337,26 @@ Format your response as JSON:
                 }]
             });
 
-            const content = response.content[0].text;
+            const responseText = response.content[0].text;
             console.log('Claude response received, parsing...');
             
             // Try to extract JSON - Claude might wrap it in markdown code blocks
-            let jsonText = content;
+            let jsonText = responseText;
             
             // Remove markdown code blocks if present
-            if (content.includes('```json')) {
-                const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
+            if (responseText.includes('```json')) {
+                const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
                 if (jsonMatch) {
                     jsonText = jsonMatch[1];
                 }
-            } else if (content.includes('```')) {
-                const jsonMatch = content.match(/```\s*([\s\S]*?)\s*```/);
+            } else if (responseText.includes('```')) {
+                const jsonMatch = responseText.match(/```\s*([\s\S]*?)\s*```/);
                 if (jsonMatch) {
                     jsonText = jsonMatch[1];
                 }
             } else {
                 // Try to find JSON object
-                const jsonMatch = content.match(/\{[\s\S]*\}/);
+                const jsonMatch = responseText.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
                     jsonText = jsonMatch[0];
                 }
