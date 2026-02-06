@@ -68,8 +68,8 @@ router.post('/upload-training', upload.array('files', 20), async (req, res) => {
                     uploadedVideos.push(fileInfo);
                 } else if (filename.endsWith('.png') || filename.endsWith('.jpg')) {
                     uploadedImages.push(fileInfo);
-                } else if (filename.endsWith('.txt')) {
-                    uploadedVideos.push(fileInfo); // Transcripts go with videos
+                } else if (filename.endsWith('.txt') || filename.endsWith('.md')) {
+                    uploadedVideos.push(fileInfo); // Transcripts and docs go with videos
                 }
                 
                 // Clean up temp file
@@ -130,7 +130,7 @@ router.get('/upload-training-form', (req, res) => {
             <p>Select all your training videos and images (you can select multiple files at once)</p>
             
             <div class="upload-area">
-                <input type="file" id="fileInput" multiple accept=".mp4,.png,.jpg,.txt" style="display: none;">
+                <input type="file" id="fileInput" multiple accept=".mp4,.png,.jpg,.txt,.md" style="display: none;">
                 <button onclick="document.getElementById('fileInput').click()">Choose Files</button>
                 <p id="fileCount"></p>
             </div>
