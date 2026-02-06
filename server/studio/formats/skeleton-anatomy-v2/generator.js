@@ -26,10 +26,25 @@ class SkeletonGeneratorV2 {
 
     loadMasterPrompt() {
         try {
-            const promptPath = path.join(__dirname, '../../../../../Skeleton Training Data/PROMPT/master_system_prompt_v2.md');
-            return fs.readFileSync(promptPath, 'utf8');
+            // Try multiple possible paths
+            const possiblePaths = [
+                path.join(__dirname, '../../../../../Skeleton Training Data/PROMPT/master_system_prompt_v2.md'),
+                path.join(__dirname, '../../../../Skeleton Training Data/PROMPT/master_system_prompt_v2.md'),
+                path.join(process.cwd(), 'Skeleton Training Data/PROMPT/master_system_prompt_v2.md'),
+                '/workspace/Skeleton Training Data/PROMPT/master_system_prompt_v2.md'
+            ];
+            
+            for (const promptPath of possiblePaths) {
+                if (fs.existsSync(promptPath)) {
+                    console.log(`✅ Found master prompt at: ${promptPath}`);
+                    return fs.readFileSync(promptPath, 'utf8');
+                }
+            }
+            
+            console.warn('⚠️ Master prompt file not found, using fallback embedded prompt');
+            throw new Error('File not found');
+            
         } catch (error) {
-            console.error('Failed to load master prompt:', error);
             // Fallback to embedded prompt
             return `You are an AI video prompt engineer specializing in creating hyper-realistic 3D skeleton anatomy videos...`;
         }
@@ -131,8 +146,8 @@ Format your response as JSON:
             const taskId = createResponse.data.data.taskId;
             console.log(`Image task created: ${taskId}`);
             
-            // Poll for completion
-            const imageUrl = await this.pollKieTask(taskId);
+            // Poll for completion (images can take 2-3 minutes)
+            const imageUrl = await this.pollKieTask(taskId, 180000); // 3 min timeout
             console.log(`Image ${sceneNumber} generated successfully`);
             
             return imageUrl;
