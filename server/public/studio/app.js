@@ -277,15 +277,19 @@ function resetGenerator() {
 
 // Get Auth Token (from localStorage or cookie)
 function getAuthToken() {
-    // Try localStorage first
-    const token = localStorage.getItem('token');
+    // Try viewhunt_token first (used by /app)
+    let token = localStorage.getItem('viewhunt_token');
     if (token) return token;
     
-    // Try cookie
+    // Try token (fallback)
+    token = localStorage.getItem('token');
+    if (token) return token;
+    
+    // Try cookie as last resort
     const cookies = document.cookie.split(';');
     for (let cookie of cookies) {
         const [name, value] = cookie.trim().split('=');
-        if (name === 'token') return value;
+        if (name === 'token' || name === 'viewhunt_token') return value;
     }
     
     return null;
@@ -295,9 +299,8 @@ function getAuthToken() {
 function checkAuth() {
     const token = getAuthToken();
     if (!token) {
-        console.warn('No auth token found');
-        // Redirect to login instead of showing banner
-        window.location.href = '/app';
+        console.warn('No auth token found - you may need to log in at /app first');
+        // Don't redirect immediately - let the API handle auth
         return false;
     }
     return true;

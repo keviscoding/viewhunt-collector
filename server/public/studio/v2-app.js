@@ -330,15 +330,19 @@ function escapeHtml(text) {
 
 // Get Auth Token
 function getAuthToken() {
-    // Try localStorage first
-    const token = localStorage.getItem('token');
+    // Try viewhunt_token first (used by /app)
+    let token = localStorage.getItem('viewhunt_token');
     if (token) return token;
     
-    // Try cookie
+    // Try token (fallback)
+    token = localStorage.getItem('token');
+    if (token) return token;
+    
+    // Try cookie as last resort
     const cookies = document.cookie.split(';');
     for (let cookie of cookies) {
         const [name, value] = cookie.trim().split('=');
-        if (name === 'token') return value;
+        if (name === 'token' || name === 'viewhunt_token') return value;
     }
     
     return null;
@@ -348,8 +352,9 @@ function getAuthToken() {
 function checkAuth() {
     const token = getAuthToken();
     if (!token) {
-        console.warn('No auth token found, redirecting to app...');
-        window.location.href = '/app';
+        console.warn('No auth token found - you may need to log in at /app first');
+        // Don't redirect immediately - let user try to use the page
+        // The API will return 401 if auth is actually required
         return false;
     }
     return true;
