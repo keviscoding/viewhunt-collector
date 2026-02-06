@@ -15,7 +15,10 @@ const router = express.Router();
 // Configure multer for file uploads
 const upload = multer({ 
     dest: '/tmp/training-uploads/',
-    limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
+    limits: { 
+        fileSize: 50 * 1024 * 1024, // 50MB per file
+        files: 100 // Allow up to 100 files
+    }
 });
 
 const CACHE_FILE = path.join(__dirname, 'formats/skeleton-anatomy-v2/training-files-cache.json');
@@ -59,8 +62,25 @@ async function uploadToAnthropic(filePath, filename) {
     }
 }
 
-// Upload training files endpoint
-router.post('/upload-training', upload.array('files', 20), async (req, res) => {
+// Upload training files endpoint with multer error handling
+router.post('/upload-training', (req, res, next) => {
+    upload.array('files', 100)(req, res, (err) => {
+        if (err instanceof multer.MulterError) {
+            console.error('Multer error:', err);
+            return res.status(400).json({
+                success: false,
+                error: `File upload error: ${err.message}. ${err.code === 'LIMIT_FILE_COUNT' ? 'Too many files.' : ''}`
+            });
+        } else if (err) {
+            console.error('Upload error:', err);
+            return res.status(500).json({
+                success: false,
+                error: err.message
+            });
+        }
+        next();
+    });
+}, async (req, res) => {
     try {
         // Check if files were uploaded
         if (!req.files || req.files.length === 0) {
