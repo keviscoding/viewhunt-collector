@@ -17,10 +17,29 @@ class SkeletonGeneratorV2 {
         // Load master system prompt
         this.masterPrompt = this.loadMasterPrompt();
         
+        // Load training images cache
+        this.trainingImages = this.loadTrainingImages();
+        
         // Ensure output directory exists
         this.outputDir = path.join(__dirname, '../../../../public/studio/generated');
         if (!fs.existsSync(this.outputDir)) {
             fs.mkdirSync(this.outputDir, { recursive: true });
+        }
+    }
+    
+    loadTrainingImages() {
+        try {
+            const cacheFile = path.join(__dirname, 'training-files-cache.json');
+            if (fs.existsSync(cacheFile)) {
+                const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+                console.log(`✅ Loaded ${cache.count} training images from cache`);
+                return cache.fileIds;
+            }
+            console.warn('⚠️  No training images cache found. Run upload-training-images.js first.');
+            return [];
+        } catch (error) {
+            console.error('Failed to load training images:', error.message);
+            return [];
         }
     }
 
@@ -214,6 +233,33 @@ Now, when I give you a script, break it into scenes and generate the prompts fol
     async generateScenePrompts(script, skeletonStyle, gradientColors) {
         console.log('Using Claude to break script into scenes...');
         
+        // Build content array with training images + text prompt
+        const content = [];
+        
+        // Add training images first (if available)
+        if (this.trainingImages && this.trainingImages.length > 0) {
+            console.log(`Including ${this.trainingImages.length} training images for Claude to analyze...`);
+            
+            // Add first 5 images (to stay within token limits)
+            for (let i = 0; i < Math.min(5, this.trainingImages.length); i++) {
+                const img = this.trainingImages[i];
+                content.push({
+                    type: 'image',
+                    source: {
+                        type: 'base64',
+                        media_type: img.mediaType,
+                        data: img.base64
+                    }
+                });
+            }
+            
+            content.push({
+                type: 'text',
+                text: 'Study these reference frames from our training videos. Notice the transparent glass body, skeleton detail, eye expressions, camera angles, lighting, and overall visual style.'
+            });
+        }
+        
+        // Add the main prompt
         const userPrompt = `I need you to create image and video prompts for this script:
 
 SCRIPT:
@@ -223,7 +269,7 @@ VISUAL STYLE:
 - Skeleton Style: ${skeletonStyle}
 - Background Gradient: ${gradientColors}
 - Format: 9:16 vertical
-- Style: Hyper-realistic 3D
+- Style: Hyper-realistic 3D (like the reference images above)
 
 Break this into 10-18 scenes. For each scene, provide:
 1. Scene number and script line
@@ -244,6 +290,11 @@ Format your response as JSON:
   ]
 }`;
 
+        content.push({
+            type: 'text',
+            text: userPrompt
+        });
+
         try {
             const response = await this.anthropic.messages.create({
                 model: 'claude-sonnet-4-20250514',
@@ -251,7 +302,7 @@ Format your response as JSON:
                 system: this.masterPrompt,
                 messages: [{
                     role: 'user',
-                    content: userPrompt
+                    content: content
                 }]
             });
 
