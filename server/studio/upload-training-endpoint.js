@@ -9,6 +9,7 @@ const FormData = require('form-data');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const { saveTrainingCache } = require('./formats/skeleton-anatomy-v2/persist-training-cache');
 
 const router = express.Router();
 
@@ -185,6 +186,13 @@ router.post('/upload-training', (req, res, next) => {
         // This bypasses any filesystem issues on DigitalOcean
         global._trainingCache = cache;
         console.log(`✅ Cache also saved to in-memory global (${cache.totalFiles} files)`);
+        
+        // Save to MongoDB for persistence across deploys and container restarts
+        try {
+            await saveTrainingCache(cache);
+        } catch (mongoErr) {
+            console.error('MongoDB save failed (non-fatal):', mongoErr.message);
+        }
         
         // Verify the file was written
         if (fs.existsSync(CACHE_FILE)) {
