@@ -75,11 +75,18 @@ async function handleDirectorGeneration(script) {
             body: JSON.stringify({ format: 'skeleton-anatomy', script, gradientColors: selectedGradient })
         });
         
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Server error ${res.status}: ${errText}`);
+        }
+        
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Failed to generate scenes');
         
         currentScenes = data.scenes;
         container.innerHTML = '';
+        
+        console.log(`Director mode: received ${currentScenes.length} scenes`);
         
         // Render each scene card with controls
         const imagesPerScene = parseInt(document.getElementById('images-per-scene')?.value || '2');
@@ -100,6 +107,7 @@ async function handleDirectorGeneration(script) {
         container.appendChild(actionBar);
         
     } catch (error) {
+        console.error('Director generation error:', error);
         container.innerHTML = `<div class="director-error">❌ ${error.message}<br><button class="btn-secondary" onclick="resetToConfig()" style="margin-top:1rem">Try Again</button></div>`;
     } finally {
         generationInProgress = false;
@@ -153,6 +161,7 @@ async function generateSceneImages(sceneIndex) {
     gallery.innerHTML = `<div class="gallery-loading">🎨 Generating ${count} image variants...</div>`;
     
     try {
+        console.log(`Generating ${count} images for scene ${sceneIndex + 1}...`);
         const res = await fetch('/api/studio/generate/scene-images', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
@@ -164,7 +173,13 @@ async function generateSceneImages(sceneIndex) {
             })
         });
         
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Server error ${res.status}: ${errText}`);
+        }
+        
         const data = await res.json();
+        console.log(`Scene ${sceneIndex + 1} images response:`, data);
         if (!data.success) throw new Error(data.error);
         
         gallery.innerHTML = '';
@@ -174,7 +189,7 @@ async function generateSceneImages(sceneIndex) {
             wrapper.className = 'gallery-item';
             
             if (img.error) {
-                wrapper.innerHTML = `<div class="gallery-error">❌ Failed</div>`;
+                wrapper.innerHTML = `<div class="gallery-error">❌ Failed<br><small>${img.error}</small></div>`;
             } else {
                 wrapper.innerHTML = `<img src="${img.url}" alt="Variant ${i + 1}" loading="lazy">`;
                 wrapper.onclick = () => selectImage(sceneIndex, img.url, wrapper);
@@ -196,7 +211,8 @@ async function generateSceneImages(sceneIndex) {
         gallery.appendChild(regenBtn);
         
     } catch (error) {
-        gallery.innerHTML = `<div class="gallery-error">❌ ${error.message}</div>`;
+        console.error(`Scene ${sceneIndex + 1} image error:`, error);
+        gallery.innerHTML = `<div class="gallery-error">❌ ${error.message}<br><button class="btn-sm btn-secondary" onclick="generateSceneImages(${sceneIndex})" style="margin-top:0.5rem">Retry</button></div>`;
     }
 }
 
@@ -235,6 +251,7 @@ async function generateSceneVideo(sceneIndex) {
     }
     
     try {
+        console.log(`Generating video for scene ${sceneIndex + 1}...`);
         const res = await fetch('/api/studio/generate/scene-video', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
@@ -247,7 +264,13 @@ async function generateSceneVideo(sceneIndex) {
             })
         });
         
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Server error ${res.status}: ${errText}`);
+        }
+        
         const data = await res.json();
+        console.log(`Scene ${sceneIndex + 1} video response:`, data);
         if (!data.success) throw new Error(data.error);
         
         scene._videoUrl = data.videoUrl;
@@ -257,6 +280,7 @@ async function generateSceneVideo(sceneIndex) {
         `;
         
     } catch (error) {
+        console.error(`Scene ${sceneIndex + 1} video error:`, error);
         videoResult.innerHTML = `<div class="video-error">❌ ${error.message}<br><button class="btn-sm btn-secondary" onclick="generateSceneVideo(${sceneIndex})">Retry</button></div>`;
     } finally {
         btn.disabled = false;

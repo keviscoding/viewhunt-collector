@@ -296,12 +296,15 @@ router.post('/generate/scene-video', requireAuth, async (req, res) => {
         if (!generator) return res.status(400).json({ error: 'Invalid format' });
         
         console.log(`Director mode: generating video for scene ${sceneNumber}${lastImageUrl ? ' (multi-shot)' : ''}`);
+        console.log(`  Image URL: ${imageUrl.substring(0, 80)}...`);
+        console.log(`  Video Prompt: ${videoPrompt.substring(0, 100)}...`);
         
         const videoUrl = await generator.generateVideo(imageUrl, videoPrompt, sceneNumber, lastImageUrl);
         
+        console.log(`Director mode: video for scene ${sceneNumber} complete: ${videoUrl.substring(0, 80)}...`);
         res.json({ success: true, sceneNumber, videoUrl });
     } catch (error) {
-        console.error('Scene video generation error:', error);
+        console.error('Scene video generation error:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
