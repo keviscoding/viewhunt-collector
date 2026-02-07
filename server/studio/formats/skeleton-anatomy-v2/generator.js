@@ -448,6 +448,7 @@ Format your response as JSON:
 
     /**
      * Step 3: Generate video from image using AtlasCloud Veo 3.1 Fast
+     * Includes 1 retry on failure with adjusted prompt
      */
     async generateVideo(imageUrl, videoPrompt, sceneNumber) {
         console.log(`\n=== Generating video for scene ${sceneNumber} ===`);
@@ -455,59 +456,58 @@ Format your response as JSON:
         console.log(`Video Prompt: "${videoPrompt}"`);
         console.log(`===\n`);
         
-        try {
-            // Log API call for billing tracking
-            console.log(`🎬 CALLING AtlasCloud Veo 3.1 Fast API - Scene ${sceneNumber}`);
-            
-            // Create video generation task with AtlasCloud
-            const createResponse = await axios.post(
-                `${this.atlasBaseUrl}/model/generateVideo`,
-                {
-                    model: 'google/veo3.1-fast/image-to-video',
-                    prompt: videoPrompt,
-                    image: imageUrl,
-                    aspect_ratio: '9:16',
-                    duration: 8,
-                    resolution: '1080p',
-                    generate_audio: true
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${this.atlasApiKey}`
+        const maxAttempts = 2;
+        
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                console.log(`🎬 CALLING AtlasCloud Veo 3.1 Fast API - Scene ${sceneNumber} (attempt ${attempt}/${maxAttempts})`);
+                
+                const createResponse = await axios.post(
+                    `${this.atlasBaseUrl}/model/generateVideo`,
+                    {
+                        model: 'google/veo3.1-fast/image-to-video',
+                        prompt: videoPrompt,
+                        image: imageUrl,
+                        aspect_ratio: '9:16',
+                        duration: 8,
+                        resolution: '1080p',
+                        generate_audio: true,
+                        negative_prompt: 'gore, blood, violence, nsfw, nudity, graphic content'
+                    },
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${this.atlasApiKey}`
+                        }
                     }
+                );
+
+                console.log(`AtlasCloud API response:`, JSON.stringify(createResponse.data, null, 2));
+                
+                if (!createResponse.data || !createResponse.data.data || !createResponse.data.data.id) {
+                    console.error('Unexpected AtlasCloud API response:', createResponse.data);
+                    throw new Error('AtlasCloud API did not return a prediction ID');
                 }
-            );
 
-            console.log(`AtlasCloud API response:`, JSON.stringify(createResponse.data, null, 2));
-            
-            if (!createResponse.data || !createResponse.data.data || !createResponse.data.data.id) {
-                console.error('Unexpected AtlasCloud API response:', createResponse.data);
-                throw new Error('AtlasCloud API did not return a prediction ID');
+                const predictionId = createResponse.data.data.id;
+                console.log(`Video task created: ${predictionId}`);
+                
+                const videoUrl = await this.pollAtlasTask(predictionId, 600000);
+                console.log(`✅ Video ${sceneNumber} generated successfully`);
+                console.log(`💰 AtlasCloud cost: ~$0.64 (8 seconds × $0.08/sec)`);
+                
+                return videoUrl;
+                
+            } catch (error) {
+                console.error(`Error generating video ${sceneNumber} (attempt ${attempt}):`, error.message);
+                
+                if (attempt < maxAttempts) {
+                    console.log(`⏳ Retrying scene ${sceneNumber} in 5 seconds...`);
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                } else {
+                    throw error;
+                }
             }
-
-            const predictionId = createResponse.data.data.id;
-            console.log(`Video task created: ${predictionId}`);
-            
-            // Poll for completion (videos can take 3-5 minutes)
-            const videoUrl = await this.pollAtlasTask(predictionId, 600000);
-            console.log(`✅ Video ${sceneNumber} generated successfully`);
-            console.log(`💰 AtlasCloud cost: ~$0.64 (8 seconds × $0.08/sec)`);
-            
-            return videoUrl;
-            
-        } catch (error) {
-            console.error(`Error generating video ${sceneNumber}:`, error.response?.data || error.message);
-            
-            if (error.response) {
-                console.error('AtlasCloud API error response:', {
-                    status: error.response.status,
-                    statusText: error.response.statusText,
-                    data: error.response.data
-                });
-            }
-            
-            throw error;
         }
     }
 
