@@ -134,6 +134,10 @@ The main character across all videos is a humanoid figure made of smooth, transp
 
 9. **The skeleton is ALIVE — never a lifeless T-pose lab specimen.** Look at the reference frames: the skeleton is always in the act of DOING something. Choking? Hands gripping the throat. Running? Mid-stride, arms pumping. Scrolling a phone? Hunched over, thumb swiping. Sitting? Slouched, weight shifted, one leg crossed. The skeleton has a personality — it reacts, it emotes, it moves with purpose. Every pose must be mid-action, caught in a moment, like a freeze-frame from a movie. Never standing straight with arms at the sides. Never a neutral default pose. The character lives in extreme environments but behaves completely naturally — it just happens to be made of glass with a skeleton inside. Think of it as a real person doing real things, not a medical diagram.
 
+10. **The image prompt is the STARTING FRAME, not the end frame.** This is critical. The image you describe becomes the first frame of the video. The VIDEO PROMPT then describes what HAPPENS from that starting point. So if the scene is about the skeleton swelling up and exploding, the image prompt should show the skeleton BEFORE it swells — intact, maybe with early warning signs (slight glow, minor tension). The video prompt then describes the swelling and explosion. If the scene is about glass cracking and shattering, the image shows the glass with maybe one hairline crack starting — the video shows the crack spreading and the glass breaking apart. NEVER put the climax or end-state in the image prompt. The image is the "before," the video is the "during." Think of it like this: the image is frame 1 of the scene, and the video plays out the action from there. If you put the destruction/transformation/climax in the image, the video has nowhere to go and just shows a static aftermath — which is boring and wastes the scene.
+
+11. **Absolutely NO slow motion — in ANY form.** This rule cannot be overstated. Do not use the words "slow," "slowly," "gradual," "gradually," "gentle," "gently," "subtle," "subtly," "delicate," or "leisurely" in video prompts. Do not describe camera movements as "slow push-in" or "slow orbit" — just say "push-in" or "orbit." Do not describe character actions as "slowly raises hand" — say "raises hand." Everything moves at natural, real-world speed. Quick and confident. The moment anything moves in slow motion, it looks cheap and AI-generated. Real cinematography is snappy. Think documentary camera crew, not Matrix bullet-time. If you catch yourself writing "slow" or "gentle" in a video prompt, delete it immediately and replace with a direct, brisk description.
+
 ---
 
 ## WHAT YOU SHOULD LEARN FROM THE REFERENCE MATERIAL (not hard rules — patterns to absorb)
@@ -197,8 +201,8 @@ When given a new script:
 3. **Break the script into scenes.** Each distinct visual beat gets its own scene. Think about when the camera NEEDS to cut to something new. Aim for 10-12 scenes maximum (not more than 12).
 
 4. **For each scene, write two prompts:**
-   - **IMAGE PROMPT** — A fully self-contained description that could be fed cold to an image generation model. Include: render style, orientation, character description (full — glass body, skeleton, eyes, current degradation state), pose, expression, camera angle/framing, props, background, lighting. Everything.
-   - **VIDEO MOTION PROMPT** — What happens when this image comes to life. Character action (what moves, how), camera movement (if any), and any environmental motion. Keep it natural and snappy — not slow, not forced.
+   - **IMAGE PROMPT** — This is the STARTING FRAME of the scene. A fully self-contained description that could be fed cold to an image generation model. Show the character at the BEGINNING of the action — before the transformation, before the destruction, before the climax. Include: render style, orientation, character description (full — glass body, skeleton, eyes, current degradation state), pose, expression, camera angle/framing, props, background, lighting. Everything. Remember: this image becomes frame 1 of the video, so it must leave room for the action to unfold.
+   - **VIDEO MOTION PROMPT** — What happens when this starting frame comes to life. This is where the ACTION happens — the transformation, the destruction, the movement. Character action (what moves, how), camera movement, and any environmental motion. Keep it natural speed — brisk, confident, real-world pacing. No slow motion ever.
 
 5. **Escalate visually.** The scenes should get progressively more intense — tighter shots, more damage, darker lighting, more dramatic angles — as the script's timeline advances.
 
@@ -225,8 +229,9 @@ Return your response as a JSON object with a "scenes" array. Each scene object m
 **CRITICAL REMINDERS:**
 - Image prompts must be 100% self-contained. Describe the glass body, skeleton, eyes, condition, props, environment, camera angle, lighting, and format EVERY TIME.
 - Image prompts must show the full character (at minimum chest-up) unless it's a macro/interior B-roll. No floating heads.
-- Video prompts use natural, snappy pacing. No "slow" movements, no duration timestamps.
-- Video prompts MUST include camera movement. Never "camera holds steady" or "static shot." Always orbit, push-in, pull-back, crane, dolly, drift, or combine movements.
+- **IMAGE = STARTING FRAME.** The image shows the BEGINNING of the action, NOT the result. If something breaks, show it before it breaks. If something transforms, show it before the transformation. The video prompt handles the action/change. Never put the climax in the image.
+- Video prompts use natural, snappy pacing. ZERO slow motion. Ban the words: slow, slowly, gradual, gradually, gentle, gently, subtle, subtly. Everything at real-world speed.
+- Video prompts MUST include camera movement. Never "camera holds steady" or "static shot." Always orbit, push-in, pull-back, crane, dolly, drift, or combine movements. Camera moves briskly, not sluggishly.
 - Camera frames what the script is talking about.
 - Maximum 12 scenes per video.
 
@@ -290,8 +295,8 @@ VISUAL STYLE:
 Break this into 10-12 scenes (MAXIMUM 12 SCENES - do not exceed this limit). Aim for 4-5 seconds per scene. For each scene, provide:
 1. Scene number and script line
 2. Shot type (wide/medium/close-up/macro)
-3. IMAGE PROMPT (for Nano Banana Pro - fully self-contained, no text overlays)
-4. VIDEO PROMPT (for Veo 3.1 - natural pacing, no duration stamps)
+3. IMAGE PROMPT (for Nano Banana Pro - fully self-contained, no text overlays). IMPORTANT: The image is the STARTING FRAME — show the moment BEFORE the action/transformation/destruction happens. The video will handle the action.
+4. VIDEO PROMPT (for Veo 3.1 - natural speed, NO slow motion, NO words like "slow/slowly/gradual/gentle". Brisk, confident movements. Must include camera movement.)
 
 Format your response as JSON:
 {
