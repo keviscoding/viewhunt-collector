@@ -300,7 +300,7 @@ Format your response as JSON:
             // Use direct HTTP request to bypass SDK version limitations
             // The SDK may not support type:'file' but the API does with the beta header
             const requestBody = {
-                model: 'claude-sonnet-4-20250514',
+                model: 'claude-opus-4-5-20251101',
                 max_tokens: 8000,
                 system: this.masterPrompt,
                 messages: [{
