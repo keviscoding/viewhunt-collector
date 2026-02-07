@@ -132,6 +132,8 @@ The main character across all videos is a humanoid figure made of smooth, transp
 
 8. **Always show the full character in the image prompt unless it's specifically a macro/interior B-roll shot.** Close-ups are fine but they should still show at least chest-up with context — not a floating disembodied head. The character's body, pose, and environment tell the story. Even in tight shots, include enough of the body to ground the character in the scene. The only exception is true macro shots (inside a vein, a single eyeball filling the frame, an organ close-up) which are anatomical B-roll, not character shots.
 
+9. **The skeleton is ALIVE — never a lifeless T-pose lab specimen.** Look at the reference frames: the skeleton is always in the act of DOING something. Choking? Hands gripping the throat. Running? Mid-stride, arms pumping. Scrolling a phone? Hunched over, thumb swiping. Sitting? Slouched, weight shifted, one leg crossed. The skeleton has a personality — it reacts, it emotes, it moves with purpose. Every pose must be mid-action, caught in a moment, like a freeze-frame from a movie. Never standing straight with arms at the sides. Never a neutral default pose. The character lives in extreme environments but behaves completely naturally — it just happens to be made of glass with a skeleton inside. Think of it as a real person doing real things, not a medical diagram.
+
 ---
 
 ## WHAT YOU SHOULD LEARN FROM THE REFERENCE MATERIAL (not hard rules — patterns to absorb)
@@ -468,9 +470,10 @@ Format your response as JSON:
      * Step 3: Generate video from image using AtlasCloud Veo 3.1 Fast
      * Includes 1 retry on failure with adjusted prompt
      */
-    async generateVideo(imageUrl, videoPrompt, sceneNumber) {
+    async generateVideo(imageUrl, videoPrompt, sceneNumber, lastImageUrl = null) {
         console.log(`\n=== Generating video for scene ${sceneNumber} ===`);
         console.log(`Image URL: ${imageUrl}`);
+        if (lastImageUrl) console.log(`Last Image (multi-shot): ${lastImageUrl}`);
         console.log(`Video Prompt: "${videoPrompt}"`);
         console.log(`===\n`);
         
@@ -480,18 +483,25 @@ Format your response as JSON:
             try {
                 console.log(`🎬 CALLING AtlasCloud Veo 3.1 Fast API - Scene ${sceneNumber} (attempt ${attempt}/${maxAttempts})`);
                 
+                const requestBody = {
+                    model: 'google/veo3.1-fast/image-to-video',
+                    prompt: videoPrompt,
+                    image: imageUrl,
+                    aspect_ratio: '9:16',
+                    duration: 8,
+                    resolution: '1080p',
+                    generate_audio: true,
+                    negative_prompt: 'gore, blood, violence, nsfw, nudity, graphic content'
+                };
+                
+                // Add last_image for multi-shot if provided
+                if (lastImageUrl) {
+                    requestBody.last_image = lastImageUrl;
+                    console.log('Using multi-shot mode (first + last frame)');
+                }
                 const createResponse = await axios.post(
                     `${this.atlasBaseUrl}/model/generateVideo`,
-                    {
-                        model: 'google/veo3.1-fast/image-to-video',
-                        prompt: videoPrompt,
-                        image: imageUrl,
-                        aspect_ratio: '9:16',
-                        duration: 8,
-                        resolution: '1080p',
-                        generate_audio: true,
-                        negative_prompt: 'gore, blood, violence, nsfw, nudity, graphic content'
-                    },
+                    requestBody,
                     {
                         headers: {
                             'Content-Type': 'application/json',

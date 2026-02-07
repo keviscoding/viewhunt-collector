@@ -1,105 +1,311 @@
-// V2 Studio App - Skeleton Video Generator with Claude + Kie.ai
+// V2 Studio App - Skeleton Video Generator with Director Mode
 
 let selectedGradient = 'smooth blue to teal gradient background';
 let generationInProgress = false;
 let currentScenes = [];
+let directorMode = false; // false = auto, true = director
 
-// Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     initializeGradientSelector();
     initializeGenerateButton();
+    initializeModeToggle();
     checkAuth();
 });
 
-// Gradient Selector
 function initializeGradientSelector() {
-    const gradientOptions = document.querySelectorAll('.gradient-option');
-    
-    gradientOptions.forEach(option => {
+    document.querySelectorAll('.gradient-option').forEach(option => {
         option.addEventListener('click', () => {
-            // Remove selected class from all
-            gradientOptions.forEach(opt => opt.classList.remove('selected'));
-            
-            // Add selected class to clicked option
+            document.querySelectorAll('.gradient-option').forEach(o => o.classList.remove('selected'));
             option.classList.add('selected');
-            
-            // Store selected gradient
             selectedGradient = option.dataset.gradient;
-            console.log('Selected gradient:', selectedGradient);
         });
     });
 }
 
-// Generate Button Handler
+function initializeModeToggle() {
+    const toggle = document.getElementById('mode-toggle');
+    if (toggle) {
+        toggle.addEventListener('change', (e) => {
+            directorMode = e.target.checked;
+            document.getElementById('mode-label').textContent = directorMode ? '🎬 Director Mode' : '⚡ Auto Mode';
+            document.getElementById('mode-desc').textContent = directorMode 
+                ? 'Review images per scene, pick favorites, generate videos one by one'
+                : 'Fully automatic — generates everything in one go';
+            
+            // Show/hide director-specific options
+            document.getElementById('director-options').style.display = directorMode ? 'block' : 'none';
+            document.getElementById('generateVideos').parentElement.parentElement.style.display = directorMode ? 'none' : 'block';
+        });
+    }
+}
+
 function initializeGenerateButton() {
-    const generateBtn = document.getElementById('generate-btn');
-    const scriptInput = document.getElementById('script');
-    const generateVideosCheckbox = document.getElementById('generateVideos');
-    
-    generateBtn.addEventListener('click', async () => {
-        const script = scriptInput.value.trim();
+    document.getElementById('generate-btn').addEventListener('click', async () => {
+        const script = document.getElementById('script').value.trim();
+        if (!script) return alert('Please enter a video script');
+        if (generationInProgress) return alert('Generation already in progress');
         
-        if (!script) {
-            alert('Please enter a video script');
-            return;
+        if (directorMode) {
+            await handleDirectorGeneration(script);
+        } else {
+            await handleAutoGeneration(script, document.getElementById('generateVideos').checked);
         }
-        
-        if (generationInProgress) {
-            alert('Generation already in progress. Please wait...');
-            return;
-        }
-        
-        const generateVideos = generateVideosCheckbox.checked;
-        
-        await handleFullGeneration(script, generateVideos);
     });
 }
 
-// Handle Full Video Generation with Real-Time Streaming
-async function handleFullGeneration(script, generateVideos) {
+// ==================== DIRECTOR MODE ====================
+
+async function handleDirectorGeneration(script) {
     generationInProgress = true;
     currentScenes = [];
     
-    // Hide config, show progress
     document.getElementById('config-section').classList.add('hidden');
-    document.getElementById('progress-section').classList.remove('hidden');
+    document.getElementById('director-section').classList.remove('hidden');
     document.getElementById('results-section').classList.add('hidden');
+    document.getElementById('progress-section').classList.add('hidden');
     
-    // Reset progress steps
-    document.querySelectorAll('.progress-step').forEach(step => {
-        step.classList.remove('active', 'completed');
-    });
-    
-    // Clear previous results
-    document.getElementById('scenes-container').innerHTML = '';
+    const container = document.getElementById('director-scenes');
+    container.innerHTML = '<div class="director-loading">🤖 Opus 4.5 is analyzing your script and reference frames...</div>';
     
     try {
-        // Use EventSource for Server-Sent Events
-        const eventSource = new EventSource(`/api/studio/generate/stream?${new URLSearchParams({
-            format: 'skeleton-anatomy',
-            script: script,
-            gradientColors: selectedGradient,
-            generateVideos: generateVideos
-        })}`);
-        
-        // This won't work with POST, so let's use fetch with streaming instead
-        const response = await fetch('/api/studio/generate/stream', {
+        // Step 1: Get scene prompts from Claude
+        const res = await fetch('/api/studio/generate/scenes', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${getAuthToken()}`
-            },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
+            body: JSON.stringify({ format: 'skeleton-anatomy', script, gradientColors: selectedGradient })
+        });
+        
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Failed to generate scenes');
+        
+        currentScenes = data.scenes;
+        container.innerHTML = '';
+        
+        // Render each scene card with controls
+        const imagesPerScene = parseInt(document.getElementById('images-per-scene')?.value || '2');
+        
+        currentScenes.forEach((scene, i) => {
+            const card = createDirectorSceneCard(scene, i);
+            container.appendChild(card);
+        });
+        
+        // Add bottom action bar
+        const actionBar = document.createElement('div');
+        actionBar.className = 'director-actions';
+        actionBar.innerHTML = `
+            <button class="btn-primary" onclick="generateAllSelectedVideos()">🎥 Generate All Selected Videos</button>
+            <button class="btn-secondary" onclick="generateAllImages()">🎨 Generate All Images (${imagesPerScene} each)</button>
+            <button class="btn-secondary" onclick="resetToConfig()">← Back</button>
+        `;
+        container.appendChild(actionBar);
+        
+    } catch (error) {
+        container.innerHTML = `<div class="director-error">❌ ${error.message}<br><button class="btn-secondary" onclick="resetToConfig()" style="margin-top:1rem">Try Again</button></div>`;
+    } finally {
+        generationInProgress = false;
+    }
+}
+
+function createDirectorSceneCard(scene, index) {
+    const card = document.createElement('div');
+    card.className = 'director-card';
+    card.id = `scene-${index}`;
+    card.dataset.sceneIndex = index;
+    
+    card.innerHTML = `
+        <div class="director-card-header">
+            <h3>Scene ${scene.sceneNumber || index + 1}</h3>
+            <span class="scene-badge">${scene.shotType || 'medium'}</span>
+        </div>
+        <p class="scene-script-line">"${escapeHtml(scene.scriptLine || '')}"</p>
+        <details class="prompt-details">
+            <summary>📸 Image Prompt</summary>
+            <p>${escapeHtml(scene.imagePrompt)}</p>
+        </details>
+        <details class="prompt-details">
+            <summary>🎬 Video Prompt</summary>
+            <p>${escapeHtml(scene.videoPrompt)}</p>
+        </details>
+        
+        <div class="image-gallery" id="gallery-${index}">
+            <div class="gallery-placeholder">Click "Generate Images" to create variants</div>
+        </div>
+        
+        <div class="director-card-controls">
+            <button class="btn-sm btn-primary" onclick="generateSceneImages(${index})">🎨 Generate Images</button>
+            <button class="btn-sm btn-accent" onclick="generateSceneVideo(${index})" id="video-btn-${index}" disabled>🎥 Generate Video</button>
+            <label class="multishot-toggle" title="Use first+last frame for smoother transitions">
+                <input type="checkbox" id="multishot-${index}"> Multi-shot
+            </label>
+        </div>
+        
+        <div class="video-result" id="video-result-${index}"></div>
+    `;
+    
+    return card;
+}
+
+async function generateSceneImages(sceneIndex) {
+    const scene = currentScenes[sceneIndex];
+    const gallery = document.getElementById(`gallery-${sceneIndex}`);
+    const count = parseInt(document.getElementById('images-per-scene')?.value || '2');
+    
+    gallery.innerHTML = `<div class="gallery-loading">🎨 Generating ${count} image variants...</div>`;
+    
+    try {
+        const res = await fetch('/api/studio/generate/scene-images', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
             body: JSON.stringify({
                 format: 'skeleton-anatomy',
-                script: script,
-                gradientColors: selectedGradient,
-                generateVideos: generateVideos
+                imagePrompt: scene.imagePrompt,
+                sceneNumber: scene.sceneNumber || sceneIndex + 1,
+                count
             })
         });
         
-        if (!response.ok) {
-            throw new Error('Failed to start generation stream');
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        
+        gallery.innerHTML = '';
+        
+        data.images.forEach((img, i) => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'gallery-item';
+            
+            if (img.error) {
+                wrapper.innerHTML = `<div class="gallery-error">❌ Failed</div>`;
+            } else {
+                wrapper.innerHTML = `<img src="${img.url}" alt="Variant ${i + 1}" loading="lazy">`;
+                wrapper.onclick = () => selectImage(sceneIndex, img.url, wrapper);
+                
+                // Auto-select first successful image
+                if (!scene._selectedImage) {
+                    selectImage(sceneIndex, img.url, wrapper);
+                }
+            }
+            
+            gallery.appendChild(wrapper);
+        });
+        
+        // Add regenerate button
+        const regenBtn = document.createElement('div');
+        regenBtn.className = 'gallery-item gallery-regen';
+        regenBtn.innerHTML = '🔄<br><small>More</small>';
+        regenBtn.onclick = () => generateSceneImages(sceneIndex);
+        gallery.appendChild(regenBtn);
+        
+    } catch (error) {
+        gallery.innerHTML = `<div class="gallery-error">❌ ${error.message}</div>`;
+    }
+}
+
+function selectImage(sceneIndex, imageUrl, element) {
+    currentScenes[sceneIndex]._selectedImage = imageUrl;
+    
+    // Update visual selection
+    const gallery = document.getElementById(`gallery-${sceneIndex}`);
+    gallery.querySelectorAll('.gallery-item').forEach(item => item.classList.remove('selected'));
+    if (element) element.classList.add('selected');
+    
+    // Enable video button
+    document.getElementById(`video-btn-${sceneIndex}`).disabled = false;
+}
+
+async function generateSceneVideo(sceneIndex) {
+    const scene = currentScenes[sceneIndex];
+    const imageUrl = scene._selectedImage;
+    if (!imageUrl) return alert('Select an image first');
+    
+    const videoResult = document.getElementById(`video-result-${sceneIndex}`);
+    const btn = document.getElementById(`video-btn-${sceneIndex}`);
+    btn.disabled = true;
+    btn.textContent = '⏳ Generating...';
+    videoResult.innerHTML = '<div class="video-loading">🎥 Generating video (1-3 min)...</div>';
+    
+    const multishot = document.getElementById(`multishot-${sceneIndex}`)?.checked;
+    
+    // For multi-shot, use next scene's selected image as last_image
+    let lastImageUrl = null;
+    if (multishot && sceneIndex < currentScenes.length - 1) {
+        lastImageUrl = currentScenes[sceneIndex + 1]?._selectedImage || null;
+        if (!lastImageUrl) {
+            videoResult.innerHTML = '<div class="video-loading">⚠️ Multi-shot needs the next scene\'s image selected first. Generating without it...</div>';
         }
+    }
+    
+    try {
+        const res = await fetch('/api/studio/generate/scene-video', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
+            body: JSON.stringify({
+                format: 'skeleton-anatomy',
+                imageUrl,
+                videoPrompt: scene.videoPrompt,
+                sceneNumber: scene.sceneNumber || sceneIndex + 1,
+                lastImageUrl
+            })
+        });
+        
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        
+        scene._videoUrl = data.videoUrl;
+        videoResult.innerHTML = `
+            <video src="${data.videoUrl}" controls muted loop class="video-preview"></video>
+            <button class="btn-sm btn-secondary" onclick="generateSceneVideo(${sceneIndex})">🔄 Regenerate</button>
+        `;
+        
+    } catch (error) {
+        videoResult.innerHTML = `<div class="video-error">❌ ${error.message}<br><button class="btn-sm btn-secondary" onclick="generateSceneVideo(${sceneIndex})">Retry</button></div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🎥 Generate Video';
+    }
+}
+
+async function generateAllImages() {
+    const count = parseInt(document.getElementById('images-per-scene')?.value || '2');
+    for (let i = 0; i < currentScenes.length; i++) {
+        generateSceneImages(i); // Fire all in parallel
+    }
+}
+
+async function generateAllSelectedVideos() {
+    const scenesWithImages = currentScenes.filter(s => s._selectedImage);
+    if (scenesWithImages.length === 0) return alert('Generate and select images first');
+    
+    if (!confirm(`Generate videos for ${scenesWithImages.length} scenes? Estimated cost: ~$${(scenesWithImages.length * 0.64).toFixed(2)}`)) return;
+    
+    for (let i = 0; i < currentScenes.length; i++) {
+        if (currentScenes[i]._selectedImage) {
+            generateSceneVideo(i); // Fire all in parallel
+        }
+    }
+}
+
+// ==================== AUTO MODE (existing behavior) ====================
+
+async function handleAutoGeneration(script, generateVideos) {
+    generationInProgress = true;
+    currentScenes = [];
+    
+    document.getElementById('config-section').classList.add('hidden');
+    document.getElementById('progress-section').classList.remove('hidden');
+    document.getElementById('results-section').classList.add('hidden');
+    document.getElementById('director-section').classList.add('hidden');
+    
+    document.querySelectorAll('.progress-step').forEach(s => s.classList.remove('active', 'completed'));
+    document.getElementById('scenes-container').innerHTML = '';
+    
+    try {
+        const response = await fetch('/api/studio/generate/stream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
+            body: JSON.stringify({ format: 'skeleton-anatomy', script, gradientColors: selectedGradient, generateVideos })
+        });
+        
+        if (!response.ok) throw new Error('Failed to start generation stream');
         
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -107,475 +313,119 @@ async function handleFullGeneration(script, generateVideos) {
         
         while (true) {
             const { done, value } = await reader.read();
-            
             if (done) break;
             
             buffer += decoder.decode(value, { stream: true });
-            
-            // Process complete SSE messages
             const lines = buffer.split('\n\n');
-            buffer = lines.pop(); // Keep incomplete message in buffer
+            buffer = lines.pop();
             
             for (const line of lines) {
                 if (!line.trim()) continue;
-                
                 const eventMatch = line.match(/^event: (.+)\ndata: (.+)$/);
                 if (!eventMatch) continue;
-                
                 const [, event, dataStr] = eventMatch;
-                const data = JSON.parse(dataStr);
-                
-                handleStreamEvent(event, data, generateVideos);
+                handleStreamEvent(event, JSON.parse(dataStr), generateVideos);
             }
         }
-        
     } catch (error) {
         console.error('Generation error:', error);
         updateProgressMessage(`❌ Error: ${error.message}`);
-        
-        // Show error and allow retry
-        setTimeout(() => {
-            if (confirm('Generation failed. Would you like to try again?')) {
-                resetToConfig();
-            }
-        }, 2000);
+        setTimeout(() => { if (confirm('Generation failed. Try again?')) resetToConfig(); }, 2000);
     } finally {
         generationInProgress = false;
     }
 }
 
-// Handle streaming events
 function handleStreamEvent(event, data, hasVideos) {
-    console.log('Stream event:', event, data);
-    
     switch (event) {
-        case 'progress':
-            handleProgressUpdate(data);
-            break;
-            
-        case 'scene':
-            handleSceneComplete(data, hasVideos);
-            break;
-            
-        case 'complete':
-            handleGenerationComplete(data, hasVideos);
-            break;
-            
-        case 'error':
-            throw new Error(data.error || 'Generation failed');
+        case 'progress': handleProgressUpdate(data); break;
+        case 'scene': handleSceneComplete(data, hasVideos); break;
+        case 'complete': handleGenerationComplete(data); break;
+        case 'error': updateProgressMessage(`❌ ${data.error}`); break;
     }
 }
 
-// Handle progress updates
 function handleProgressUpdate(data) {
     const { step, status, message, completed, total } = data;
-    
     if (step === 'claude') {
-        if (status === 'processing') {
-            updateProgressStep('claude', 'active');
-            updateProgressMessage('🤖 ' + message);
-        } else if (status === 'completed') {
-            updateProgressStep('claude', 'completed');
-            updateProgressMessage('✅ ' + message);
-        }
+        updateProgressStep('claude', status === 'completed' ? 'completed' : 'active');
+        updateProgressMessage((status === 'completed' ? '✅ ' : '🤖 ') + message);
     } else if (step === 'images') {
-        updateProgressStep('images', 'active');
-        if (completed && total) {
-            updateProgressMessage(`🎨 ${message} (${completed}/${total})`);
-        } else {
-            updateProgressMessage('🎨 ' + message);
-        }
-        
-        if (status === 'completed') {
-            updateProgressStep('images', 'completed');
-        }
+        updateProgressStep('images', status === 'completed' ? 'completed' : 'active');
+        updateProgressMessage(`🎨 ${message}${completed && total ? ` (${completed}/${total})` : ''}`);
     } else if (step === 'videos') {
-        updateProgressStep('videos', 'active');
-        if (completed && total) {
-            updateProgressMessage(`🎥 ${message} (${completed}/${total})`);
-        } else {
-            updateProgressMessage('🎥 ' + message);
-        }
-        
-        if (status === 'completed') {
-            updateProgressStep('videos', 'completed');
-            if (data.cost) {
-                updateProgressMessage(`✅ ${message} - Cost: $${data.cost.toFixed(2)}`);
-            }
-        }
+        updateProgressStep('videos', status === 'completed' ? 'completed' : 'active');
+        updateProgressMessage(`🎥 ${message}${completed && total ? ` (${completed}/${total})` : ''}`);
     }
 }
 
-// Handle scene completion - show immediately
 function handleSceneComplete(scene, hasVideos) {
     currentScenes.push(scene);
-    
-    // Show results section if not already visible
-    const resultsSection = document.getElementById('results-section');
-    if (resultsSection.classList.contains('hidden')) {
-        resultsSection.classList.remove('hidden');
-    }
-    
-    // Add scene card to container
+    document.getElementById('results-section').classList.remove('hidden');
     const container = document.getElementById('scenes-container');
-    const sceneCard = createSceneCard(scene, scene.sceneNumber, hasVideos);
-    container.appendChild(sceneCard);
-    
-    // Scroll to the new scene
-    sceneCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const card = createAutoSceneCard(scene, scene.sceneNumber, hasVideos);
+    container.appendChild(card);
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-// Handle generation complete
-function handleGenerationComplete(data, hasVideos) {
+function handleGenerationComplete(data) {
     updateProgressStep('complete', 'completed');
-    updateProgressMessage('🎉 Generation complete! All results shown below.');
-    
-    // Store all scenes
+    updateProgressMessage('🎉 Generation complete!');
     currentScenes = data.scenes || currentScenes;
-    
     generationInProgress = false;
 }
 
-// Update Progress Step
-function updateProgressStep(step, status) {
-    const stepElement = document.querySelector(`[data-step="${step}"]`);
-    if (!stepElement) return;
-    
-    // Remove all status classes
-    stepElement.classList.remove('active', 'completed');
-    
-    // Add new status
-    if (status === 'active') {
-        stepElement.classList.add('active');
-        stepElement.style.opacity = '1';
-    } else if (status === 'completed') {
-        stepElement.classList.add('completed');
-        stepElement.style.opacity = '1';
-    }
-}
-
-// Update Progress Message
-function updateProgressMessage(message) {
-    const messageElement = document.getElementById('progress-message');
-    if (messageElement) {
-        messageElement.textContent = message;
-    }
-}
-
-// Show Results
-function showResults(scenes, hasVideos) {
-    // Hide progress, show results
-    document.getElementById('progress-section').classList.add('hidden');
-    document.getElementById('results-section').classList.remove('hidden');
-    
-    // Render scenes
-    const scenesContainer = document.getElementById('scenes-container');
-    scenesContainer.innerHTML = '';
-    
-    scenes.forEach((scene, index) => {
-        const sceneCard = createSceneCard(scene, index + 1, hasVideos);
-        scenesContainer.appendChild(sceneCard);
-    });
-    
-    // Setup download buttons
-    setupDownloadButtons(scenes, hasVideos);
-}
-
-// Create Scene Card
-function createSceneCard(scene, sceneNumber, hasVideos) {
+function createAutoSceneCard(scene, num, hasVideos) {
     const card = document.createElement('div');
     card.className = 'scene-card';
-    
-    const statusClass = scene.videoUrl || !hasVideos ? 'status-complete' : 'status-pending';
-    const statusText = scene.videoUrl || !hasVideos ? 'Complete' : 'Pending';
-    
     card.innerHTML = `
-        <div class="scene-header">
-            <h3>Scene ${sceneNumber}</h3>
-            <span class="scene-status ${statusClass}">${statusText}</span>
-        </div>
-        
-        <p style="color: #666; margin-bottom: 0.5rem; font-size: 0.9rem;">
-            <strong>Narration:</strong> ${escapeHtml(scene.narration)}
-        </p>
-        
-        <div style="color: #888; font-size: 0.85rem; margin-bottom: 1rem;">
-            <details style="margin-bottom: 0.5rem;">
-                <summary style="cursor: pointer; color: #666; font-weight: bold;">📸 Image Prompt</summary>
-                <p style="margin-top: 0.5rem; padding: 0.5rem; background: #f5f5f5; border-radius: 4px; white-space: pre-wrap;">
-                    ${escapeHtml(scene.imagePrompt)}
-                </p>
-            </details>
-            <details>
-                <summary style="cursor: pointer; color: #666; font-weight: bold;">🎬 Video Prompt</summary>
-                <p style="margin-top: 0.5rem; padding: 0.5rem; background: #f5f5f5; border-radius: 4px; white-space: pre-wrap;">
-                    ${escapeHtml(scene.videoPrompt || 'No video prompt')}
-                </p>
-            </details>
-        </div>
-        
+        <div class="scene-header"><h3>Scene ${num}</h3><span class="scene-status ${scene.videoUrl || !hasVideos ? 'status-complete' : 'status-pending'}">${scene.videoUrl || !hasVideos ? 'Complete' : 'Pending'}</span></div>
+        <p class="scene-script-line">"${escapeHtml(scene.scriptLine || scene.narration || '')}"</p>
+        <details class="prompt-details"><summary>📸 Image Prompt</summary><p>${escapeHtml(scene.imagePrompt)}</p></details>
+        <details class="prompt-details"><summary>🎬 Video Prompt</summary><p>${escapeHtml(scene.videoPrompt || '')}</p></details>
         <div class="scene-media">
-            <div class="media-preview">
-                ${scene.imageUrl ? 
-                    `<img src="${scene.imageUrl}" alt="Scene ${sceneNumber} Image" loading="lazy">` :
-                    `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #999;">Loading...</div>`
-                }
-            </div>
-            
-            <div class="media-preview">
-                ${scene.videoUrl ? 
-                    `<video src="${scene.videoUrl}" controls muted loop>
-                        Your browser does not support video playback.
-                    </video>` :
-                    hasVideos ?
-                        `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #999;">Video generating...</div>` :
-                        `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #999;">Image only</div>`
-                }
-            </div>
+            <div class="media-preview">${scene.imageUrl ? `<img src="${scene.imageUrl}" alt="Scene ${num}" loading="lazy">` : '<div class="media-placeholder">Loading...</div>'}</div>
+            <div class="media-preview">${scene.videoUrl ? `<video src="${scene.videoUrl}" controls muted loop></video>` : hasVideos ? '<div class="media-placeholder">Video generating...</div>' : '<div class="media-placeholder">Image only</div>'}</div>
         </div>
     `;
-    
     return card;
 }
 
-// Setup Download Buttons
-function setupDownloadButtons(scenes, hasVideos) {
-    const downloadAllBtn = document.getElementById('download-all-btn');
-    const generateAnotherBtn = document.getElementById('generate-another-btn');
-    
-    // Download all videos
-    downloadAllBtn.onclick = async () => {
-        if (!hasVideos) {
-            alert('No videos to download. You generated images only.');
-            return;
-        }
-        
-        downloadAllBtn.disabled = true;
-        downloadAllBtn.textContent = '⏳ Downloading...';
-        
-        try {
-            for (let i = 0; i < scenes.length; i++) {
-                const scene = scenes[i];
-                if (scene.videoUrl) {
-                    await downloadFile(scene.videoUrl, `scene-${i + 1}.mp4`);
-                    await new Promise(resolve => setTimeout(resolve, 500)); // Small delay between downloads
-                }
-            }
-            
-            alert(`✅ Downloaded ${scenes.length} videos!`);
-        } catch (error) {
-            console.error('Download error:', error);
-            alert('Some downloads may have failed. Please try again.');
-        } finally {
-            downloadAllBtn.disabled = false;
-            downloadAllBtn.textContent = '📥 Download All Videos';
-        }
-    };
-    
-    // Generate another
-    generateAnotherBtn.onclick = () => {
-        resetToConfig();
-    };
+// ==================== SHARED UTILITIES ====================
+
+function updateProgressStep(step, status) {
+    const el = document.querySelector(`[data-step="${step}"]`);
+    if (!el) return;
+    el.classList.remove('active', 'completed');
+    el.classList.add(status);
+    el.style.opacity = status ? '1' : '0.3';
 }
 
-// Download File Helper
-async function downloadFile(url, filename) {
-    try {
-        const response = await fetch(url);
-        const blob = await response.blob();
-        const blobUrl = window.URL.createObjectURL(blob);
-        
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        window.URL.revokeObjectURL(blobUrl);
-    } catch (error) {
-        console.error('Download failed for', filename, error);
-        throw error;
-    }
+function updateProgressMessage(msg) {
+    const el = document.getElementById('progress-message');
+    if (el) el.textContent = msg;
 }
 
-// Reset to Configuration
 function resetToConfig() {
     document.getElementById('config-section').classList.remove('hidden');
-    document.getElementById('progress-section').classList.add('hidden');
-    document.getElementById('results-section').classList.add('hidden');
-    
-    // Clear script input
-    document.getElementById('script').value = '';
-    
-    // Reset scenes
+    ['progress-section', 'results-section', 'director-section'].forEach(id => {
+        document.getElementById(id)?.classList.add('hidden');
+    });
     currentScenes = [];
     generationInProgress = false;
 }
 
-// HTML Escape Helper
 function escapeHtml(text) {
     const div = document.createElement('div');
-    div.textContent = text;
+    div.textContent = text || '';
     return div.innerHTML;
 }
 
-// Get Auth Token
 function getAuthToken() {
-    // Try viewhunt_token first (used by /app)
-    let token = localStorage.getItem('viewhunt_token');
-    if (token) return token;
-    
-    // Try token (fallback)
-    token = localStorage.getItem('token');
-    if (token) return token;
-    
-    // Try cookie as last resort
-    const cookies = document.cookie.split(';');
-    for (let cookie of cookies) {
-        const [name, value] = cookie.trim().split('=');
-        if (name === 'token' || name === 'viewhunt_token') return value;
-    }
-    
-    return null;
+    return localStorage.getItem('viewhunt_token') || localStorage.getItem('token') || 
+        (document.cookie.split(';').find(c => c.trim().startsWith('token=')) || '').split('=')[1] || null;
 }
 
-// Check Authentication
 function checkAuth() {
-    const token = getAuthToken();
-    if (!token) {
-        console.warn('No auth token found - you may need to log in at /app first');
-        // Don't redirect immediately - let user try to use the page
-        // The API will return 401 if auth is actually required
-        return false;
-    }
-    return true;
+    if (!getAuthToken()) console.warn('No auth token found - log in at /app first');
 }
-
-// Add CSS for progress steps
-const style = document.createElement('style');
-style.textContent = `
-    .progress-step {
-        opacity: 0.3;
-        transition: all 0.3s ease;
-    }
-    
-    .progress-step.active {
-        opacity: 1;
-        animation: pulse 1.5s ease-in-out infinite;
-    }
-    
-    .progress-step.completed {
-        opacity: 1;
-    }
-    
-    .progress-step.completed .step-icon {
-        transform: scale(1.2);
-    }
-    
-    @keyframes pulse {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.1); }
-    }
-    
-    .hidden {
-        display: none !important;
-    }
-    
-    .btn-generate {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        padding: 1rem 2rem;
-        border-radius: 8px;
-        font-size: 1.1rem;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        width: 100%;
-        margin-top: 1rem;
-    }
-    
-    .btn-generate:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
-    }
-    
-    .btn-generate:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-        transform: none;
-    }
-    
-    .btn-primary, .btn-secondary {
-        padding: 0.75rem 1.5rem;
-        border-radius: 8px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        border: none;
-        font-size: 1rem;
-    }
-    
-    .btn-primary {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-    }
-    
-    .btn-primary:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
-    }
-    
-    .btn-secondary {
-        background: white;
-        color: #667eea;
-        border: 2px solid #667eea;
-    }
-    
-    .btn-secondary:hover {
-        background: #f8f9ff;
-    }
-    
-    .progress-panel {
-        background: white;
-        border-radius: 12px;
-        padding: 2rem;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    }
-    
-    .progress-steps {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 2rem;
-        gap: 1rem;
-    }
-    
-    .progress-step {
-        flex: 1;
-        text-align: center;
-    }
-    
-    .step-icon {
-        font-size: 2rem;
-        margin-bottom: 0.5rem;
-        transition: transform 0.3s ease;
-    }
-    
-    .step-label {
-        font-size: 0.9rem;
-        color: #666;
-        font-weight: 500;
-    }
-    
-    .progress-message {
-        text-align: center;
-        font-size: 1.1rem;
-        color: #333;
-        font-weight: 500;
-        padding: 1rem;
-        background: #f8f9ff;
-        border-radius: 8px;
-    }
-`;
-document.head.appendChild(style);

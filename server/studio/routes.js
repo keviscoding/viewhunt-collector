@@ -235,6 +235,77 @@ router.post('/generate/stream', requireAuth, async (req, res) => {
         });
     }
 });
+
+// === DIRECTOR MODE ENDPOINTS ===
+
+// Step 1: Generate scene prompts only (no images/videos)
+router.post('/generate/scenes', requireAuth, async (req, res) => {
+    try {
+        const { format, script, skeletonStyle, gradientColors } = req.body;
+        if (!format || !script) return res.status(400).json({ error: 'Format and script are required' });
+        
+        const generator = getGenerator(format, 'v2');
+        if (!generator) return res.status(400).json({ error: 'Invalid format' });
+        
+        console.log(`Director mode: generating scene prompts for ${format}`);
+        const scenes = await generator.generateScenePrompts(script, skeletonStyle || 'realistic translucent glass with ivory skeleton', gradientColors || 'smooth blue to teal gradient background');
+        
+        res.json({ success: true, scenes });
+    } catch (error) {
+        console.error('Scene generation error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Step 2: Generate images for a single scene (supports multiple variants)
+router.post('/generate/scene-images', requireAuth, async (req, res) => {
+    try {
+        const { format, imagePrompt, sceneNumber, count } = req.body;
+        if (!format || !imagePrompt) return res.status(400).json({ error: 'Format and imagePrompt are required' });
+        
+        const generator = getGenerator(format, 'v2');
+        if (!generator) return res.status(400).json({ error: 'Invalid format' });
+        
+        const numImages = Math.min(count || 2, 4); // Max 4 variants
+        console.log(`Director mode: generating ${numImages} image(s) for scene ${sceneNumber}`);
+        
+        const imagePromises = [];
+        for (let i = 0; i < numImages; i++) {
+            imagePromises.push(
+                generator.generateImage(imagePrompt, sceneNumber).catch(err => ({ error: err.message }))
+            );
+        }
+        
+        const results = await Promise.all(imagePromises);
+        const images = results.map((r, i) => typeof r === 'string' ? { url: r, index: i } : { error: r.error, index: i });
+        
+        res.json({ success: true, sceneNumber, images });
+    } catch (error) {
+        console.error('Scene image generation error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Step 3: Generate video for a single scene with selected image
+router.post('/generate/scene-video', requireAuth, async (req, res) => {
+    try {
+        const { format, imageUrl, videoPrompt, sceneNumber, lastImageUrl } = req.body;
+        if (!format || !imageUrl || !videoPrompt) return res.status(400).json({ error: 'format, imageUrl, and videoPrompt are required' });
+        
+        const generator = getGenerator(format, 'v2');
+        if (!generator) return res.status(400).json({ error: 'Invalid format' });
+        
+        console.log(`Director mode: generating video for scene ${sceneNumber}${lastImageUrl ? ' (multi-shot)' : ''}`);
+        
+        const videoUrl = await generator.generateVideo(imageUrl, videoPrompt, sceneNumber, lastImageUrl);
+        
+        res.json({ success: true, sceneNumber, videoUrl });
+    } catch (error) {
+        console.error('Scene video generation error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Health check
 router.get('/health', (req, res) => {
     res.json({ 
