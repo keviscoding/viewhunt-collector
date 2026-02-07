@@ -297,7 +297,9 @@ Format your response as JSON:
                 c.type === 'image' && c.source?.type === 'file'
             );
             
-            const createParams = {
+            // Use direct HTTP request to bypass SDK version limitations
+            // The SDK may not support type:'file' but the API does with the beta header
+            const requestBody = {
                 model: 'claude-sonnet-4-20250514',
                 max_tokens: 8000,
                 system: this.masterPrompt,
@@ -307,14 +309,33 @@ Format your response as JSON:
                 }]
             };
             
-            // Add beta header if using file references
+            const headers = {
+                'Content-Type': 'application/json',
+                'x-api-key': process.env.ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01'
+            };
+            
             if (hasFileReferences) {
-                createParams.betas = ['files-api-2025-04-14'];
-                console.log('Using files-api beta header for reference frames');
+                headers['anthropic-beta'] = 'files-api-2025-04-14';
+                console.log('Using files-api beta header for reference frames (direct HTTP)');
             }
             
-            const response = await this.anthropic.messages.create(createParams);
+            const httpResponse = await axios.post(
+                'https://api.anthropic.com/v1/messages',
+                requestBody,
+                { 
+                    headers,
+                    timeout: 120000 // 2 min timeout for 74 images
+                }
+            );
+            
+            const response = httpResponse.data;
 
+            if (!response.content || !response.content[0]) {
+                console.error('Unexpected Claude response:', JSON.stringify(response).substring(0, 500));
+                throw new Error('Empty response from Claude');
+            }
+            
             const responseText = response.content[0].text;
             console.log('Claude response received, parsing...');
             
@@ -352,8 +373,12 @@ Format your response as JSON:
             return scenesData.scenes;
             
         } catch (error) {
-            console.error('Claude scene generation error:', error);
-            console.error('Claude response content:', error.response?.data || 'No response data');
+            // Handle axios error format
+            if (error.response?.data) {
+                console.error('Claude API error:', JSON.stringify(error.response.data));
+                throw new Error('Failed to generate scene prompts: ' + (error.response.data.error?.message || JSON.stringify(error.response.data)));
+            }
+            console.error('Claude scene generation error:', error.message);
             throw new Error('Failed to generate scene prompts: ' + error.message);
         }
     }
