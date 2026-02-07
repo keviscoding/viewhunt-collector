@@ -30,11 +30,8 @@ function initializeModeToggle() {
             console.log('Mode changed:', directorMode ? 'DIRECTOR' : 'AUTO');
             document.getElementById('mode-label').textContent = directorMode ? '🎬 Director Mode' : '⚡ Auto Mode';
             document.getElementById('mode-desc').textContent = directorMode 
-                ? 'Review images per scene, pick favorites, generate videos one by one'
+                ? 'Claude generates scenes → 4 images per scene auto-generated → you pick favorites → generate videos'
                 : 'Fully automatic — generates everything in one go';
-            
-            // Show/hide director-specific options
-            document.getElementById('director-options').style.display = directorMode ? 'block' : 'none';
             
             // Hide/show the generateVideos checkbox
             const videosCheckbox = document.getElementById('generateVideos');
@@ -45,7 +42,7 @@ function initializeModeToggle() {
             
             // Update button text
             const btnText = document.querySelector('#generate-btn .btn-text');
-            if (btnText) btnText.textContent = directorMode ? '🎬 Generate Scenes (Director)' : '🎬 Generate Video';
+            if (btnText) btnText.textContent = directorMode ? '🎬 Generate Scenes + Images' : '🎬 Generate Video';
         });
     }
 }
@@ -99,11 +96,9 @@ async function handleDirectorGeneration(script) {
         currentScenes = data.scenes;
         container.innerHTML = '';
         
-        console.log(`Director mode: received ${currentScenes.length} scenes`);
+        console.log(`Director mode: received ${currentScenes.length} scenes, auto-generating 4 images each`);
         
-        // Render each scene card with controls
-        const imagesPerScene = parseInt(document.getElementById('images-per-scene')?.value || '2');
-        
+        // Render scene cards with loading galleries
         currentScenes.forEach((scene, i) => {
             const card = createDirectorSceneCard(scene, i);
             container.appendChild(card);
@@ -112,12 +107,17 @@ async function handleDirectorGeneration(script) {
         // Add bottom action bar
         const actionBar = document.createElement('div');
         actionBar.className = 'director-actions';
+        actionBar.id = 'director-action-bar';
         actionBar.innerHTML = `
             <button class="btn-primary" onclick="generateAllSelectedVideos()">🎥 Generate All Selected Videos</button>
-            <button class="btn-secondary" onclick="generateAllImages()">🎨 Generate All Images (${imagesPerScene} each)</button>
             <button class="btn-secondary" onclick="resetToConfig()">← Back</button>
         `;
         container.appendChild(actionBar);
+        
+        // Step 2: Auto-generate 4 images per scene immediately
+        for (let i = 0; i < currentScenes.length; i++) {
+            generateSceneImages(i, 4); // Fire all scenes in parallel, 4 images each
+        }
         
     } catch (error) {
         console.error('Director generation error:', error);
@@ -149,13 +149,13 @@ function createDirectorSceneCard(scene, index) {
         </details>
         
         <div class="image-gallery" id="gallery-${index}">
-            <div class="gallery-placeholder">Click "Generate Images" to create variants</div>
+            <div class="gallery-loading">🎨 Generating 4 image variants...</div>
         </div>
         
         <div class="director-card-controls">
-            <button class="btn-sm btn-primary" onclick="generateSceneImages(${index})">🎨 Generate Images</button>
+            <button class="btn-sm btn-primary" onclick="generateSceneImages(${index}, 4)">🔄 More Images</button>
             <button class="btn-sm btn-accent" onclick="generateSceneVideo(${index})" id="video-btn-${index}" disabled>🎥 Generate Video</button>
-            <label class="multishot-toggle" title="Use first+last frame for smoother transitions">
+            <label class="multishot-toggle" title="Veo 3.1 multi-shot: uses next scene's selected image as end frame for smoother transitions">
                 <input type="checkbox" id="multishot-${index}"> Multi-shot
             </label>
         </div>
@@ -166,15 +166,23 @@ function createDirectorSceneCard(scene, index) {
     return card;
 }
 
-async function generateSceneImages(sceneIndex) {
+async function generateSceneImages(sceneIndex, count) {
     const scene = currentScenes[sceneIndex];
     const gallery = document.getElementById(`gallery-${sceneIndex}`);
-    const count = parseInt(document.getElementById('images-per-scene')?.value || '2');
+    const numImages = count || 4;
     
-    gallery.innerHTML = `<div class="gallery-loading">🎨 Generating ${count} image variants...</div>`;
+    // If gallery already has images, show loading alongside them
+    const existingImages = gallery.querySelectorAll('.gallery-item:not(.gallery-regen)');
+    if (existingImages.length === 0) {
+        gallery.innerHTML = `<div class="gallery-loading">🎨 Generating ${numImages} image variants...</div>`;
+    } else {
+        // Remove the "More" button, add a loading indicator
+        const regen = gallery.querySelector('.gallery-regen');
+        if (regen) regen.innerHTML = '⏳<br><small>Loading...</small>';
+    }
     
     try {
-        console.log(`Generating ${count} images for scene ${sceneIndex + 1}...`);
+        console.log(`Generating ${numImages} images for scene ${sceneIndex + 1}...`);
         const res = await fetch('/api/studio/generate/scene-images', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
@@ -182,7 +190,7 @@ async function generateSceneImages(sceneIndex) {
                 format: 'skeleton-anatomy',
                 imagePrompt: scene.imagePrompt,
                 sceneNumber: scene.sceneNumber || sceneIndex + 1,
-                count
+                count: numImages
             })
         });
         
@@ -195,19 +203,30 @@ async function generateSceneImages(sceneIndex) {
         console.log(`Scene ${sceneIndex + 1} images response:`, data);
         if (!data.success) throw new Error(data.error);
         
-        gallery.innerHTML = '';
+        // If this is the first batch, clear the loading message
+        if (existingImages.length === 0) {
+            gallery.innerHTML = '';
+        } else {
+            // Remove the old "More" button
+            const regen = gallery.querySelector('.gallery-regen');
+            if (regen) regen.remove();
+        }
         
+        // Add new images to gallery
         data.images.forEach((img, i) => {
             const wrapper = document.createElement('div');
             wrapper.className = 'gallery-item';
             
             if (img.error) {
-                wrapper.innerHTML = `<div class="gallery-error">❌ Failed<br><small>${img.error}</small></div>`;
+                wrapper.innerHTML = `<div class="gallery-error">❌<br><small>${img.error.substring(0, 40)}</small></div>`;
             } else {
-                wrapper.innerHTML = `<img src="${img.url}" alt="Variant ${i + 1}" loading="lazy">`;
+                wrapper.innerHTML = `
+                    <img src="${img.url}" alt="Variant" loading="lazy">
+                    <div class="gallery-check">✓</div>
+                `;
                 wrapper.onclick = () => selectImage(sceneIndex, img.url, wrapper);
                 
-                // Auto-select first successful image
+                // Auto-select first successful image if none selected yet
                 if (!scene._selectedImage) {
                     selectImage(sceneIndex, img.url, wrapper);
                 }
@@ -216,16 +235,25 @@ async function generateSceneImages(sceneIndex) {
             gallery.appendChild(wrapper);
         });
         
-        // Add regenerate button
+        // Add "More" button at the end
         const regenBtn = document.createElement('div');
         regenBtn.className = 'gallery-item gallery-regen';
         regenBtn.innerHTML = '🔄<br><small>More</small>';
-        regenBtn.onclick = () => generateSceneImages(sceneIndex);
+        regenBtn.onclick = () => generateSceneImages(sceneIndex, 4);
         gallery.appendChild(regenBtn);
         
     } catch (error) {
         console.error(`Scene ${sceneIndex + 1} image error:`, error);
-        gallery.innerHTML = `<div class="gallery-error">❌ ${error.message}<br><button class="btn-sm btn-secondary" onclick="generateSceneImages(${sceneIndex})" style="margin-top:0.5rem">Retry</button></div>`;
+        if (existingImages.length === 0) {
+            gallery.innerHTML = `<div class="gallery-error">❌ ${error.message}<br><button class="btn-sm btn-secondary" onclick="generateSceneImages(${sceneIndex}, 4)" style="margin-top:0.5rem">Retry</button></div>`;
+        } else {
+            // Just update the regen button to show error
+            const regen = gallery.querySelector('.gallery-regen');
+            if (regen) {
+                regen.innerHTML = '❌<br><small>Retry</small>';
+                regen.onclick = () => generateSceneImages(sceneIndex, 4);
+            }
+        }
     }
 }
 
@@ -250,21 +278,22 @@ async function generateSceneVideo(sceneIndex) {
     const btn = document.getElementById(`video-btn-${sceneIndex}`);
     btn.disabled = true;
     btn.textContent = '⏳ Generating...';
-    videoResult.innerHTML = '<div class="video-loading">🎥 Generating video (1-3 min)...</div>';
+    videoResult.innerHTML = '<div class="video-loading">🎥 Generating video with Veo 3.1 (1-3 min)...</div>';
     
     const multishot = document.getElementById(`multishot-${sceneIndex}`)?.checked;
     
-    // For multi-shot, use next scene's selected image as last_image
+    // For multi-shot (Veo 3.1 feature), use next scene's selected image as last_image
     let lastImageUrl = null;
     if (multishot && sceneIndex < currentScenes.length - 1) {
         lastImageUrl = currentScenes[sceneIndex + 1]?._selectedImage || null;
         if (!lastImageUrl) {
-            videoResult.innerHTML = '<div class="video-loading">⚠️ Multi-shot needs the next scene\'s image selected first. Generating without it...</div>';
+            videoResult.innerHTML = '<div class="video-loading">⚠️ Multi-shot: select an image for the next scene first, or it will generate without end frame...</div>';
+            await new Promise(r => setTimeout(r, 2000));
         }
     }
     
     try {
-        console.log(`Generating video for scene ${sceneIndex + 1}...`);
+        console.log(`Generating video for scene ${sceneIndex + 1}${multishot ? ' (multi-shot)' : ''}...`);
         const res = await fetch('/api/studio/generate/scene-video', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
@@ -289,7 +318,7 @@ async function generateSceneVideo(sceneIndex) {
         scene._videoUrl = data.videoUrl;
         videoResult.innerHTML = `
             <video src="${data.videoUrl}" controls muted loop class="video-preview"></video>
-            <button class="btn-sm btn-secondary" onclick="generateSceneVideo(${sceneIndex})">🔄 Regenerate</button>
+            <button class="btn-sm btn-secondary" onclick="generateSceneVideo(${sceneIndex})" style="margin-top:0.5rem">🔄 Regenerate</button>
         `;
         
     } catch (error) {
@@ -301,18 +330,12 @@ async function generateSceneVideo(sceneIndex) {
     }
 }
 
-async function generateAllImages() {
-    const count = parseInt(document.getElementById('images-per-scene')?.value || '2');
-    for (let i = 0; i < currentScenes.length; i++) {
-        generateSceneImages(i); // Fire all in parallel
-    }
-}
-
 async function generateAllSelectedVideos() {
     const scenesWithImages = currentScenes.filter(s => s._selectedImage);
-    if (scenesWithImages.length === 0) return alert('Generate and select images first');
+    if (scenesWithImages.length === 0) return alert('Select images first — click on the image you want for each scene');
     
-    if (!confirm(`Generate videos for ${scenesWithImages.length} scenes? Estimated cost: ~$${(scenesWithImages.length * 0.64).toFixed(2)}`)) return;
+    const cost = (scenesWithImages.length * 0.64).toFixed(2);
+    if (!confirm(`Generate videos for ${scenesWithImages.length} scenes?\nEstimated cost: ~$${cost} (AtlasCloud Veo 3.1)`)) return;
     
     for (let i = 0; i < currentScenes.length; i++) {
         if (currentScenes[i]._selectedImage) {
@@ -320,6 +343,7 @@ async function generateAllSelectedVideos() {
         }
     }
 }
+
 
 // ==================== AUTO MODE (existing behavior) ====================
 

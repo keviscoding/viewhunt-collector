@@ -102,6 +102,9 @@
         .gallery-item:hover { border-color: #b0b0b0; transform: scale(1.03); }
         .gallery-item.selected { border-color: #667eea; box-shadow: 0 0 0 2px rgba(102,126,234,0.3); }
         .gallery-item img { width: 100%; height: 100%; object-fit: cover; }
+        .gallery-item .gallery-check { position: absolute; top: 4px; right: 4px; background: #667eea; color: white; width: 22px; height: 22px; border-radius: 50%; display: none; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; }
+        .gallery-item.selected .gallery-check { display: flex; }
+        .gallery-item { position: relative; }
         .gallery-regen { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #667eea; font-size: 1.5rem; background: #f8f9ff; border: 2px dashed #667eea; }
         .gallery-regen:hover { background: #eef0ff; }
         .gallery-placeholder, .gallery-loading { color: #999; font-size: 0.9rem; padding: 1rem; text-align: center; width: 100%; }
@@ -191,16 +194,6 @@ Hour 1: The stinging turns into burning agony...
                         </div>
                         <p id="mode-label" class="mode-label">⚡ Auto Mode</p>
                         <p id="mode-desc" class="help-text">Fully automatic — generates everything in one go</p>
-                    </div>
-
-                    <div class="form-group" id="director-options" style="display:none;">
-                        <label for="images-per-scene">Images per scene</label>
-                        <select id="images-per-scene" style="padding: 0.5rem; border-radius: 6px; border: 2px solid #e0e0e0;">
-                            <option value="1">1 (fastest)</option>
-                            <option value="2" selected>2 (recommended)</option>
-                            <option value="3">3</option>
-                            <option value="4">4 (most choice)</option>
-                        </select>
                     </div>
 
                     <button id="generate-btn" class="btn-generate">
