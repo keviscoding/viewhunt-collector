@@ -2149,7 +2149,7 @@ app.get('/api/channels/approved', authenticateToken, requireSubscription, async 
                             ]
                         }
                     }
-                ])
+                ], { allowDiskUse: true })
                 .toArray();
             
             const result = channels[0];
@@ -2408,7 +2408,7 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
                 ];
                 
                 console.log('Executing aggregation pipeline for activeRecently');
-                const result = await db.collection('channels').aggregate(pipeline).toArray();
+                const result = await db.collection('channels').aggregate(pipeline, { allowDiskUse: true }).toArray();
                 channels = result[0].channels;
                 totalChannels = result[0].totalCount[0]?.count || 0;
                 console.log('Active Recently results:', { totalChannels, channelsCount: channels.length });
