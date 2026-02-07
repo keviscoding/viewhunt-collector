@@ -27,6 +27,7 @@ function initializeModeToggle() {
     if (toggle) {
         toggle.addEventListener('change', (e) => {
             directorMode = e.target.checked;
+            console.log('Mode changed:', directorMode ? 'DIRECTOR' : 'AUTO');
             document.getElementById('mode-label').textContent = directorMode ? '🎬 Director Mode' : '⚡ Auto Mode';
             document.getElementById('mode-desc').textContent = directorMode 
                 ? 'Review images per scene, pick favorites, generate videos one by one'
@@ -34,7 +35,17 @@ function initializeModeToggle() {
             
             // Show/hide director-specific options
             document.getElementById('director-options').style.display = directorMode ? 'block' : 'none';
-            document.getElementById('generateVideos').parentElement.parentElement.style.display = directorMode ? 'none' : 'block';
+            
+            // Hide/show the generateVideos checkbox
+            const videosCheckbox = document.getElementById('generateVideos');
+            if (videosCheckbox) {
+                const formGroup = videosCheckbox.closest('.form-group');
+                if (formGroup) formGroup.style.display = directorMode ? 'none' : 'block';
+            }
+            
+            // Update button text
+            const btnText = document.querySelector('#generate-btn .btn-text');
+            if (btnText) btnText.textContent = directorMode ? '🎬 Generate Scenes (Director)' : '🎬 Generate Video';
         });
     }
 }
@@ -44,6 +55,8 @@ function initializeGenerateButton() {
         const script = document.getElementById('script').value.trim();
         if (!script) return alert('Please enter a video script');
         if (generationInProgress) return alert('Generation already in progress');
+        
+        console.log('Generate clicked. Director mode:', directorMode);
         
         if (directorMode) {
             await handleDirectorGeneration(script);
