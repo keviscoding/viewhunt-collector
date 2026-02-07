@@ -128,13 +128,17 @@ The main character across all videos is a humanoid figure made of smooth, transp
 
 6. **Camera frames what the sentence is about, not what's convenient.** If the script says "your glutes settle into the cushion" — frame the glutes. If it says "blood pools in your ankles" — frame the ankles. If it says "your heart races" — show the heart through the ribcage. This is the single most important creative rule discovered from analyzing the reference videos. The camera is always telling you what to look at based on what the narrator is saying.
 
+7. **The camera is NEVER static.** Every single video motion prompt MUST include camera movement. A locked-off, motionless camera looks cheap and boring. Even subtle movement keeps the viewer engaged. Use: gentle orbit around the character, slow push-in toward the subject, pull-back reveal, slight crane up/down, handheld drift, rack focus shift, dolly alongside the character, arc around a prop. The movement should feel natural and motivated — like a real cinematographer is operating the camera. Keep it brisk, not sluggish. Quick, confident moves. Never say "camera holds steady" or "static shot" — that is banned.
+
+8. **Always show the full character in the image prompt unless it's specifically a macro/interior B-roll shot.** Close-ups are fine but they should still show at least chest-up with context — not a floating disembodied head. The character's body, pose, and environment tell the story. Even in tight shots, include enough of the body to ground the character in the scene. The only exception is true macro shots (inside a vein, a single eyeball filling the frame, an organ close-up) which are anatomical B-roll, not character shots.
+
 ---
 
 ## WHAT YOU SHOULD LEARN FROM THE REFERENCE MATERIAL (not hard rules — patterns to absorb)
 
 ### Camera techniques observed across videos:
-- Close-ups on the face for emotional beats
-- Extreme close-ups (single eye filling the frame, single organ, single bone)
+- Close-ups on the face for emotional beats (chest-up minimum, never just a floating head)
+- Extreme close-ups (single eye filling the frame, single organ, single bone) — these are the ONLY shots where you can exclude the full body
 - Medium shots from the chest up for narration
 - Full body shots for establishing/context
 - Shots from behind for isolation/vulnerability
@@ -146,6 +150,18 @@ The main character across all videos is a humanoid figure made of smooth, transp
 - POV/first-person shots
 - Mirror shots with reflections
 - Object-focused framing (the camera on the prop, not the character — like a shower drain, or a phone screen)
+
+### Camera MOVEMENT techniques (use these in EVERY video motion prompt):
+- **Orbit**: Camera arcs around the character (quarter orbit, half orbit) — great for reveals
+- **Push-in**: Camera moves toward the subject — builds tension and focus
+- **Pull-back**: Camera retreats to reveal more context — great for establishing or shock reveals
+- **Crane up/down**: Vertical camera movement — crane up for power, crane down for defeat
+- **Dolly alongside**: Camera tracks laterally with the character — great for walking/running scenes
+- **Handheld drift**: Subtle, organic camera sway — adds realism and energy
+- **Rack focus**: Shift focus from foreground to background or vice versa
+- **Whip pan**: Fast horizontal camera snap — great for transitions between subjects
+- **Tilt up/down**: Camera pivots vertically on its axis — scanning the character head to toe
+- Mix and combine these. A push-in with a slight orbit. A crane-up with a tilt-down. Keep it dynamic.
 
 ### The glass body as storytelling device:
 - Starts clean → degrades over time (this maps to the script's timeline)
@@ -206,7 +222,9 @@ Return your response as a JSON object with a "scenes" array. Each scene object m
 
 **CRITICAL REMINDERS:**
 - Image prompts must be 100% self-contained. Describe the glass body, skeleton, eyes, condition, props, environment, camera angle, lighting, and format EVERY TIME.
+- Image prompts must show the full character (at minimum chest-up) unless it's a macro/interior B-roll. No floating heads.
 - Video prompts use natural, snappy pacing. No "slow" movements, no duration timestamps.
+- Video prompts MUST include camera movement. Never "camera holds steady" or "static shot." Always orbit, push-in, pull-back, crane, dolly, drift, or combine movements.
 - Camera frames what the script is talking about.
 - Maximum 12 scenes per video.
 
