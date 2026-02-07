@@ -410,64 +410,95 @@ Format your response as JSON:
 
     /**
      * Step 2: Generate images using Kie.ai Nano Banana Pro
+     * Includes retry logic for transient API failures (missing taskId, 5xx, timeouts)
      */
     async generateImage(imagePrompt, sceneNumber) {
         console.log(`\n=== Generating image for scene ${sceneNumber} ===`);
-        console.log(`Image Prompt: "${imagePrompt}"`);
+        console.log(`Image Prompt (first 120 chars): "${imagePrompt.substring(0, 120)}..."`);
         console.log(`===\n`);
         
-        try {
-            // Create task
-            const createResponse = await axios.post(
-                `${this.kieBaseUrl}/api/v1/jobs/createTask`,
-                {
-                    model: 'nano-banana-pro',
-                    input: {
-                        prompt: imagePrompt,
-                        aspect_ratio: '9:16',
-                        resolution: '2K',
-                        output_format: 'png'
+        const maxRetries = 3;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                const createResponse = await axios.post(
+                    `${this.kieBaseUrl}/api/v1/jobs/createTask`,
+                    {
+                        model: 'nano-banana-pro',
+                        input: {
+                            prompt: imagePrompt,
+                            aspect_ratio: '9:16',
+                            resolution: '2K',
+                            output_format: 'png'
+                        }
+                    },
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${this.kieApiKey}`
+                        },
+                        timeout: 30000 // 30s timeout for task creation
                     }
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${this.kieApiKey}`
+                );
+
+                // Handle various response shapes from Kie.ai
+                const respData = createResponse.data;
+                
+                // Try multiple paths to find the taskId
+                const taskId = respData?.data?.taskId 
+                    || respData?.taskId 
+                    || respData?.data?.task_id 
+                    || respData?.task_id;
+                
+                if (!taskId) {
+                    // Check if it's a rate limit or quota issue
+                    const code = respData?.code || respData?.status;
+                    const msg = respData?.msg || respData?.message || '';
+                    
+                    if (code === 429 || msg.toLowerCase().includes('rate')) {
+                        console.warn(`Scene ${sceneNumber}: Rate limited (attempt ${attempt}/${maxRetries})`);
+                    } else if (code === 402 || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('quota')) {
+                        throw new Error('Out of Kie.ai credits. Please top up your account.');
+                    } else {
+                        console.warn(`Scene ${sceneNumber}: No taskId in response (attempt ${attempt}/${maxRetries}). Code: ${code}, Msg: ${msg}`);
+                        console.warn('Full response:', JSON.stringify(respData).substring(0, 300));
                     }
+                    
+                    if (attempt < maxRetries) {
+                        const delay = attempt * 3000; // 3s, 6s backoff
+                        console.log(`Retrying in ${delay / 1000}s...`);
+                        await new Promise(r => setTimeout(r, delay));
+                        continue;
+                    }
+                    throw new Error(`Kie.ai failed to create task after ${maxRetries} attempts. Last response: ${JSON.stringify(respData).substring(0, 200)}`);
                 }
-            );
 
-            // Log full response for debugging
-            console.log(`Kie.ai API response:`, JSON.stringify(createResponse.data, null, 2));
-            
-            // Check if response has the expected structure
-            if (!createResponse.data || !createResponse.data.data || !createResponse.data.data.taskId) {
-                console.error('Unexpected Kie.ai API response structure:', createResponse.data);
-                throw new Error('Kie.ai API did not return a taskId. Response: ' + JSON.stringify(createResponse.data));
+                console.log(`Image task created: ${taskId} (attempt ${attempt})`);
+                
+                const imageUrl = await this.pollKieTaskForImage(taskId, 600000);
+                console.log(`✅ Image ${sceneNumber} generated successfully`);
+                
+                return imageUrl;
+                
+            } catch (error) {
+                // Don't retry on auth/credit errors
+                if (error.message.includes('credit') || error.message.includes('quota') || error.message.includes('authentication')) {
+                    throw error;
+                }
+                
+                const status = error.response?.status;
+                const isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
+                
+                if (isRetryable && attempt < maxRetries) {
+                    const delay = attempt * 3000;
+                    console.warn(`Scene ${sceneNumber} image error (attempt ${attempt}/${maxRetries}): ${error.message}. Retrying in ${delay / 1000}s...`);
+                    await new Promise(r => setTimeout(r, delay));
+                    continue;
+                }
+                
+                console.error(`Error generating image ${sceneNumber}:`, error.response?.data || error.message);
+                throw error;
             }
-
-            const taskId = createResponse.data.data.taskId;
-            console.log(`Image task created: ${taskId}`);
-            
-            // Poll for completion (images can take 5-10 minutes during high load)
-            const imageUrl = await this.pollKieTaskForImage(taskId, 600000);
-            console.log(`Image ${sceneNumber} generated successfully`);
-            
-            return imageUrl;
-            
-        } catch (error) {
-            console.error(`Error generating image ${sceneNumber}:`, error.response?.data || error.message);
-            
-            // Log more details for debugging
-            if (error.response) {
-                console.error('Kie.ai API error response:', {
-                    status: error.response.status,
-                    statusText: error.response.statusText,
-                    data: error.response.data
-                });
-            }
-            
-            throw error;
         }
     }
 

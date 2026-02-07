@@ -3,268 +3,354 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Skeleton Video Generator - ViewHunt Studio</title>
+    <title>Studio — ViewHunt</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/studio/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        .gradient-selector {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-            gap: 1rem;
-            margin: 1rem 0;
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0e0e12;
+            --surface: #18181f;
+            --surface-2: #1f1f28;
+            --surface-3: #262631;
+            --border: #2a2a36;
+            --border-hover: #3a3a4a;
+            --text: #e8e8ed;
+            --text-muted: #8b8b9e;
+            --text-dim: #5c5c6e;
+            --accent: #7c6aef;
+            --accent-hover: #6b58e0;
+            --accent-glow: rgba(124, 106, 239, 0.15);
+            --green: #34d399;
+            --green-dim: rgba(52, 211, 153, 0.12);
+            --amber: #fbbf24;
+            --amber-dim: rgba(251, 191, 36, 0.12);
+            --red: #f87171;
+            --red-dim: rgba(248, 113, 113, 0.12);
+            --radius: 10px;
+            --radius-lg: 16px;
         }
-        .gradient-option {
-            height: 80px;
-            border-radius: 8px;
-            cursor: pointer;
-            border: 3px solid transparent;
-            transition: all 0.2s;
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
         }
-        .gradient-option:hover {
-            transform: scale(1.05);
+
+        /* Layout */
+        .app { max-width: 960px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+
+        /* Header */
+        .app-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2.5rem; }
+        .app-header-left { display: flex; align-items: center; gap: 0.75rem; }
+        .back-btn { color: var(--text-muted); text-decoration: none; font-size: 0.85rem; padding: 0.4rem 0.75rem; border-radius: 6px; transition: all 0.15s; border: 1px solid var(--border); }
+        .back-btn:hover { color: var(--text); border-color: var(--border-hover); background: var(--surface); }
+        .logo { font-size: 1.1rem; font-weight: 700; color: var(--text); letter-spacing: -0.02em; }
+        .logo span { color: var(--accent); }
+        .app-header-right { font-size: 0.8rem; color: var(--text-dim); }
+
+        /* Sections */
+        .section { margin-bottom: 2rem; }
+        .section-title { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 1rem; }
+        .hidden { display: none !important; }
+
+        /* Cards */
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.5rem; }
+
+        /* Gradient Selector */
+        .gradient-row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+        .gradient-swatch {
+            width: 56px; height: 56px; border-radius: 10px; cursor: pointer;
+            border: 2px solid transparent; transition: all 0.15s; position: relative;
         }
-        .gradient-option.selected {
-            border-color: #667eea;
-            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
+        .gradient-swatch:hover { transform: scale(1.08); }
+        .gradient-swatch.selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .gradient-swatch.selected::after {
+            content: '✓'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 700; font-size: 1rem; text-shadow: 0 1px 3px rgba(0,0,0,0.5);
         }
-        .gradient-blue-teal { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
-        .gradient-purple-pink { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); }
-        .gradient-orange-red { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
-        .gradient-green-blue { background: linear-gradient(135deg, #30cfd0 0%, #330867 100%); }
-        
+        .g-blue-teal { background: linear-gradient(135deg, #4facfe, #00f2fe); }
+        .g-purple-pink { background: linear-gradient(135deg, #a78bfa, #f472b6); }
+        .g-orange-red { background: linear-gradient(135deg, #fb923c, #f87171); }
+        .g-green-blue { background: linear-gradient(135deg, #34d399, #3b82f6); }
+        .g-dark-purple { background: linear-gradient(135deg, #1e1b4b, #7c3aed); }
+        .g-sunset { background: linear-gradient(135deg, #f59e0b, #ef4444, #8b5cf6); }
+
+        /* Form */
+        .form-label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text); margin-bottom: 0.5rem; }
+        .form-hint { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.35rem; }
+        .form-group { margin-bottom: 1.25rem; }
+        textarea {
+            width: 100%; padding: 0.85rem 1rem; background: var(--surface-2); border: 1px solid var(--border);
+            border-radius: var(--radius); color: var(--text); font-family: inherit; font-size: 0.95rem;
+            line-height: 1.6; resize: vertical; transition: border-color 0.15s;
+        }
+        textarea:focus { outline: none; border-color: var(--accent); }
+        textarea::placeholder { color: var(--text-dim); }
+
+        /* Toggle */
+        .toggle-row { display: flex; align-items: center; gap: 0.75rem; }
+        .toggle-track {
+            width: 44px; height: 24px; background: var(--surface-3); border-radius: 12px;
+            cursor: pointer; position: relative; transition: background 0.2s; border: 1px solid var(--border);
+        }
+        .toggle-track.on { background: var(--accent); border-color: var(--accent); }
+        .toggle-knob {
+            width: 18px; height: 18px; background: white; border-radius: 50%;
+            position: absolute; top: 2px; left: 2px; transition: transform 0.2s;
+        }
+        .toggle-track.on .toggle-knob { transform: translateX(20px); }
+        .toggle-label { font-size: 0.85rem; color: var(--text-muted); }
+        .toggle-label strong { color: var(--text); font-weight: 600; }
+
+        /* Checkbox */
+        .checkbox-row { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem; color: var(--text-muted); }
+        .checkbox-row input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+            padding: 0.65rem 1.25rem; border-radius: 8px; font-weight: 600; font-size: 0.9rem;
+            cursor: pointer; border: none; transition: all 0.15s; font-family: inherit;
+        }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 4px 16px var(--accent-glow); }
+        .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-secondary { background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border); }
+        .btn-secondary:hover { color: var(--text); border-color: var(--border-hover); background: var(--surface-3); }
+        .btn-green { background: var(--green); color: #0e0e12; }
+        .btn-green:hover:not(:disabled) { filter: brightness(1.1); }
+        .btn-green:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-lg { padding: 0.85rem 2rem; font-size: 1rem; width: 100%; border-radius: var(--radius); }
+        .btn-sm { padding: 0.4rem 0.85rem; font-size: 0.8rem; border-radius: 6px; }
+
+        /* Progress */
+        .progress-bar-wrap { background: var(--surface-2); border-radius: 6px; height: 6px; overflow: hidden; margin-bottom: 1rem; }
+        .progress-bar-fill { height: 100%; background: var(--accent); border-radius: 6px; transition: width 0.4s ease; width: 0%; }
+        .progress-steps { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+        .progress-chip {
+            display: flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.7rem;
+            border-radius: 20px; font-size: 0.78rem; font-weight: 500;
+            background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border);
+        }
+        .progress-chip.active { background: var(--accent-glow); color: var(--accent); border-color: var(--accent); animation: chipPulse 1.5s infinite; }
+        .progress-chip.done { background: var(--green-dim); color: var(--green); border-color: transparent; }
+        .progress-chip.error { background: var(--red-dim); color: var(--red); border-color: transparent; }
+        @keyframes chipPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+        .progress-msg { font-size: 0.85rem; color: var(--text-muted); }
+
+        /* Director Scene Cards */
         .scene-card {
-            background: white;
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            border: 1px solid #e0e0e0;
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+            padding: 1.25rem; margin-bottom: 1rem; transition: border-color 0.15s;
         }
-        .scene-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 0.5rem;
+        .scene-card:hover { border-color: var(--border-hover); }
+        .scene-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+        .scene-num { font-weight: 700; font-size: 0.95rem; }
+        .scene-tag { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.2rem 0.5rem; border-radius: 4px; background: var(--surface-3); color: var(--text-muted); }
+        .scene-script { color: var(--text-muted); font-style: italic; font-size: 0.88rem; margin-bottom: 0.75rem; line-height: 1.5; }
+
+        /* Collapsible prompts */
+        .prompt-toggle {
+            font-size: 0.8rem; font-weight: 600; color: var(--text-dim); cursor: pointer;
+            padding: 0.35rem 0; user-select: none; display: flex; align-items: center; gap: 0.35rem;
         }
-        .scene-status {
-            display: inline-block;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.8rem;
-            font-weight: 600;
+        .prompt-toggle:hover { color: var(--text-muted); }
+        .prompt-toggle .arrow { transition: transform 0.15s; display: inline-block; font-size: 0.65rem; }
+        .prompt-toggle.open .arrow { transform: rotate(90deg); }
+        .prompt-body { display: none; margin-top: 0.35rem; margin-bottom: 0.5rem; }
+        .prompt-body.open { display: block; }
+        .prompt-body p {
+            font-size: 0.82rem; color: var(--text-muted); background: var(--surface-2);
+            padding: 0.6rem 0.75rem; border-radius: 6px; line-height: 1.5; white-space: pre-wrap;
         }
-        .status-pending { background: #f0f0f0; color: #666; }
-        .status-generating { background: #fff3cd; color: #856404; }
-        .status-complete { background: #d4edda; color: #155724; }
-        .status-error { background: #f8d7da; color: #721c24; }
-        
-        .scene-media {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-            margin-top: 1rem;
-        }
-        .media-preview {
-            aspect-ratio: 9/16;
-            background: #f0f0f0;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-        .media-preview img, .media-preview video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        
-        /* Mode Toggle */
-        .mode-toggle-wrapper { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
-        .mode-label { font-weight: 600; color: #667eea; margin-bottom: 0; }
-        .switch { position: relative; display: inline-block; width: 50px; height: 26px; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #ccc; border-radius: 26px; transition: 0.3s; }
-        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.3s; }
-        .switch input:checked + .slider { background: #667eea; }
-        .switch input:checked + .slider:before { transform: translateX(24px); }
-        
-        /* Director Mode */
-        .director-card { background: white; border-radius: 12px; padding: 1.25rem; margin-bottom: 1.25rem; border: 1px solid #e0e0e0; }
-        .director-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
-        .director-card-header h3 { margin: 0; }
-        .scene-badge { background: #f0f0f0; color: #666; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.8rem; }
-        .scene-script-line { color: #555; font-style: italic; margin-bottom: 0.75rem; font-size: 0.95rem; }
-        .prompt-details { margin-bottom: 0.5rem; font-size: 0.85rem; color: #888; }
-        .prompt-details summary { cursor: pointer; color: #666; font-weight: 600; padding: 0.25rem 0; }
-        .prompt-details p { margin-top: 0.5rem; padding: 0.5rem; background: #f8f8f8; border-radius: 6px; white-space: pre-wrap; line-height: 1.4; }
-        
-        .image-gallery { display: flex; gap: 0.75rem; margin: 1rem 0; overflow-x: auto; padding: 0.25rem; min-height: 120px; align-items: center; }
-        .gallery-item { flex: 0 0 auto; width: 100px; height: 178px; border-radius: 8px; overflow: hidden; cursor: pointer; border: 3px solid transparent; transition: all 0.2s; background: #f0f0f0; }
-        .gallery-item:hover { border-color: #b0b0b0; transform: scale(1.03); }
-        .gallery-item.selected { border-color: #667eea; box-shadow: 0 0 0 2px rgba(102,126,234,0.3); }
-        .gallery-item img { width: 100%; height: 100%; object-fit: cover; }
-        .gallery-item .gallery-check { position: absolute; top: 4px; right: 4px; background: #667eea; color: white; width: 22px; height: 22px; border-radius: 50%; display: none; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; }
-        .gallery-item.selected .gallery-check { display: flex; }
-        .gallery-item { position: relative; }
-        .gallery-regen { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #667eea; font-size: 1.5rem; background: #f8f9ff; border: 2px dashed #667eea; }
-        .gallery-regen:hover { background: #eef0ff; }
-        .gallery-placeholder, .gallery-loading { color: #999; font-size: 0.9rem; padding: 1rem; text-align: center; width: 100%; }
-        .gallery-error { color: #dc3545; font-size: 0.85rem; padding: 0.5rem; text-align: center; }
-        
-        .director-card-controls { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
-        .btn-sm { padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }
-        .btn-sm.btn-primary { background: #667eea; color: white; }
-        .btn-sm.btn-primary:hover { background: #5568d3; }
-        .btn-sm.btn-accent { background: #28a745; color: white; }
-        .btn-sm.btn-accent:hover { background: #218838; }
-        .btn-sm.btn-accent:disabled { background: #ccc; cursor: not-allowed; }
-        .btn-sm.btn-secondary { background: #f0f0f0; color: #333; }
-        .btn-sm.btn-secondary:hover { background: #e0e0e0; }
-        .multishot-toggle { display: flex; align-items: center; gap: 0.3rem; font-size: 0.8rem; color: #666; cursor: pointer; }
-        
-        .video-result { margin-top: 0.75rem; }
-        .video-preview { width: 200px; max-height: 356px; border-radius: 8px; }
-        .video-loading, .video-error { font-size: 0.9rem; padding: 0.5rem; border-radius: 6px; }
-        .video-loading { background: #fff3cd; color: #856404; }
-        .video-error { background: #f8d7da; color: #721c24; }
-        
-        .director-actions { display: flex; gap: 1rem; margin-top: 2rem; justify-content: center; flex-wrap: wrap; }
-        .director-loading { text-align: center; padding: 3rem; color: #667eea; font-size: 1.1rem; }
-        .director-error { text-align: center; padding: 2rem; color: #dc3545; }
-        
+
         /* Editable video prompt */
-        .video-prompt-editor { width: 100%; padding: 0.5rem; background: #f8f8f8; border: 1px solid #ddd; border-radius: 6px; font-family: inherit; font-size: 0.85rem; line-height: 1.4; resize: vertical; color: #333; transition: border-color 0.2s; }
-        .video-prompt-editor:focus { border-color: #667eea; outline: none; background: #fff; }
-        .edit-hint { font-size: 0.75rem; color: #aaa; font-weight: 400; }
-        
-        /* Upload button */
-        .btn-sm.btn-upload { background: #f8f9ff; color: #667eea; border: 2px dashed #667eea; }
-        .btn-sm.btn-upload:hover { background: #eef0ff; }
-        
-        /* Custom upload badge */
-        .custom-badge { position: absolute; bottom: 4px; left: 4px; background: rgba(102,126,234,0.85); color: white; font-size: 10px; padding: 1px 4px; border-radius: 4px; }
+        .video-prompt-editor {
+            width: 100%; padding: 0.6rem 0.75rem; background: var(--surface-2); border: 1px solid var(--border);
+            border-radius: 6px; font-family: inherit; font-size: 0.82rem; line-height: 1.5;
+            resize: vertical; color: var(--text); transition: border-color 0.15s;
+        }
+        .video-prompt-editor:focus { border-color: var(--accent); outline: none; }
+        .video-prompt-editor.edited { border-color: var(--amber); background: rgba(251, 191, 36, 0.04); }
+        .edit-hint { font-size: 0.7rem; color: var(--text-dim); font-weight: 400; margin-left: 0.25rem; }
+        .edited-badge { font-size: 0.68rem; color: var(--amber); font-weight: 600; display: none; margin-left: 0.3rem; }
+        .edited-badge.visible { display: inline; }
+
+        /* Image Gallery */
+        .gallery { display: flex; gap: 0.6rem; margin: 0.75rem 0; overflow-x: auto; padding: 0.25rem 0; min-height: 110px; align-items: center; }
+        .gallery::-webkit-scrollbar { height: 4px; }
+        .gallery::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+        .gallery-item {
+            flex: 0 0 auto; width: 80px; height: 142px; border-radius: 8px; overflow: hidden;
+            cursor: pointer; border: 2px solid transparent; transition: all 0.15s;
+            background: var(--surface-2); position: relative;
+        }
+        .gallery-item:hover { border-color: var(--border-hover); }
+        .gallery-item.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+        .gallery-item img { width: 100%; height: 100%; object-fit: cover; }
+        .gallery-check {
+            position: absolute; top: 3px; right: 3px; background: var(--accent); color: white;
+            width: 18px; height: 18px; border-radius: 50%; display: none; align-items: center;
+            justify-content: center; font-size: 11px; font-weight: 700;
+        }
+        .gallery-item.selected .gallery-check { display: flex; }
+        .gallery-regen {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: var(--text-dim); font-size: 1.1rem; background: var(--surface-2);
+            border: 1px dashed var(--border); border-radius: 8px;
+        }
+        .gallery-regen:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-glow); }
+        .gallery-regen small { font-size: 0.65rem; margin-top: 0.15rem; }
+        .gallery-loading, .gallery-placeholder { color: var(--text-dim); font-size: 0.82rem; padding: 1rem; text-align: center; width: 100%; }
+        .gallery-error { color: var(--red); font-size: 0.78rem; padding: 0.5rem; text-align: center; }
+        .custom-badge { position: absolute; bottom: 3px; left: 3px; background: var(--accent); color: white; font-size: 9px; padding: 1px 4px; border-radius: 3px; }
+        .gallery.dragover { outline: 2px dashed var(--accent); outline-offset: -2px; border-radius: 8px; background: var(--accent-glow); }
+
+        /* Scene controls */
+        .scene-controls { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+        .btn-upload {
+            background: transparent; color: var(--text-dim); border: 1px dashed var(--border);
+            padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 500;
+            cursor: pointer; transition: all 0.15s; font-family: inherit;
+        }
+        .btn-upload:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-glow); }
+        .btn-upload.dragover { background: var(--accent-glow); border-color: var(--accent); transform: scale(1.03); }
+
+        /* Video result */
+        .video-result { margin-top: 0.75rem; }
+        .video-preview { width: 180px; max-height: 320px; border-radius: 8px; background: var(--surface-2); }
+        .video-loading { font-size: 0.82rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: var(--amber-dim); color: var(--amber); }
+        .video-error { font-size: 0.82rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: var(--red-dim); color: var(--red); }
+
+        /* Director actions bar */
+        .action-bar { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
+
+        /* Auto mode results */
+        .auto-scene { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem; margin-bottom: 1rem; }
+        .auto-scene .scene-media { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem; }
+        .media-box { aspect-ratio: 9/16; background: var(--surface-2); border-radius: 8px; overflow: hidden; }
+        .media-box img, .media-box video { width: 100%; height: 100%; object-fit: cover; }
+        .media-placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-dim); font-size: 0.82rem; }
+
+        /* Status badges */
+        .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.72rem; font-weight: 600; }
+        .badge-ok { background: var(--green-dim); color: var(--green); }
+        .badge-pending { background: var(--surface-3); color: var(--text-dim); }
+        .badge-error { background: var(--red-dim); color: var(--red); }
+
+        /* Director loading / error */
+        .director-loading { text-align: center; padding: 3rem 1rem; color: var(--accent); font-size: 1rem; }
+        .director-error { text-align: center; padding: 2rem 1rem; color: var(--red); }
+
+        /* Footer */
+        .app-footer { text-align: center; padding-top: 2rem; font-size: 0.75rem; color: var(--text-dim); }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .app { padding: 1rem 0.75rem 3rem; }
+            .card { padding: 1rem; }
+            .auto-scene .scene-media { grid-template-columns: 1fr; }
+            .gallery-item { width: 68px; height: 121px; }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header class="header">
-            <div class="header-content">
-                <a href="/app" class="back-link">← Back to ViewHunt</a>
-                <h1>🦴 Skeleton Video Generator</h1>
-                <p class="subtitle">AI-powered viral video creation</p>
+    <div class="app">
+        <header class="app-header">
+            <div class="app-header-left">
+                <a href="/app" class="back-btn">← Back</a>
+                <div class="logo">View<span>Hunt</span> Studio</div>
             </div>
+            <div class="app-header-right">Skeleton Generator v2</div>
         </header>
 
-        <main class="main-content">
-            <!-- Step 1: Configuration -->
-            <section id="config-section" class="section">
-                <h2>1. Configure Your Video</h2>
-                
-                <div class="input-panel">
-                    <div class="form-group">
-                        <label>Background Gradient</label>
-                        <div class="gradient-selector">
-                            <div class="gradient-option gradient-blue-teal selected" data-gradient="smooth blue to teal gradient background" title="Blue to Teal"></div>
-                            <div class="gradient-option gradient-purple-pink" data-gradient="smooth purple to pink gradient background" title="Purple to Pink"></div>
-                            <div class="gradient-option gradient-orange-red" data-gradient="smooth orange to red gradient background" title="Orange to Red"></div>
-                            <div class="gradient-option gradient-green-blue" data-gradient="smooth green to blue gradient background" title="Green to Blue"></div>
-                        </div>
-                        <p class="help-text">Choose your brand's signature background color</p>
+        <!-- Config -->
+        <section id="config-section" class="section">
+            <div class="card">
+                <div class="form-group">
+                    <label class="form-label">Background</label>
+                    <div class="gradient-row">
+                        <div class="gradient-swatch g-blue-teal selected" data-gradient="smooth blue to teal gradient background" title="Blue → Teal"></div>
+                        <div class="gradient-swatch g-purple-pink" data-gradient="smooth purple to pink gradient background" title="Purple → Pink"></div>
+                        <div class="gradient-swatch g-orange-red" data-gradient="smooth orange to red gradient background" title="Orange → Red"></div>
+                        <div class="gradient-swatch g-green-blue" data-gradient="smooth green to blue gradient background" title="Green → Blue"></div>
+                        <div class="gradient-swatch g-dark-purple" data-gradient="smooth dark indigo to violet gradient background" title="Dark → Violet"></div>
+                        <div class="gradient-swatch g-sunset" data-gradient="smooth amber to red to purple sunset gradient background" title="Sunset"></div>
                     </div>
-
-                    <div class="form-group">
-                        <label for="script">Video Script</label>
-                        <textarea 
-                            id="script" 
-                            rows="12" 
-                            placeholder="What actually happens to your eyes if you never blink again?
-
-Minute 1: Your eyes immediately start to sting...
-
-Hour 1: The stinging turns into burning agony...
-
-(Continue with your full script)"
-                            style="width: 100%; padding: 0.75rem; border: 2px solid #e0e0e0; border-radius: 8px; font-family: inherit; font-size: 1rem;"
-                        ></textarea>
-                        <p class="help-text">💡 Tip: Use timeline markers (Day 1, Hour 12, etc.) for best results</p>
-                    </div>
-
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="generateVideos" checked style="margin-right: 0.5rem;">
-                            Generate videos (takes 5-10 min, uncheck for images only in 2-3 min)
-                        </label>
-                    </div>
-
-                    <div class="form-group mode-selector">
-                        <div class="mode-toggle-wrapper">
-                            <span>⚡ Auto</span>
-                            <label class="switch">
-                                <input type="checkbox" id="mode-toggle">
-                                <span class="slider"></span>
-                            </label>
-                            <span>🎬 Director</span>
-                        </div>
-                        <p id="mode-label" class="mode-label">⚡ Auto Mode</p>
-                        <p id="mode-desc" class="help-text">Fully automatic — generates everything in one go</p>
-                    </div>
-
-                    <button id="generate-btn" class="btn-generate">
-                        <span class="btn-text">🎬 Generate Video</span>
-                    </button>
                 </div>
-            </section>
 
-            <!-- Step 2: Generation Progress -->
-            <section id="progress-section" class="section hidden">
-                <h2>2. Generating Your Video</h2>
-                
-                <div class="progress-panel">
-                    <div class="progress-steps">
-                        <div class="progress-step" data-step="claude">
-                            <div class="step-icon">🤖</div>
-                            <div class="step-label">Breaking into scenes</div>
+                <div class="form-group">
+                    <label class="form-label" for="script">Script</label>
+                    <textarea id="script" rows="10" placeholder="What actually happens to your eyes if you never blink again?&#10;&#10;Minute 1: Your eyes immediately start to sting...&#10;&#10;Hour 1: The stinging turns into burning agony..."></textarea>
+                    <p class="form-hint">Use timeline markers (Day 1, Hour 12, etc.) for best scene breakdowns</p>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="generateVideos" checked>
+                        Generate videos (5-10 min) — uncheck for images only (2-3 min)
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <div class="toggle-row">
+                        <div class="toggle-track" id="mode-toggle" role="switch" aria-checked="false" tabindex="0">
+                            <div class="toggle-knob"></div>
                         </div>
-                        <div class="progress-step" data-step="images">
-                            <div class="step-icon">🎨</div>
-                            <div class="step-label">Generating images</div>
-                        </div>
-                        <div class="progress-step" data-step="videos">
-                            <div class="step-icon">🎥</div>
-                            <div class="step-label">Creating videos</div>
-                        </div>
-                        <div class="progress-step" data-step="complete">
-                            <div class="step-icon">✅</div>
-                            <div class="step-label">Complete</div>
+                        <div class="toggle-label" id="mode-info">
+                            <strong id="mode-name">Auto Mode</strong>
+                            <span id="mode-desc">— generates everything in one go</span>
                         </div>
                     </div>
-                    <p class="progress-message" id="progress-message">Starting generation...</p>
                 </div>
-            </section>
 
-            <!-- Director Mode Section -->
-            <section id="director-section" class="section hidden">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-                    <h2>🎬 Director Mode</h2>
-                    <button class="btn-secondary btn-sm" onclick="resetToConfig()">← Back</button>
+                <button id="generate-btn" class="btn btn-primary btn-lg">
+                    <span class="btn-text">Generate Video</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Progress (auto mode) -->
+        <section id="progress-section" class="section hidden">
+            <div class="card">
+                <div class="section-title">Generation Progress</div>
+                <div class="progress-bar-wrap"><div class="progress-bar-fill" id="progress-fill"></div></div>
+                <div class="progress-steps">
+                    <div class="progress-chip" data-step="claude">🤖 Scenes</div>
+                    <div class="progress-chip" data-step="images">🎨 Images</div>
+                    <div class="progress-chip" data-step="videos">🎥 Videos</div>
+                    <div class="progress-chip" data-step="complete">✅ Done</div>
                 </div>
-                <div id="director-scenes"></div>
-            </section>
+                <p class="progress-msg" id="progress-message">Starting generation...</p>
+            </div>
+        </section>
 
-            <!-- Step 3: Results (Auto Mode) -->
-            <section id="results-section" class="section hidden">
-                <h2>3. Your Generated Scenes</h2>
-                
-                <div id="scenes-container"></div>
+        <!-- Director Mode -->
+        <section id="director-section" class="section hidden">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                <div class="section-title" style="margin-bottom:0">Director Mode</div>
+                <button class="btn btn-secondary btn-sm" onclick="resetToConfig()">← Back</button>
+            </div>
+            <div id="director-scenes"></div>
+        </section>
 
-                <div style="margin-top: 2rem; text-align: center;">
-                    <button id="download-all-btn" class="btn-primary">📥 Download All Videos</button>
-                    <button id="generate-another-btn" class="btn-secondary" style="margin-left: 1rem;">🔄 Generate Another</button>
-                </div>
-            </section>
-        </main>
+        <!-- Results (auto mode) -->
+        <section id="results-section" class="section hidden">
+            <div class="section-title">Generated Scenes</div>
+            <div id="scenes-container"></div>
+            <div class="action-bar">
+                <button id="download-all-btn" class="btn btn-primary">📥 Download All Videos</button>
+                <button id="generate-another-btn" class="btn btn-secondary" onclick="resetToConfig()">↻ Generate Another</button>
+            </div>
+        </section>
 
-        <footer class="footer">
-            <p>Powered by ViewHunt • Claude Opus 4.5 • Kie.ai • AtlasCloud Veo 3.1</p>
+        <footer class="app-footer">
+            ViewHunt Studio · Claude Opus 4.5 · Kie.ai · AtlasCloud Veo 3.1
         </footer>
     </div>
 
