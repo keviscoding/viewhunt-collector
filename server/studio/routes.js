@@ -1,7 +1,30 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const SkeletonGenerator = require('./formats/skeleton-anatomy/generator');
 const SkeletonGeneratorV2 = require('./formats/skeleton-anatomy-v2/generator');
+
+// Configure multer for scene image uploads
+const uploadDir = path.join(__dirname, '../public/studio/uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+const upload = multer({
+    storage: multer.diskStorage({
+        destination: uploadDir,
+        filename: (req, file, cb) => {
+            const ext = path.extname(file.originalname) || '.png';
+            cb(null, `scene-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
+        }
+    }),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) cb(null, true);
+        else cb(new Error('Only image files allowed'));
+    }
+});
 
 // Lazy-load generators (only initialize when needed, not on server startup)
 const generators = {};
@@ -289,22 +312,44 @@ router.post('/generate/scene-images', requireAuth, async (req, res) => {
 // Step 3: Generate video for a single scene with selected image
 router.post('/generate/scene-video', requireAuth, async (req, res) => {
     try {
-        const { format, imageUrl, videoPrompt, sceneNumber, lastImageUrl } = req.body;
+        let { format, imageUrl, videoPrompt, sceneNumber } = req.body;
         if (!format || !imageUrl || !videoPrompt) return res.status(400).json({ error: 'format, imageUrl, and videoPrompt are required' });
         
         const generator = getGenerator(format, 'v2');
         if (!generator) return res.status(400).json({ error: 'Invalid format' });
         
-        console.log(`Director mode: generating video for scene ${sceneNumber}${lastImageUrl ? ' (multi-shot)' : ''}`);
+        // Convert relative upload paths to full URLs for AtlasCloud
+        if (imageUrl.startsWith('/studio/uploads/')) {
+            const protocol = req.protocol;
+            const host = req.get('host');
+            imageUrl = `${protocol}://${host}${imageUrl}`;
+            console.log(`Converted relative upload path to full URL: ${imageUrl}`);
+        }
+        
+        console.log(`Director mode: generating video for scene ${sceneNumber}`);
         console.log(`  Image URL: ${imageUrl.substring(0, 80)}...`);
         console.log(`  Video Prompt: ${videoPrompt.substring(0, 100)}...`);
         
-        const videoUrl = await generator.generateVideo(imageUrl, videoPrompt, sceneNumber, lastImageUrl);
+        const videoUrl = await generator.generateVideo(imageUrl, videoPrompt, sceneNumber);
         
         console.log(`Director mode: video for scene ${sceneNumber} complete: ${videoUrl.substring(0, 80)}...`);
         res.json({ success: true, sceneNumber, videoUrl });
     } catch (error) {
         console.error('Scene video generation error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Upload custom scene image
+router.post('/upload-scene-image', requireAuth, upload.single('image'), (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No image file provided' });
+        
+        const url = `/studio/uploads/${req.file.filename}`;
+        console.log(`Custom image uploaded: ${url}`);
+        res.json({ success: true, url, filename: req.file.filename });
+    } catch (error) {
+        console.error('Scene image upload error:', error.message);
         res.status(500).json({ error: error.message });
     }
 });

@@ -475,10 +475,9 @@ Format your response as JSON:
      * Step 3: Generate video from image using AtlasCloud Veo 3.1 Fast
      * Includes 1 retry on failure with adjusted prompt
      */
-    async generateVideo(imageUrl, videoPrompt, sceneNumber, lastImageUrl = null) {
+    async generateVideo(imageUrl, videoPrompt, sceneNumber) {
         console.log(`\n=== Generating video for scene ${sceneNumber} ===`);
         console.log(`Image URL: ${imageUrl}`);
-        if (lastImageUrl) console.log(`Last Image (multi-shot): ${lastImageUrl}`);
         console.log(`Video Prompt: "${videoPrompt}"`);
         console.log(`===\n`);
         
@@ -499,11 +498,6 @@ Format your response as JSON:
                     negative_prompt: 'gore, blood, violence, nsfw, nudity, graphic content'
                 };
                 
-                // Add last_image for multi-shot if provided
-                if (lastImageUrl) {
-                    requestBody.last_image = lastImageUrl;
-                    console.log('Using multi-shot mode (first + last frame)');
-                }
                 const createResponse = await axios.post(
                     `${this.atlasBaseUrl}/model/generateVideo`,
                     requestBody,

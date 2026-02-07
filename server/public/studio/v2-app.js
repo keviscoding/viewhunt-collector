@@ -143,9 +143,9 @@ function createDirectorSceneCard(scene, index) {
             <summary>📸 Image Prompt</summary>
             <p>${escapeHtml(scene.imagePrompt)}</p>
         </details>
-        <details class="prompt-details">
-            <summary>🎬 Video Prompt</summary>
-            <p>${escapeHtml(scene.videoPrompt)}</p>
+        <details class="prompt-details" open>
+            <summary>🎬 Video Prompt <span class="edit-hint">(click to edit)</span></summary>
+            <textarea class="video-prompt-editor" id="video-prompt-${index}" rows="3">${escapeHtml(scene.videoPrompt)}</textarea>
         </details>
         
         <div class="image-gallery" id="gallery-${index}">
@@ -154,11 +154,10 @@ function createDirectorSceneCard(scene, index) {
         
         <div class="director-card-controls">
             <button class="btn-sm btn-primary" onclick="generateSceneImages(${index}, 4)">🔄 More Images</button>
+            <button class="btn-sm btn-upload" onclick="triggerCustomUpload(${index})" title="Upload your own image">➕ Upload</button>
             <button class="btn-sm btn-accent" onclick="generateSceneVideo(${index})" id="video-btn-${index}" disabled>🎥 Generate Video</button>
-            <label class="multishot-toggle" title="Veo 3.1 multi-shot: uses next scene's selected image as end frame for smoother transitions">
-                <input type="checkbox" id="multishot-${index}"> Multi-shot
-            </label>
         </div>
+        <input type="file" id="upload-input-${index}" accept="image/*" style="display:none" onchange="handleCustomUpload(${index}, this)">
         
         <div class="video-result" id="video-result-${index}"></div>
     `;
@@ -269,10 +268,72 @@ function selectImage(sceneIndex, imageUrl, element) {
     document.getElementById(`video-btn-${sceneIndex}`).disabled = false;
 }
 
+function triggerCustomUpload(sceneIndex) {
+    document.getElementById(`upload-input-${sceneIndex}`).click();
+}
+
+async function handleCustomUpload(sceneIndex, input) {
+    const file = input.files[0];
+    if (!file) return;
+    
+    const gallery = document.getElementById(`gallery-${sceneIndex}`);
+    
+    // Show uploading indicator
+    const uploadingEl = document.createElement('div');
+    uploadingEl.className = 'gallery-item gallery-uploading';
+    uploadingEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:0.8rem;color:#667eea;text-align:center;padding:0.25rem">⏳<br>Uploading...</div>';
+    // Insert before the "More" button
+    const regenBtn = gallery.querySelector('.gallery-regen');
+    if (regenBtn) {
+        gallery.insertBefore(uploadingEl, regenBtn);
+    } else {
+        gallery.appendChild(uploadingEl);
+    }
+    
+    try {
+        const formData = new FormData();
+        formData.append('image', file);
+        
+        const res = await fetch('/api/studio/upload-scene-image', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${getAuthToken()}` },
+            body: formData
+        });
+        
+        if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Upload failed');
+        
+        // Replace uploading indicator with the actual image
+        uploadingEl.className = 'gallery-item';
+        uploadingEl.innerHTML = `
+            <img src="${data.url}" alt="Custom upload" loading="lazy">
+            <div class="gallery-check">✓</div>
+            <div class="custom-badge">📤</div>
+        `;
+        uploadingEl.onclick = () => selectImage(sceneIndex, data.url, uploadingEl);
+        
+        // Auto-select the uploaded image
+        selectImage(sceneIndex, data.url, uploadingEl);
+        
+    } catch (error) {
+        console.error('Upload error:', error);
+        uploadingEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:0.75rem;color:#dc3545;text-align:center;padding:0.25rem">❌<br>Failed</div>';
+        setTimeout(() => uploadingEl.remove(), 3000);
+    }
+    
+    // Reset input so same file can be re-uploaded
+    input.value = '';
+}
+
 async function generateSceneVideo(sceneIndex) {
     const scene = currentScenes[sceneIndex];
     const imageUrl = scene._selectedImage;
     if (!imageUrl) return alert('Select an image first');
+    
+    // Read the (possibly edited) video prompt from the textarea
+    const promptTextarea = document.getElementById(`video-prompt-${sceneIndex}`);
+    const videoPrompt = promptTextarea ? promptTextarea.value.trim() : scene.videoPrompt;
     
     const videoResult = document.getElementById(`video-result-${sceneIndex}`);
     const btn = document.getElementById(`video-btn-${sceneIndex}`);
@@ -280,29 +341,16 @@ async function generateSceneVideo(sceneIndex) {
     btn.textContent = '⏳ Generating...';
     videoResult.innerHTML = '<div class="video-loading">🎥 Generating video with Veo 3.1 (1-3 min)...</div>';
     
-    const multishot = document.getElementById(`multishot-${sceneIndex}`)?.checked;
-    
-    // For multi-shot (Veo 3.1 feature), use next scene's selected image as last_image
-    let lastImageUrl = null;
-    if (multishot && sceneIndex < currentScenes.length - 1) {
-        lastImageUrl = currentScenes[sceneIndex + 1]?._selectedImage || null;
-        if (!lastImageUrl) {
-            videoResult.innerHTML = '<div class="video-loading">⚠️ Multi-shot: select an image for the next scene first, or it will generate without end frame...</div>';
-            await new Promise(r => setTimeout(r, 2000));
-        }
-    }
-    
     try {
-        console.log(`Generating video for scene ${sceneIndex + 1}${multishot ? ' (multi-shot)' : ''}...`);
+        console.log(`Generating video for scene ${sceneIndex + 1}...`);
         const res = await fetch('/api/studio/generate/scene-video', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
             body: JSON.stringify({
                 format: 'skeleton-anatomy',
                 imageUrl,
-                videoPrompt: scene.videoPrompt,
-                sceneNumber: scene.sceneNumber || sceneIndex + 1,
-                lastImageUrl
+                videoPrompt,
+                sceneNumber: scene.sceneNumber || sceneIndex + 1
             })
         });
         
