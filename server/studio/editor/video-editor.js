@@ -251,59 +251,95 @@ class VideoEditor {
 
     /**
      * Sequential assembly: normalize each clip one at a time, then concat.
-     * Keeps clip audio at 35% volume for environmental sounds.
+     * 
+     * CLIP LOOPING: When a segment needs more time than the clip provides,
+     * we loop it — play through to the end, then jump back to the midpoint
+     * and replay from there, filling the needed duration seamlessly.
      */
     async sequentialAssemble(editList, jobDir) {
         var tsFiles = [];
+        var clipDurationCache = {};
 
         for (var i = 0; i < editList.length; i++) {
             var clip = editList[i];
-            var tsPath = path.join(jobDir, 'seg-' + i + '.ts');
             var hasAudio = await this.hasAudioStream(clip.src);
 
-            var args;
-            if (hasAudio) {
-                args = [
-                    '-ss', String(clip.ss),
-                    '-t', String(clip.duration),
-                    '-i', clip.src,
-                    '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1',
-                    '-af', 'volume=0.45',
-                    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '30',
-                    '-pix_fmt', 'yuv420p',
-                    '-c:a', 'aac', '-b:a', '64k', '-ar', '44100', '-ac', '2',
-                    '-f', 'mpegts',
-                    '-y', tsPath
-                ];
+            // Get actual clip duration (cache since same clip may be reused)
+            if (!clipDurationCache[clip.src]) {
+                clipDurationCache[clip.src] = await this.getMediaDuration(clip.src);
+            }
+            var clipLen = clipDurationCache[clip.src] || 5;
+
+            // How much clip is available from the start offset
+            var availableFromSs = Math.max(clipLen - clip.ss, 0.5);
+
+            if (clip.duration <= availableFromSs + 0.3) {
+                // Clip is long enough — single pass
+                var tsPath = path.join(jobDir, 'seg-' + i + '.ts');
+                await this.encodeSegment(clip.src, clip.ss, clip.duration, hasAudio, tsPath);
+                var segSize = 0;
+                try { segSize = fs.statSync(tsPath).size; } catch(e) {}
+                if (segSize >= 100) {
+                    tsFiles.push(tsPath);
+                } else {
+                    console.warn('  ⚠️ Segment ' + i + ' too small, skipping');
+                    continue;
+                }
             } else {
-                args = [
-                    '-ss', String(clip.ss),
-                    '-t', String(clip.duration),
-                    '-i', clip.src,
-                    '-f', 'lavfi', '-t', String(clip.duration), '-i', 'anullsrc=r=44100:cl=stereo',
-                    '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1',
-                    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '30',
-                    '-pix_fmt', 'yuv420p',
-                    '-map', '0:v', '-map', '1:a',
-                    '-c:a', 'aac', '-b:a', '64k', '-shortest',
-                    '-f', 'mpegts',
-                    '-y', tsPath
-                ];
+                // Clip too short for this segment — loop it
+                var remaining = clip.duration;
+                var loopIdx = 0;
+                var midpoint = clipLen * 0.5; // loop-back point
+                var partFiles = [];
+
+                // First pass: play from ss to end of clip
+                var firstDur = Math.min(remaining, availableFromSs);
+                var partPath = path.join(jobDir, 'seg-' + i + '-p' + loopIdx + '.ts');
+                await this.encodeSegment(clip.src, clip.ss, firstDur, hasAudio, partPath);
+                var pSize = 0;
+                try { pSize = fs.statSync(partPath).size; } catch(e) {}
+                if (pSize >= 100) { partFiles.push(partPath); remaining -= firstDur; }
+                loopIdx++;
+
+                // Loop: jump back to midpoint, play to end, repeat
+                while (remaining > 0.3) {
+                    var loopAvail = clipLen - midpoint;
+                    var loopDur = Math.min(remaining, loopAvail);
+                    partPath = path.join(jobDir, 'seg-' + i + '-p' + loopIdx + '.ts');
+                    await this.encodeSegment(clip.src, midpoint, loopDur, hasAudio, partPath);
+                    pSize = 0;
+                    try { pSize = fs.statSync(partPath).size; } catch(e) {}
+                    if (pSize >= 100) { partFiles.push(partPath); remaining -= loopDur; }
+                    else break;
+                    loopIdx++;
+                    if (loopIdx > 10) break; // safety
+                }
+
+                if (partFiles.length > 0) {
+                    var loopedPath = path.join(jobDir, 'seg-' + i + '.ts');
+                    if (partFiles.length === 1) {
+                        fs.renameSync(partFiles[0], loopedPath);
+                    } else {
+                        await this.ffmpeg([
+                            '-i', 'concat:' + partFiles.join('|'),
+                            '-c', 'copy', '-f', 'mpegts',
+                            '-y', loopedPath
+                        ]);
+                        for (var p = 0; p < partFiles.length; p++) {
+                            try { fs.unlinkSync(partFiles[p]); } catch(e) {}
+                        }
+                    }
+                    tsFiles.push(loopedPath);
+                } else {
+                    console.warn('  ⚠️ Segment ' + i + ' loop failed, skipping');
+                    continue;
+                }
             }
 
-            await this.ffmpeg(args);
-
-            var segSize = 0;
-            try { segSize = fs.statSync(tsPath).size; } catch(e) {}
-            if (segSize < 100) {
-                console.warn('  ⚠️ Segment ' + i + ' too small, skipping');
-                continue;
-            }
-
-            tsFiles.push(tsPath);
             var tag = hasAudio ? '🔊' : '🔇';
+            var loopTag = (clip.duration > availableFromSs + 0.3) ? ' 🔄' : '';
             var info = clip.sentence ? ' "' + clip.sentence + '"' : '';
-            console.log('  ✓ Seg ' + i + '/' + (editList.length - 1) + ' (' + clip.type + ', ' + clip.duration.toFixed(1) + 's) ' + tag + info);
+            console.log('  ✓ Seg ' + i + '/' + (editList.length - 1) + ' (' + clip.type + ', ' + clip.duration.toFixed(1) + 's) ' + tag + loopTag + info);
         }
 
         if (tsFiles.length === 0) throw new Error('No valid segments produced');
@@ -317,6 +353,43 @@ class VideoEditor {
 
         console.log('  ✅ Concat complete: ' + tsFiles.length + ' segments');
         return concatPath;
+    }
+
+    /**
+     * Encode a single segment of a clip to .ts format.
+     * Shared by both single-pass and looping paths.
+     */
+    async encodeSegment(src, ss, duration, hasAudio, outputPath) {
+        var args;
+        if (hasAudio) {
+            args = [
+                '-ss', String(ss),
+                '-t', String(duration),
+                '-i', src,
+                '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                '-af', 'volume=0.45',
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '30',
+                '-pix_fmt', 'yuv420p',
+                '-c:a', 'aac', '-b:a', '64k', '-ar', '44100', '-ac', '2',
+                '-f', 'mpegts',
+                '-y', outputPath
+            ];
+        } else {
+            args = [
+                '-ss', String(ss),
+                '-t', String(duration),
+                '-i', src,
+                '-f', 'lavfi', '-t', String(duration), '-i', 'anullsrc=r=44100:cl=stereo',
+                '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '30',
+                '-pix_fmt', 'yuv420p',
+                '-map', '0:v', '-map', '1:a',
+                '-c:a', 'aac', '-b:a', '64k', '-shortest',
+                '-f', 'mpegts',
+                '-y', outputPath
+            ];
+        }
+        await this.ffmpeg(args);
     }
 
     async hasAudioStream(filePath) {
