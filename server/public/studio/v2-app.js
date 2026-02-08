@@ -410,13 +410,17 @@ async function pollAssemblyJob(jobId, resultDiv) {
 }
 
 function renderAssemblyResult(container, result, retryFnName) {
+    var dur = (result && result.duration) ? result.duration.toFixed(1) : '?';
+    var hooks = (result && result.hookClips != null) ? result.hookClips : '?';
+    var segs = (result && result.bodySegments != null) ? result.bodySegments : '?';
+    var url = (result && result.videoUrl) ? result.videoUrl : '';
     container.innerHTML = '<div class="assembly-progress">' +
-        '<div style="margin-bottom:1rem">✅ Final video (' + result.duration.toFixed(1) + 's) — ' +
-        result.hookClips + ' hook clips, ' + result.bodySegments + ' body segments</div>' +
-        '<video src="' + result.videoUrl + '" controls autoplay muted loop ' +
+        '<div style="margin-bottom:1rem">✅ Final video (' + dur + 's) — ' +
+        hooks + ' hook clips, ' + segs + ' body segments</div>' +
+        '<video src="' + url + '" controls autoplay muted loop ' +
         'style="width:100%;max-width:360px;border-radius:12px;margin-bottom:0.75rem"></video>' +
         '<div><button class="btn btn-green btn-sm" onclick="downloadFile(\'' +
-        result.videoUrl + '\', \'final-video.mp4\')">📥 Download</button> ' +
+        url + '\', \'final-video.mp4\')">📥 Download</button> ' +
         '<button class="btn btn-secondary btn-sm" onclick="' + retryFnName +
         '()">↻ Re-assemble</button></div></div>';
 }
