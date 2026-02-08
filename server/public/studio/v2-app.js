@@ -323,8 +323,8 @@ async function generateAllSelectedVideos() {
     const withImages = currentScenes.filter(s => s._selectedImage);
     if (withImages.length === 0) return alert('Select an image for at least one scene first');
     
-    const cost = (withImages.length * 0.64).toFixed(2);
-    if (!confirm(`Generate videos for ${withImages.length} scenes?\nEstimated cost: ~$${cost}`)) return;
+    const cost = (withImages.length * 0.50).toFixed(2);
+    if (!confirm(`Generate videos for ${withImages.length} scenes?\nEstimated cost: ~$${cost} (Kling 3 Omni Pro)`)) return;
     
     for (let i = 0; i < currentScenes.length; i++) {
         if (currentScenes[i]._selectedImage) generateSceneVideo(i);

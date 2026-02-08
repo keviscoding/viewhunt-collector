@@ -11,9 +11,9 @@ class SkeletonGeneratorV2 {
             apiKey: process.env.ANTHROPIC_API_KEY
         });
         
-        // AtlasCloud API configuration (for videos)
-        this.atlasApiKey = process.env.ATLASCLOUD_API_KEY;
-        this.atlasBaseUrl = 'https://api.atlascloud.ai/api/v1';
+        // Freepik API configuration (for Kling 3 Omni Pro videos)
+        this.freepikApiKey = process.env.FREEPIK_API_KEY;
+        this.freepikBaseUrl = 'https://api.freepik.com/v1/ai/video';
         
         // Kie.ai API configuration (for images only)
         this.kieApiKey = process.env.KIEAI_API_KEY;
@@ -503,56 +503,54 @@ Format your response as JSON:
     }
 
     /**
-     * Step 3: Generate video from image using AtlasCloud Veo 3.1 Fast
-     * Includes 1 retry on failure with adjusted prompt
+     * Step 3: Generate video from image using Freepik Kling 3 Omni Pro
+     * Includes 1 retry on failure
      */
     async generateVideo(imageUrl, videoPrompt, sceneNumber) {
         console.log(`\n=== Generating video for scene ${sceneNumber} ===`);
         console.log(`Image URL: ${imageUrl}`);
-        console.log(`Video Prompt: "${videoPrompt}"`);
+        console.log(`Video Prompt: "${videoPrompt.substring(0, 120)}..."`);
         console.log(`===\n`);
         
         const maxAttempts = 2;
         
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                console.log(`🎬 CALLING AtlasCloud Veo 3.1 Fast API - Scene ${sceneNumber} (attempt ${attempt}/${maxAttempts})`);
+                console.log(`🎬 CALLING Freepik Kling 3 Omni Pro API - Scene ${sceneNumber} (attempt ${attempt}/${maxAttempts})`);
                 
                 const requestBody = {
-                    model: 'google/veo3.1-fast/image-to-video',
                     prompt: videoPrompt,
-                    image: imageUrl,
+                    image_url: imageUrl,
                     aspect_ratio: '9:16',
-                    duration: 8,
-                    resolution: '1080p',
-                    generate_audio: true,
-                    negative_prompt: 'gore, blood, violence, nsfw, nudity, graphic content'
+                    duration: '8',
+                    generate_audio: true
                 };
                 
                 const createResponse = await axios.post(
-                    `${this.atlasBaseUrl}/model/generateVideo`,
+                    `${this.freepikBaseUrl}/kling-v3-omni-pro`,
                     requestBody,
                     {
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${this.atlasApiKey}`
-                        }
+                            'x-freepik-api-key': this.freepikApiKey
+                        },
+                        timeout: 30000
                     }
                 );
 
-                console.log(`AtlasCloud API response:`, JSON.stringify(createResponse.data, null, 2));
+                console.log(`Freepik API response:`, JSON.stringify(createResponse.data, null, 2));
                 
-                if (!createResponse.data || !createResponse.data.data || !createResponse.data.data.id) {
-                    console.error('Unexpected AtlasCloud API response:', createResponse.data);
-                    throw new Error('AtlasCloud API did not return a prediction ID');
+                // Freepik returns { data: { task_id, status } }
+                const taskId = createResponse.data?.data?.task_id;
+                if (!taskId) {
+                    console.error('Unexpected Freepik API response:', createResponse.data);
+                    throw new Error('Freepik API did not return a task_id');
                 }
 
-                const predictionId = createResponse.data.data.id;
-                console.log(`Video task created: ${predictionId}`);
+                console.log(`Video task created: ${taskId}`);
                 
-                const videoUrl = await this.pollAtlasTask(predictionId, 600000);
-                console.log(`✅ Video ${sceneNumber} generated successfully`);
-                console.log(`💰 AtlasCloud cost: ~$0.64 (8 seconds × $0.08/sec)`);
+                const videoUrl = await this.pollFreepikTask(taskId, 600000);
+                console.log(`✅ Video ${sceneNumber} generated successfully (Kling 3 Omni Pro)`);
                 
                 return videoUrl;
                 
@@ -645,14 +643,14 @@ Format your response as JSON:
     }
 
     /**
-     * Poll AtlasCloud task for video generation
+     * Poll Freepik task for Kling 3 Omni video generation
      */
-    async pollAtlasTask(predictionId, timeout = 600000) {
+    async pollFreepikTask(taskId, timeout = 600000) {
         const startTime = Date.now();
         const pollInterval = 5000; // 5 seconds
         let pollCount = 0;
         
-        const endpoint = `${this.atlasBaseUrl}/model/result/${predictionId}`;
+        const endpoint = `${this.freepikBaseUrl}/kling-v3-omni/${taskId}`;
         
         while (Date.now() - startTime < timeout) {
             pollCount++;
@@ -661,56 +659,54 @@ Format your response as JSON:
             try {
                 const response = await axios.get(endpoint, {
                     headers: {
-                        'Authorization': `Bearer ${this.atlasApiKey}`
+                        'x-freepik-api-key': this.freepikApiKey
                     }
                 });
 
-                // Check API response code
-                if (response.data.code !== 200) {
-                    throw new Error(`AtlasCloud API error: ${response.data.message || 'Unknown error'}`);
+                const data = response.data?.data;
+                if (!data) {
+                    throw new Error('Freepik API returned empty data');
                 }
 
-                const status = response.data.data.status;
+                const status = data.status;
                 
                 // Log progress every 30 seconds
                 if (pollCount % 6 === 0) {
-                    console.log(`Video task ${predictionId} status: ${status} (${elapsed}s elapsed)`);
+                    console.log(`Video task ${taskId} status: ${status} (${elapsed}s elapsed)`);
                 }
                 
                 // Check if video is ready
-                if (status === 'completed' || status === 'succeeded') {
-                    const outputs = response.data.data.outputs;
-                    if (outputs && outputs.length > 0) {
+                if (status === 'COMPLETED') {
+                    const generated = data.generated;
+                    if (generated && generated.length > 0) {
                         console.log(`✅ Video task completed in ${elapsed}s`);
-                        return outputs[0]; // Return first video URL
+                        return generated[0]; // Return first video URL
                     } else {
                         throw new Error('Video completed but no outputs found');
                     }
                 }
                 
                 // Check for failure
-                if (status === 'failed') {
-                    const error = response.data.data.error || 'Unknown error';
+                if (status === 'FAILED' || status === 'ERROR') {
+                    const error = data.error || data.message || 'Unknown error';
                     throw new Error(`Video generation failed: ${error}`);
                 }
                 
-                // Still processing (status === 'created' or 'processing'), wait and retry
+                // Still processing (CREATED, PROCESSING, etc.), wait and retry
                 await new Promise(resolve => setTimeout(resolve, pollInterval));
                 
             } catch (error) {
-                // Check for specific error types
                 if (error.response?.status === 401) {
-                    throw new Error('AtlasCloud authentication failed. Check your API key.');
-                } else if (error.response?.status === 402) {
-                    throw new Error('Out of AtlasCloud credits. Please add more credits to your account.');
+                    throw new Error('Freepik authentication failed. Check your API key.');
+                } else if (error.response?.status === 402 || error.response?.status === 403) {
+                    throw new Error('Freepik API access denied. Check your subscription/credits.');
                 } else if (error.response?.status === 429) {
                     console.warn('Rate limit hit, waiting 10 seconds...');
                     await new Promise(resolve => setTimeout(resolve, 10000));
                 } else if (error.response?.status === 404) {
                     // Task not found yet, wait and retry
                     await new Promise(resolve => setTimeout(resolve, pollInterval));
-                } else if (error.message.includes('AtlasCloud') || error.message.includes('failed')) {
-                    // Already formatted error, rethrow
+                } else if (error.message.includes('Freepik') || error.message.includes('failed')) {
                     throw error;
                 } else {
                     console.error('Video polling error:', error.message);
@@ -719,7 +715,7 @@ Format your response as JSON:
             }
         }
         
-        throw new Error(`Video task timeout after ${Math.floor(timeout/1000)}s - AtlasCloud servers may be overloaded. Try again later.`);
+        throw new Error(`Video task timeout after ${Math.floor(timeout/1000)}s - Kling 3 Omni servers may be overloaded. Try again later.`);
     }
 
     /**
@@ -807,13 +803,12 @@ Format your response as JSON:
                 const videoSuccessCount = videoResults.filter(r => r.success).length;
                 console.log(`\n✅ Batch complete: ${videoSuccessCount}/${scenesWithImages.length} videos generated successfully\n`);
                 
-                // Cost summary (AtlasCloud pricing: $0.08/sec × 8 sec = $0.64 per video)
-                const videoCost = videoSuccessCount * 0.64;
+                // Cost summary (Freepik Kling 3 Omni Pro)
+                const videoCost = videoSuccessCount * 0.50; // estimate
                 console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
                 console.log(`   Videos generated: ${videoSuccessCount}`);
-                console.log(`   Provider: AtlasCloud Veo 3.1 Fast`);
-                console.log(`   Cost: $${videoCost.toFixed(2)} ($0.64 per 8-second video)`);
-                console.log(`   Rate: $0.08 per second`);
+                console.log(`   Provider: Freepik Kling 3 Omni Pro`);
+                console.log(`   Cost: ~$${videoCost.toFixed(2)} (estimated)`);
                 console.log(`\n`);
             }
 
@@ -1001,12 +996,11 @@ Format your response as JSON:
                 const videoSuccessCount = videoResults.filter(r => r.success).length;
                 console.log(`\n✅ Batch complete: ${videoSuccessCount}/${scenesWithImages.length} videos generated successfully\n`);
                 
-                const videoCost = videoSuccessCount * 0.64;
+                const videoCost = videoSuccessCount * 0.50;
                 console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
                 console.log(`   Videos generated: ${videoSuccessCount}`);
-                console.log(`   Provider: AtlasCloud Veo 3.1 Fast`);
-                console.log(`   Cost: $${videoCost.toFixed(2)} ($0.64 per 8-second video)`);
-                console.log(`   Rate: $0.08 per second`);
+                console.log(`   Provider: Freepik Kling 3 Omni Pro`);
+                console.log(`   Cost: ~$${videoCost.toFixed(2)} (estimated)`);
                 console.log(`\n`);
                 
                 onProgress({
