@@ -1,6 +1,12 @@
 /**
- * Gemini Analyzer — Uses Gemini to create an edit decision list from script + scenes
- * Decides: scene-to-sentence mapping, hook clip selection, click sound placement
+ * Gemini Analyzer — Uses Gemini ONLY for hook clip selection.
+ * 
+ * Body timing is handled directly by the video editor using Claude's
+ * scene-to-scriptLine mapping (each scene already has a scriptLine
+ * that tells us exactly which part of the script it covers).
+ * 
+ * Gemini picks the 4-5 most visually dynamic scenes for the rapid-fire
+ * hook at the start of the video.
  */
 const { GoogleGenAI } = require('@google/genai');
 
@@ -10,94 +16,94 @@ class GeminiAnalyzer {
     }
 
     /**
-     * Analyze script + scenes and produce a structured edit decision list
-     * @param {string} script - The full narration script
-     * @param {Array} scenes - Array of { sceneNumber, scriptLine, imagePrompt, videoPrompt, videoUrl }
-     * @returns {Object} Edit decision list
+     * Analyze scenes and pick hook clips.
+     * Body segments are built directly from the scenes array (no Gemini needed).
      */
     async analyze(script, scenes) {
-        console.log('🧠 Gemini: Analyzing script for edit decisions...');
+        console.log('🧠 Gemini: Selecting hook clips...');
 
-        const sceneDescriptions = scenes.map((s, i) => 
-            `Scene ${s.sceneNumber || i + 1}: "${s.scriptLine}" [${s.shotType || 'medium'}] — Video prompt: "${s.videoPrompt}"`
-        ).join('\n');
+        var sceneList = scenes.map(function(s, i) {
+            return 'Scene ' + (s.sceneNumber || i + 1) + ': "' + (s.scriptLine || '') + '" [' + (s.shotType || 'medium') + ']';
+        }).join('\n');
 
-        const prompt = `You are a video editor for short-form vertical content (YouTube Shorts / TikTok / Reels).
-
-I have a narration script and a set of generated video clips (scenes). I need you to create an edit decision list (EDL) that tells my automated editor exactly how to assemble the final video.
-
-SCRIPT:
-${script}
-
-AVAILABLE SCENES:
-${sceneDescriptions}
-
-RULES:
-1. Break the script into sentences. Scene switches ONLY happen on sentence boundaries (period, question mark, exclamation mark). NEVER mid-sentence.
-2. Map each sentence (or group of short sentences) to the most relevant scene based on content match.
-3. For the HOOK (first ~3 seconds): Pick the 4-5 most visually dynamic/interesting scenes. These will be rapid-fire 0.4-0.5 second clips that tease the video. The hook plays OVER the first sentence of narration.
-4. Identify where the hook ends and the main body begins (usually after the opening question/statement).
-5. For click sounds: ALWAYS assign a click sound on sentences that contain time markers (Day 1, Day 7, Hour 1, Minute 1, Week 2, Month 3, Year 1, etc.). These show progression and MUST have click sounds. For other scene transitions, randomly assign click sounds to ~40-50%.
-6. Each scene clip is ~5 seconds long. You can use a portion of it (specify startSec and duration).
-
-Return ONLY valid JSON in this exact format:
-{
-  "hook": {
-    "clips": [
-      { "scene": 3, "startSec": 1.0, "duration": 0.5, "clickSound": true },
-      { "scene": 7, "startSec": 2.0, "duration": 0.4, "clickSound": true }
-    ]
-  },
-  "hookEndSentenceIndex": 1,
-  "body": [
-    {
-      "sentenceIndex": 1,
-      "sentence": "The actual sentence text",
-      "scene": 2,
-      "startSec": 0,
-      "clickSound": false
-    }
-  ],
-  "sentences": ["First sentence.", "Second sentence.", "..."]
-}
-
-IMPORTANT:
-- "scene" numbers must match the available scene numbers above
-- "sentenceIndex" is 0-based
-- Hook clips should be from different scenes for visual variety
-- Body scenes should match the content of each sentence
-- Keep it simple and effective`;
+        var prompt = 'You are editing a short-form vertical video (YouTube Shorts).\n\n' +
+            'I have these video scenes. Pick the 4-5 most visually dynamic/interesting ones for a rapid-fire HOOK ' +
+            '(the first ~3 seconds of the video that teases what\'s coming).\n\n' +
+            'SCENES:\n' + sceneList + '\n\n' +
+            'Return ONLY valid JSON:\n' +
+            '{\n' +
+            '  "hook": {\n' +
+            '    "clips": [\n' +
+            '      { "scene": 3, "startSec": 1.0, "duration": 0.5 },\n' +
+            '      { "scene": 7, "startSec": 2.0, "duration": 0.4 }\n' +
+            '    ]\n' +
+            '  }\n' +
+            '}\n\n' +
+            'RULES:\n' +
+            '- Pick scenes that would look most dramatic/interesting as quick flashes\n' +
+            '- Each clip should be 0.4-0.5 seconds\n' +
+            '- Use different scenes for variety\n' +
+            '- startSec is where in the 5-second clip to grab from (0-4)\n' +
+            '- Pick 4-5 clips total';
 
         try {
-            const response = await this.ai.models.generateContent({
+            var response = await this.ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: prompt,
-                config: {
-                    responseMimeType: 'application/json'
-                }
+                config: { responseMimeType: 'application/json' }
             });
 
-            const text = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text;
+            var text = response.text || (response.candidates && response.candidates[0] &&
+                response.candidates[0].content && response.candidates[0].content.parts &&
+                response.candidates[0].content.parts[0] && response.candidates[0].content.parts[0].text);
             if (!text) throw new Error('Empty response from Gemini');
 
-            // Parse JSON (handle markdown wrapping)
-            let jsonText = text;
-            const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+            var jsonText = text;
+            var jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
             if (jsonMatch) jsonText = jsonMatch[1];
 
-            const edl = JSON.parse(jsonText.trim());
-
-            // Validate structure
-            if (!edl.hook || !edl.body || !edl.sentences) {
-                throw new Error('Invalid EDL structure from Gemini');
+            var result = JSON.parse(jsonText.trim());
+            if (!result.hook || !result.hook.clips) {
+                throw new Error('Invalid hook structure from Gemini');
             }
 
-            console.log(`✅ Gemini EDL: ${edl.hook.clips.length} hook clips, ${edl.body.length} body segments, ${edl.sentences.length} sentences`);
+            // Build body segments directly from scenes (Claude's scriptLine mapping)
+            var body = scenes.map(function(s, i) {
+                return {
+                    scene: s.sceneNumber || i + 1,
+                    scriptLine: s.scriptLine || '',
+                    startSec: 0
+                };
+            });
+
+            var edl = {
+                hook: result.hook,
+                body: body,
+                scenes: scenes
+            };
+
+            console.log('✅ Hook: ' + edl.hook.clips.length + ' clips, Body: ' + edl.body.length + ' segments (from Claude scriptLines)');
             return edl;
 
         } catch (error) {
             console.error('Gemini analysis error:', error.message);
-            throw new Error('Failed to generate edit decision list: ' + error.message);
+            // Fallback: auto-pick first 5 scenes for hook
+            console.log('⚠️ Using fallback hook selection');
+            var fallbackHook = [];
+            for (var i = 0; i < Math.min(5, scenes.length); i++) {
+                fallbackHook.push({
+                    scene: scenes[i].sceneNumber || i + 1,
+                    startSec: 1.0,
+                    duration: 0.5
+                });
+            }
+            return {
+                hook: { clips: fallbackHook },
+                body: scenes.map(function(s, j) {
+                    return { scene: s.sceneNumber || j + 1, scriptLine: s.scriptLine || '', startSec: 0 };
+                }),
+                scenes: scenes
+            };
         }
     }
 }

@@ -114,8 +114,7 @@ class JobQueue {
                 videoUrl: result.videoUrl,
                 duration: result.duration,
                 hookClips: edl.hook.clips.length,
-                bodySegments: edl.body.length,
-                sentences: edl.sentences.length
+                bodySegments: edl.body.length
             };
             this.updateJob(jobId, STATES.COMPLETE, 'Video assembled!');
 

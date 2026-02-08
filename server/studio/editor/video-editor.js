@@ -94,11 +94,11 @@ class VideoEditor {
     }
 
     /**
-     * Build edit list with proper sentence-based timing.
+     * Build edit list using Claude's scriptLine mapping for body timing.
      * 
-     * Instead of dividing time evenly, we estimate each sentence's duration
-     * proportionally by character count. This way scene switches align with
-     * sentence boundaries in the voiceover.
+     * Each scene has a scriptLine (the chunk of script Claude assigned to it).
+     * Duration is proportional to scriptLine length — longer lines get more time.
+     * This naturally aligns scene switches with the voiceover.
      */
     buildEditList(edl, clipPaths, voiceDuration) {
         var clips = [];
@@ -120,36 +120,28 @@ class VideoEditor {
             }
         }
 
-        // Calculate sentence durations proportionally by character count
+        // Body: use scriptLine lengths for proportional timing
         var hookDur = currentTime;
         var bodyTime = Math.max(voiceDuration - hookDur, 10);
-        var sentences = edl.sentences || [];
-        var hookEndIdx = edl.hookEndSentenceIndex || 0;
 
-        // Get body sentences (after hook)
-        var bodySentences = sentences.slice(hookEndIdx);
+        // Calculate total character count across all body scriptLines
         var totalChars = 0;
-        for (var s = 0; s < bodySentences.length; s++) {
-            totalChars += (bodySentences[s] || '').length;
+        for (var b = 0; b < edl.body.length; b++) {
+            totalChars += Math.max((edl.body[b].scriptLine || '').length, 5);
         }
 
-        // Map each body segment to its sentence duration
         for (var k = 0; k < edl.body.length; k++) {
             var seg = edl.body[k];
             var bodySrc = clipPaths[seg.scene];
             if (!bodySrc) continue;
 
-            // Calculate this segment's duration based on its sentence length
-            var sentenceText = seg.sentence || bodySentences[k] || '';
-            var charLen = Math.max(sentenceText.length, 10);
-            var segDur;
-            if (totalChars > 0) {
-                segDur = (charLen / totalChars) * bodyTime;
-            } else {
-                segDur = bodyTime / Math.max(edl.body.length, 1);
-            }
-            // Clamp: min 1.5s, max 8s (let clips play out)
-            segDur = Math.max(1.5, Math.min(segDur, 8));
+            var scriptLine = seg.scriptLine || '';
+            var charLen = Math.max(scriptLine.length, 5);
+
+            // Duration proportional to this scriptLine's share of total text
+            var segDur = (charLen / totalChars) * bodyTime;
+            // Clamp: min 2s, max 10s (let clips play their full duration)
+            segDur = Math.max(2, Math.min(segDur, 10));
 
             // Track scene usage to avoid replaying same portion
             var sceneKey = String(seg.scene);
@@ -158,14 +150,14 @@ class VideoEditor {
             if (ss + segDur > 5) ss = 0;
             sceneUsage[sceneKey] = ss + segDur;
 
-            // Check if this sentence has a time marker
-            var hasTimeMarker = TIME_MARKER_RE.test(sentenceText);
+            // Detect time markers for SFX
+            var hasTimeMarker = TIME_MARKER_RE.test(scriptLine);
 
             clips.push({
                 src: bodySrc, ss: ss, duration: segDur,
                 type: 'body', startAt: currentTime,
                 hasTimeMarker: hasTimeMarker,
-                sentence: sentenceText.substring(0, 60)
+                sentence: scriptLine.substring(0, 60)
             });
             currentTime += segDur;
         }
@@ -192,7 +184,7 @@ class VideoEditor {
                     '-t', String(clip.duration),
                     '-i', clip.src,
                     '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1',
-                    '-af', 'volume=0.35',
+                    '-af', 'volume=0.45',
                     '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '30',
                     '-pix_fmt', 'yuv420p',
                     '-c:a', 'aac', '-b:a', '64k', '-ar', '44100', '-ac', '2',
@@ -267,7 +259,7 @@ class VideoEditor {
             await this.ffmpeg([
                 '-i', concatVideoPath, '-i', voiceoverPath,
                 '-filter_complex',
-                '[0:a]volume=0.7[clip];[1:a]volume=2.0[vo];[clip][vo]amix=inputs=2:duration=shortest:dropout_transition=2[aout]',
+                '[0:a]volume=0.9[clip];[1:a]volume=2.0[vo];[clip][vo]amix=inputs=2:duration=shortest:dropout_transition=2[aout]',
                 '-map', '0:v', '-map', '[aout]',
                 '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
                 '-movflags', '+faststart', '-y', outputPath
@@ -284,7 +276,7 @@ class VideoEditor {
             await this.ffmpeg([
                 '-i', concatVideoPath, '-i', voiceoverPath, '-i', sfxMixPath,
                 '-filter_complex',
-                '[0:a]volume=1.0[clip];[1:a]volume=3.0[vo];[2:a]volume=4.5[sfx];[clip][vo][sfx]amix=inputs=3:duration=shortest:dropout_transition=2[aout]',
+                '[0:a]volume=1.5[clip];[1:a]volume=3.0[vo];[2:a]volume=8.0[sfx];[clip][vo][sfx]amix=inputs=3:duration=shortest:dropout_transition=2[aout]',
                 '-map', '0:v', '-map', '[aout]',
                 '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
                 '-movflags', '+faststart', '-y', outputPath
@@ -294,7 +286,7 @@ class VideoEditor {
             await this.ffmpeg([
                 '-i', concatVideoPath, '-i', voiceoverPath,
                 '-filter_complex',
-                '[0:a]volume=0.7[clip];[1:a]volume=2.0[vo];[clip][vo]amix=inputs=2:duration=shortest:dropout_transition=2[aout]',
+                '[0:a]volume=0.9[clip];[1:a]volume=2.0[vo];[clip][vo]amix=inputs=2:duration=shortest:dropout_transition=2[aout]',
                 '-map', '0:v', '-map', '[aout]',
                 '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
                 '-movflags', '+faststart', '-y', outputPath
