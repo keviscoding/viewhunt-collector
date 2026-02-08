@@ -668,3 +668,91 @@ async function downloadFile(url, filename) {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ==================== SFX MANAGEMENT ====================
+
+var sfxAudioEl = null;
+
+function toggleSfxPanel() {
+    var toggle = document.getElementById('sfx-toggle');
+    var body = document.getElementById('sfx-body');
+    toggle.classList.toggle('open');
+    body.classList.toggle('open');
+    if (body.classList.contains('open')) loadSfxStatus();
+}
+
+function loadSfxStatus() {
+    fetch('/api/studio/sfx', {
+        headers: { 'Authorization': 'Bearer ' + getAuthToken() }
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        var files = data.sfx || [];
+        var types = ['hook', 'transition', 'riser'];
+        for (var i = 0; i < types.length; i++) {
+            var t = types[i];
+            var found = files.find(function(f) { return f.startsWith(t + '.'); });
+            var statusEl = document.getElementById('sfx-status-' + t);
+            var playBtn = document.getElementById('sfx-play-' + t);
+            if (found) {
+                statusEl.textContent = '✓ ' + found;
+                statusEl.className = 'sfx-status uploaded';
+                playBtn.disabled = false;
+            } else {
+                statusEl.textContent = 'Not uploaded';
+                statusEl.className = 'sfx-status';
+                playBtn.disabled = true;
+            }
+        }
+    })
+    .catch(function(err) { console.warn('SFX status load failed:', err); });
+}
+
+async function uploadSfx(type, input) {
+    var file = input.files[0];
+    if (!file) return;
+
+    var ext = file.name.split('.').pop();
+    var renamedFile = new File([file], type + '.' + ext, { type: file.type });
+
+    var statusEl = document.getElementById('sfx-status-' + type);
+    statusEl.textContent = '⏳ Uploading...';
+    statusEl.className = 'sfx-status';
+
+    try {
+        var fd = new FormData();
+        fd.append('sfx', renamedFile);
+        var res = await fetch('/api/studio/upload-sfx', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + getAuthToken() },
+            body: fd
+        });
+        if (!res.ok) throw new Error('Upload failed: ' + res.status);
+        var data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Upload failed');
+
+        statusEl.textContent = '✓ ' + data.filename;
+        statusEl.className = 'sfx-status uploaded';
+        document.getElementById('sfx-play-' + type).disabled = false;
+    } catch (err) {
+        console.error('SFX upload error:', err);
+        statusEl.textContent = 'Upload failed';
+        statusEl.className = 'sfx-status';
+    }
+
+    input.value = '';
+}
+
+function playSfx(type) {
+    if (sfxAudioEl) { sfxAudioEl.pause(); sfxAudioEl = null; }
+    var statusEl = document.getElementById('sfx-status-' + type);
+    var filename = (statusEl.textContent || '').replace('✓ ', '').trim();
+    if (!filename) return;
+
+    sfxAudioEl = new Audio('/api/studio/sfx/' + filename);
+    var btn = document.getElementById('sfx-play-' + type);
+    btn.textContent = '⏸';
+    sfxAudioEl.play();
+    sfxAudioEl.onended = function() { btn.textContent = '▶'; sfxAudioEl = null; };
+    sfxAudioEl.onerror = function() { btn.textContent = '▶'; sfxAudioEl = null; };
+}

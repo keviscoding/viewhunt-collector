@@ -427,6 +427,14 @@ router.get('/sfx', requireAuth, (req, res) => {
     res.json({ sfx: files });
 });
 
+// Serve SFX file for preview
+router.get('/sfx/:filename', requireAuth, (req, res) => {
+    var sfxDir = path.join(__dirname, 'editor/assets/sfx');
+    var filePath = path.join(sfxDir, req.params.filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
+    res.sendFile(filePath);
+});
+
 // Health check
 router.get('/health', (req, res) => {
     res.json({ 
