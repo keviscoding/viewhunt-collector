@@ -242,6 +242,9 @@ class VideoEditor {
      * CLIP LOOPING: When a segment needs more time than the clip provides,
      * we loop it — play through to the end, then jump back to the midpoint
      * and replay from there, filling the needed duration seamlessly.
+     * 
+     * After encoding, we verify the actual output duration. If FFmpeg produced
+     * less than requested (clip was shorter than reported), we loop to fill.
      */
     async sequentialAssemble(editList, jobDir) {
         var tsFiles = [];
@@ -260,19 +263,36 @@ class VideoEditor {
             // How much clip is available from the start offset
             var availableFromSs = Math.max(clipLen - clip.ss, 0.5);
 
-            if (clip.duration <= availableFromSs + 0.3) {
-                // Clip is long enough — single pass
-                var tsPath = path.join(jobDir, 'seg-' + i + '.ts');
+            // Always try single pass first, then verify duration
+            var tsPath = path.join(jobDir, 'seg-' + i + '.ts');
+            var needsLoop = false;
+
+            if (clip.duration <= availableFromSs - 0.1) {
+                // Clip should be long enough — single pass
                 await this.encodeSegment(clip.src, clip.ss, clip.duration, hasAudio, tsPath);
                 var segSize = 0;
                 try { segSize = fs.statSync(tsPath).size; } catch(e) {}
-                if (segSize >= 100) {
-                    tsFiles.push(tsPath);
-                } else {
+                if (segSize < 100) {
                     console.warn('  ⚠️ Segment ' + i + ' too small, skipping');
                     continue;
                 }
+
+                // Verify actual duration — if FFmpeg gave us less, we need to loop
+                var actualDur = await this.getMediaDuration(tsPath);
+                if (actualDur > 0 && actualDur < clip.duration - 0.5) {
+                    console.log('  ⚠️ Seg ' + i + ': requested ' + clip.duration.toFixed(1) + 's but got ' + actualDur.toFixed(1) + 's — switching to loop');
+                    needsLoop = true;
+                    try { fs.unlinkSync(tsPath); } catch(e) {}
+                }
+
+                if (!needsLoop) {
+                    tsFiles.push(tsPath);
+                }
             } else {
+                needsLoop = true;
+            }
+
+            if (needsLoop) {
                 // Clip too short for this segment — loop it
                 var remaining = clip.duration;
                 var loopIdx = 0;
@@ -285,7 +305,14 @@ class VideoEditor {
                 await this.encodeSegment(clip.src, clip.ss, firstDur, hasAudio, partPath);
                 var pSize = 0;
                 try { pSize = fs.statSync(partPath).size; } catch(e) {}
-                if (pSize >= 100) { partFiles.push(partPath); remaining -= firstDur; }
+                if (pSize >= 100) {
+                    // Check actual duration of this part
+                    var partActual = await this.getMediaDuration(partPath);
+                    if (partActual > 0) {
+                        partFiles.push(partPath);
+                        remaining -= partActual; // use ACTUAL duration, not requested
+                    }
+                }
                 loopIdx++;
 
                 // Loop: jump back to midpoint, play to end, repeat
@@ -296,7 +323,13 @@ class VideoEditor {
                     await this.encodeSegment(clip.src, midpoint, loopDur, hasAudio, partPath);
                     pSize = 0;
                     try { pSize = fs.statSync(partPath).size; } catch(e) {}
-                    if (pSize >= 100) { partFiles.push(partPath); remaining -= loopDur; }
+                    if (pSize >= 100) {
+                        var loopActual = await this.getMediaDuration(partPath);
+                        if (loopActual > 0) {
+                            partFiles.push(partPath);
+                            remaining -= loopActual;
+                        } else break;
+                    }
                     else break;
                     loopIdx++;
                     if (loopIdx > 10) break; // safety
@@ -324,7 +357,7 @@ class VideoEditor {
             }
 
             var tag = hasAudio ? '🔊' : '🔇';
-            var loopTag = (clip.duration > availableFromSs + 0.3) ? ' 🔄loop(' + availableFromSs.toFixed(1) + 's avail, ' + clip.duration.toFixed(1) + 's needed)' : '';
+            var loopTag = needsLoop ? ' 🔄loop(' + availableFromSs.toFixed(1) + 's avail, ' + clip.duration.toFixed(1) + 's needed)' : '';
             var info = clip.sentence ? ' "' + clip.sentence + '"' : '';
             console.log('  ✓ Seg ' + i + '/' + (editList.length - 1) + ' (' + clip.type + ', ' + clip.duration.toFixed(1) + 's) ' + tag + loopTag + info);
         }
@@ -569,6 +602,8 @@ class VideoEditor {
 
         // Build ASS file content
         // PlayResX/PlayResY match our 1080x1920 vertical video
+        // ASS colors are in &HAABBGGRR format (hex, reversed BGR)
+        // White = &H00FFFFFF, Yellow = &H0000FFFF (BGR: 00,FF,FF = yellow)
         var ass = '[Script Info]\n' +
             'ScriptType: v4.00+\n' +
             'PlayResX: 1080\n' +
@@ -577,8 +612,8 @@ class VideoEditor {
             '\n' +
             '[V4+ Styles]\n' +
             'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n' +
-            'Style: Caption,Arial,72,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,200,1\n' +
-            'Style: TimeTitle,Arial,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,8,40,40,180,1\n' +
+            'Style: Caption,Arial,72,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,280,1\n' +
+            'Style: TimeTitle,Arial,64,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,8,40,40,180,1\n' +
             '\n' +
             '[Events]\n' +
             'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n';
