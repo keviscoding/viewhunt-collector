@@ -1,9 +1,10 @@
 /**
- * Gemini Analyzer — Hybrid approach:
+ * Gemini Analyzer — Voiceover-driven approach:
  *   1. Gemini picks 4-5 hook clips (visual analysis)
  *   2. Body segments come from Claude's scriptLine mapping
- *   3. Gemini analyzes the voiceover audio to find real timestamps
- *      for each scriptLine → scene switches land exactly on the narration
+ *   3. Gemini transcribes the voiceover audio word-by-word with timestamps
+ *      → We match words back to script lines to get exact scene start times
+ *      → Word timestamps drive captions directly (no guessing)
  * 
  * Skips scene 1 (hook line) from body since it's already covered by hook clips.
  */
@@ -17,7 +18,7 @@ class GeminiAnalyzer {
 
     /**
      * Analyze scenes: pick hook clips + build body segments.
-     * If voiceoverPath is provided, also timestamps body segments against the audio.
+     * Transcribes voiceover for word-level timestamps.
      */
     async analyze(script, scenes, voiceoverPath) {
         console.log('🧠 Gemini: Selecting hook clips...');
@@ -96,20 +97,27 @@ class GeminiAnalyzer {
 
         console.log('📋 Body: ' + body.length + ' segments (scene 1 skipped — hook line)');
 
-        // Try voiceover-aware timestamping
+        // Transcribe voiceover word-by-word with timestamps
+        var transcription = null;
         var timestamps = null;
+        var wordTimestamps = null;
+
         if (voiceoverPath) {
-            timestamps = await this.analyzeVoiceoverTiming(voiceoverPath, body);
+            transcription = await this.transcribeVoiceover(voiceoverPath);
         }
 
-        // Word-level timestamps are now derived from scene timestamps in video-editor.js
-        // (proportional distribution within each segment — deterministic, no AI guessing)
+        if (transcription && transcription.length > 0) {
+            // Match transcribed words back to script lines → scene-level timestamps
+            var matched = this.matchWordsToScenes(transcription, body);
+            timestamps = matched.sceneTimestamps;
+            wordTimestamps = matched.wordTimestamps;
+        }
 
         var edl = {
             hook: hookResult.hook,
             body: body,
-            timestamps: timestamps, // null if analysis failed/skipped
-            wordTimestamps: null, // derived in video-editor from scene timestamps
+            timestamps: timestamps,
+            wordTimestamps: wordTimestamps,
             scenes: scenes
         };
 
@@ -117,39 +125,33 @@ class GeminiAnalyzer {
     }
 
     /**
-     * Send voiceover audio + scriptLines to Gemini.
-     * Ask it to find the timestamp (in seconds) where each scriptLine
-     * starts being spoken in the audio.
+     * Transcribe voiceover audio word-by-word with timestamps using Gemini.
+     * Sends the WAV audio and asks for every word + its start/end time.
      * 
-     * Returns array of { index, startSec } or null on failure.
+     * Returns array of { word, startSec, endSec } or null on failure.
      */
-    async analyzeVoiceoverTiming(voiceoverPath, bodySegments) {
-        console.log('🎧 Gemini: Analyzing voiceover for scene timestamps...');
+    async transcribeVoiceover(voiceoverPath) {
+        console.log('🎧 Gemini: Transcribing voiceover word-by-word...');
 
         try {
             var audioBuffer = fs.readFileSync(voiceoverPath);
             var audioBase64 = audioBuffer.toString('base64');
 
-            var scriptLines = bodySegments.map(function(seg, i) {
-                return (i + 1) + '. Scene ' + seg.scene + ': "' + seg.scriptLine + '"';
-            }).join('\n');
-
-            var prompt = 'I have a voiceover audio file and a list of script lines. ' +
-                'Listen to the audio and tell me the TIMESTAMP (in seconds) where each script line STARTS being spoken.\n\n' +
-                'The audio begins with the hook line (first sentence of the script) which is NOT in the list below. ' +
-                'The lines below start AFTER the hook.\n\n' +
-                'SCRIPT LINES:\n' + scriptLines + '\n\n' +
-                'Return ONLY valid JSON — an array of objects:\n' +
+            var prompt = 'Listen to this audio and give me word-level timestamps for EVERY word spoken.\n\n' +
+                'Return ONLY valid JSON — an array of objects, one per word:\n' +
                 '[\n' +
-                '  { "index": 1, "scene": 3, "startSec": 4.2 },\n' +
-                '  { "index": 2, "scene": 5, "startSec": 12.8 }\n' +
+                '  { "word": "what", "startSec": 0.0, "endSec": 0.2 },\n' +
+                '  { "word": "happens", "startSec": 0.2, "endSec": 0.5 },\n' +
+                '  { "word": "if", "startSec": 0.5, "endSec": 0.6 }\n' +
                 ']\n\n' +
                 'RULES:\n' +
-                '- Listen carefully to the audio for when each line starts\n' +
-                '- startSec is seconds from the beginning of the audio file\n' +
-                '- Times should be in ascending order\n' +
+                '- Include EVERY single word spoken in the audio, in order\n' +
+                '- startSec = when the word starts being spoken (seconds from beginning)\n' +
+                '- endSec = when the word finishes being spoken\n' +
                 '- Be as precise as possible (to 0.1s)\n' +
-                '- Include ALL lines from the list';
+                '- Times must be in ascending order\n' +
+                '- Do NOT skip any words\n' +
+                '- The word field should be lowercase';
 
             var response = await this.ai.models.generateContent({
                 model: 'gemini-2.5-flash',
@@ -178,37 +180,160 @@ class GeminiAnalyzer {
             var jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
             if (jsonMatch) jsonText = jsonMatch[1];
 
-            var timestamps = JSON.parse(jsonText.trim());
-            if (!Array.isArray(timestamps) || timestamps.length === 0) {
-                throw new Error('Invalid timestamps array');
+            var words = JSON.parse(jsonText.trim());
+            if (!Array.isArray(words) || words.length === 0) {
+                throw new Error('Invalid word array');
             }
 
-            // Validate: must be ascending and reasonable
+            // Validate: ascending, reasonable
             var valid = true;
-            for (var k = 0; k < timestamps.length; k++) {
-                if (typeof timestamps[k].startSec !== 'number' || timestamps[k].startSec < 0) {
+            for (var k = 0; k < words.length; k++) {
+                if (typeof words[k].startSec !== 'number' || words[k].startSec < 0) {
                     valid = false; break;
                 }
-                if (k > 0 && timestamps[k].startSec < timestamps[k - 1].startSec) {
+                if (k > 0 && words[k].startSec < words[k - 1].startSec - 0.1) {
                     valid = false; break;
                 }
             }
 
             if (!valid) {
-                console.warn('⚠️ Timestamps not ascending or invalid, falling back to proportional');
+                console.warn('⚠️ Word timestamps not valid/ascending, falling back');
                 return null;
             }
 
-            console.log('✅ Voiceover timestamps: ' + timestamps.map(function(t) {
-                return 'S' + t.scene + '@' + t.startSec.toFixed(1) + 's';
-            }).join(', '));
+            console.log('✅ Transcription: ' + words.length + ' words (' +
+                words[0].word + ' @ ' + words[0].startSec.toFixed(1) + 's → ' +
+                words[words.length - 1].word + ' @ ' + words[words.length - 1].startSec.toFixed(1) + 's)');
 
-            return timestamps;
+            return words;
 
         } catch (error) {
-            console.warn('⚠️ Voiceover analysis failed: ' + error.message + ' — using proportional timing');
+            console.warn('⚠️ Voiceover transcription failed: ' + error.message + ' — using proportional timing');
             return null;
         }
+    }
+
+    /**
+     * Match transcribed words back to script lines.
+     * 
+     * Strategy: For each body segment's scriptLine, find where its first
+     * few words appear in the transcription. The timestamp of the first
+     * matched word = when that scene line starts being spoken.
+     * 
+     * Also builds a per-scene word timestamp array for captions.
+     * 
+     * Returns { sceneTimestamps, wordTimestamps }
+     */
+    matchWordsToScenes(transcription, bodySegments) {
+        var sceneTimestamps = [];
+        var wordTimestamps = [];
+
+        // Normalize transcription words for matching
+        var tWords = transcription.map(function(w) {
+            return {
+                word: (w.word || '').toLowerCase().replace(/[^a-z0-9]/g, ''),
+                startSec: w.startSec,
+                endSec: w.endSec || w.startSec + 0.2,
+                original: w.word || ''
+            };
+        });
+
+        var searchFrom = 0; // Track position in transcription to avoid matching backwards
+
+        for (var i = 0; i < bodySegments.length; i++) {
+            var seg = bodySegments[i];
+            var line = (seg.scriptLine || '').toLowerCase();
+            var lineWords = line.split(/\s+/).filter(function(w) { return w.length > 0; });
+            if (lineWords.length === 0) continue;
+
+            // Normalize the first few words of this script line for matching
+            var matchWords = [];
+            for (var m = 0; m < Math.min(4, lineWords.length); m++) {
+                matchWords.push(lineWords[m].replace(/[^a-z0-9]/g, ''));
+            }
+
+            // Search for these words in the transcription (starting from searchFrom)
+            var bestMatch = -1;
+            for (var t = searchFrom; t < tWords.length - matchWords.length + 1; t++) {
+                var matched = 0;
+                for (var mw = 0; mw < matchWords.length; mw++) {
+                    if (tWords[t + mw].word === matchWords[mw]) {
+                        matched++;
+                    }
+                }
+                // Require at least 2 words to match (or all if line has < 3 words)
+                var threshold = Math.min(2, matchWords.length);
+                if (matched >= threshold) {
+                    bestMatch = t;
+                    break;
+                }
+            }
+
+            if (bestMatch >= 0) {
+                var startSec = tWords[bestMatch].startSec;
+                sceneTimestamps.push({
+                    index: i + 1,
+                    scene: seg.scene,
+                    startSec: startSec
+                });
+
+                // Find where this scene's words end (= where next scene starts, or end of transcription)
+                // We'll assign word timestamps for this scene later after all scenes are matched
+                seg._transcriptionStart = bestMatch;
+                searchFrom = bestMatch + 1;
+            } else {
+                // Couldn't match — will use proportional fallback for this segment
+                seg._transcriptionStart = -1;
+            }
+        }
+
+        // Now build per-scene word timestamps
+        // For each scene, its words run from _transcriptionStart to the next scene's _transcriptionStart
+        for (var i = 0; i < bodySegments.length; i++) {
+            var seg = bodySegments[i];
+            var tStart = seg._transcriptionStart;
+            if (tStart < 0) continue;
+
+            // Find end: next scene's transcription start, or end of transcription
+            var tEnd = tWords.length;
+            for (var j = i + 1; j < bodySegments.length; j++) {
+                if (bodySegments[j]._transcriptionStart >= 0) {
+                    tEnd = bodySegments[j]._transcriptionStart;
+                    break;
+                }
+            }
+
+            for (var w = tStart; w < tEnd; w++) {
+                wordTimestamps.push({
+                    word: tWords[w].original,
+                    startSec: tWords[w].startSec,
+                    endSec: tWords[w].endSec,
+                    scene: seg.scene
+                });
+            }
+
+            // Clean up temp property
+            delete seg._transcriptionStart;
+        }
+
+        // Clean up any remaining temp properties
+        for (var i = 0; i < bodySegments.length; i++) {
+            delete bodySegments[i]._transcriptionStart;
+        }
+
+        console.log('📍 Scene matching: ' + sceneTimestamps.length + '/' + bodySegments.length +
+            ' scenes matched, ' + wordTimestamps.length + ' words mapped');
+
+        if (sceneTimestamps.length > 0) {
+            console.log('  ' + sceneTimestamps.map(function(t) {
+                return 'S' + t.scene + '@' + t.startSec.toFixed(1) + 's';
+            }).join(', '));
+        }
+
+        return {
+            sceneTimestamps: sceneTimestamps.length > 0 ? sceneTimestamps : null,
+            wordTimestamps: wordTimestamps.length > 0 ? wordTimestamps : null
+        };
     }
 }
 

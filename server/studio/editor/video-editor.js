@@ -607,88 +607,99 @@ class VideoEditor {
     }
 
     /**
-     * Build an ASS (Advanced SubStation Alpha) subtitle file for text overlays.
+     * Build an ASS subtitle file for text overlays.
      * 
-     * Word captions are derived from the edit list — each body segment has a
-     * scriptLine and a known startAt/duration. We split the scriptLine into
-     * words and distribute them proportionally within that time window.
-     * This is deterministic math tied to the same timestamps that drive
-     * scene changes, so captions are always in sync with the video.
+     * Two caption strategies:
+     *   PRIMARY: Use real word timestamps from Gemini transcription (edl.wordTimestamps).
+     *            These are actual audio-analyzed timestamps — perfectly in sync.
+     *   FALLBACK: Proportional distribution within each segment's time window.
      * 
      * Time marker titles appear at the same time as the transition SFX
      * (clip.startAt - 2.5s offset).
      * 
-     * Returns the file path, or null if no overlays.
+     * hookDur offset: word timestamps from Gemini are relative to the start of
+     * the voiceover audio. But in the final video, the voiceover starts AFTER
+     * the hook clips. So we add hookDur to every word timestamp.
      */
     buildAssSubtitles(editList, edl, jobDir) {
         var captionEvents = [];
         var titleEvents = [];
 
-        // Caption offset: captions appear slightly before the audio moment
-        // so they feel "on time" rather than lagging behind speech.
-        var CAPTION_OFFSET = 0.3; // seconds earlier
-
-        // 1. Word-by-word captions — derived from edit list segments
-        for (var i = 0; i < editList.length; i++) {
-            var clip = editList[i];
-            if (clip.type !== 'body' || !clip.sentence) continue;
-
-            // Get the full scriptLine (sentence is truncated to 60 chars in editList)
-            var fullLine = '';
-            if (edl && edl.body && clip.sceneNum) {
-                for (var b = 0; b < edl.body.length; b++) {
-                    if (edl.body[b].scene === clip.sceneNum) {
-                        fullLine = edl.body[b].scriptLine || '';
-                        break;
-                    }
-                }
-            }
-            if (!fullLine) fullLine = clip.sentence;
-
-            // Split into words
-            var words = fullLine.split(/\s+/).filter(function(w) { return w.length > 0; });
-            if (words.length === 0) continue;
-
-            // Distribute words proportionally within this segment's time window
-            var segStart = clip.startAt;
-            var segDur = clip.duration;
-            var segEnd = segStart + segDur;
-
-            // Total character length for proportional distribution
-            var totalChars = 0;
-            for (var w = 0; w < words.length; w++) {
-                totalChars += words[w].length;
-            }
-
-            var cursor = segStart;
-            for (var w = 0; w < words.length; w++) {
-                var wordDur = (words[w].length / totalChars) * segDur;
-                // Min 0.15s per word
-                wordDur = Math.max(0.15, wordDur);
-
-                // Don't let cursor exceed segment end
-                if (cursor >= segEnd) break;
-                // Clamp last word to segment boundary
-                if (cursor + wordDur > segEnd) wordDur = segEnd - cursor;
-
-                var cleanWord = words[w].replace(/[^a-zA-Z0-9']/g, '').trim().toUpperCase();
-                if (!cleanWord) { cursor += wordDur; continue; }
-
-                // Apply offset so captions feel in-sync (slightly early)
-                var capStart = Math.max(cursor - CAPTION_OFFSET, 0);
-                var capEnd = Math.max(cursor + wordDur - CAPTION_OFFSET, capStart + 0.1);
-
-                captionEvents.push({
-                    start: this.secsToAssTime(capStart),
-                    end: this.secsToAssTime(capEnd),
-                    text: cleanWord
-                });
-                cursor += wordDur;
+        // Calculate hook duration (word timestamps need this offset)
+        var hookDur = 0;
+        for (var h = 0; h < editList.length; h++) {
+            if (editList[h].type === 'hook') {
+                hookDur = editList[h].startAt + editList[h].duration;
             }
         }
 
-        if (captionEvents.length > 0) {
-            console.log('  📝 Captions: ' + captionEvents.length + ' words (scene-derived, offset -' + CAPTION_OFFSET + 's)');
+        // 1. Word-by-word captions
+        if (edl && edl.wordTimestamps && edl.wordTimestamps.length > 0) {
+            // PRIMARY: Real word timestamps from Gemini transcription
+            var wt = edl.wordTimestamps;
+            for (var w = 0; w < wt.length; w++) {
+                var word = wt[w];
+                if (!word.word || typeof word.startSec !== 'number') continue;
+
+                var cleanWord = word.word.replace(/[^a-zA-Z0-9']/g, '').trim().toUpperCase();
+                if (!cleanWord) continue;
+
+                // Offset by hookDur since voiceover starts after hook clips
+                var wStart = hookDur + word.startSec;
+                var wEnd = hookDur + (word.endSec || word.startSec + 0.2);
+
+                captionEvents.push({
+                    start: this.secsToAssTime(wStart),
+                    end: this.secsToAssTime(wEnd),
+                    text: cleanWord
+                });
+            }
+            console.log('  📝 Captions: ' + captionEvents.length + ' words (Gemini transcription — real timestamps)');
+        } else {
+            // FALLBACK: Proportional distribution from edit list
+            for (var i = 0; i < editList.length; i++) {
+                var clip = editList[i];
+                if (clip.type !== 'body' || !clip.sentence) continue;
+
+                var fullLine = '';
+                if (edl && edl.body && clip.sceneNum) {
+                    for (var b = 0; b < edl.body.length; b++) {
+                        if (edl.body[b].scene === clip.sceneNum) {
+                            fullLine = edl.body[b].scriptLine || '';
+                            break;
+                        }
+                    }
+                }
+                if (!fullLine) fullLine = clip.sentence;
+
+                var words = fullLine.split(/\s+/).filter(function(w) { return w.length > 0; });
+                if (words.length === 0) continue;
+
+                var segStart = clip.startAt;
+                var segDur = clip.duration;
+                var segEnd = segStart + segDur;
+                var totalChars = 0;
+                for (var w = 0; w < words.length; w++) totalChars += words[w].length;
+
+                var cursor = segStart;
+                for (var w = 0; w < words.length; w++) {
+                    var wordDur = (words[w].length / totalChars) * segDur;
+                    wordDur = Math.max(0.15, wordDur);
+                    if (cursor >= segEnd) break;
+                    if (cursor + wordDur > segEnd) wordDur = segEnd - cursor;
+
+                    var cleanWord = words[w].replace(/[^a-zA-Z0-9']/g, '').trim().toUpperCase();
+                    if (!cleanWord) { cursor += wordDur; continue; }
+
+                    captionEvents.push({
+                        start: this.secsToAssTime(cursor),
+                        end: this.secsToAssTime(cursor + wordDur),
+                        text: cleanWord
+                    });
+                    cursor += wordDur;
+                }
+            }
+            console.log('  📝 Captions: ' + captionEvents.length + ' words (proportional fallback)');
         }
 
         // 2. Time marker titles — synced to transition SFX timing (startAt - 2.5s)
