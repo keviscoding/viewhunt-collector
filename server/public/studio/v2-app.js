@@ -95,6 +95,7 @@ async function handleDirectorGeneration(script) {
         bar.id = 'director-action-bar';
         bar.innerHTML = `
             <button class="btn btn-green" onclick="generateAllSelectedVideos()">🎥 Generate All Selected Videos</button>
+            <button class="btn btn-primary" onclick="assembleVideo()" id="director-assemble-btn" style="display:none">🎬 Assemble Final Video</button>
             <button class="btn btn-primary" onclick="downloadAllDirectorVideos()" id="director-download-btn" style="display:none">📥 Download All Videos</button>
             <button class="btn btn-secondary" onclick="resetToConfig()">← Start Over</button>
         `;
@@ -333,9 +334,11 @@ async function generateAllSelectedVideos() {
 
 function updateDirectorDownloadBtn() {
     const btn = document.getElementById('director-download-btn');
+    const assembleBtn = document.getElementById('director-assemble-btn');
     if (!btn) return;
     const hasVideos = currentScenes.some(s => s._videoUrl);
     btn.style.display = hasVideos ? 'inline-flex' : 'none';
+    if (assembleBtn) assembleBtn.style.display = hasVideos ? 'inline-flex' : 'none';
 }
 
 async function downloadAllDirectorVideos() {
@@ -356,6 +359,71 @@ async function downloadAllDirectorVideos() {
     }
     
     btn.disabled = false; btn.textContent = '📥 Download All Videos';
+}
+
+// ==================== VIDEO ASSEMBLY ====================
+
+async function assembleVideo() {
+    const scenesWithVideo = currentScenes.filter(s => s._videoUrl);
+    if (scenesWithVideo.length === 0) return alert('Generate videos for scenes first');
+    
+    const script = document.getElementById('script').value.trim();
+    if (!script) return alert('Script is required for assembly');
+    
+    if (!confirm(`Assemble final video from ${scenesWithVideo.length} scenes?\nThis will:\n• Generate voiceover (Gemini TTS)\n• Create hook intro (rapid clips)\n• Add scene transitions + click sounds\n• Overlay one-word captions\n\nThis may take 1-3 minutes.`)) return;
+    
+    const btn = document.getElementById('director-assemble-btn');
+    btn.disabled = true; btn.textContent = '⏳ Assembling...';
+    
+    // Show progress area
+    const bar = document.getElementById('director-action-bar');
+    const progressDiv = document.createElement('div');
+    progressDiv.id = 'assembly-progress';
+    progressDiv.className = 'assembly-progress';
+    progressDiv.innerHTML = '🎬 Assembling final video... generating voiceover, analyzing edit points, compositing...';
+    bar.parentNode.insertBefore(progressDiv, bar.nextSibling);
+    
+    try {
+        // Prepare scenes payload
+        const scenesPayload = scenesWithVideo.map(s => ({
+            sceneNumber: s.sceneNumber,
+            scriptLine: s.scriptLine,
+            shotType: s.shotType,
+            imagePrompt: s.imagePrompt,
+            videoPrompt: s.videoPrompt,
+            videoUrl: s._videoUrl
+        }));
+        
+        const res = await fetch('/api/studio/assemble', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
+            body: JSON.stringify({ script, scenes: scenesPayload })
+        });
+        
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({ error: `Server error ${res.status}` }));
+            throw new Error(errData.error || `Server error ${res.status}`);
+        }
+        
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Assembly failed');
+        
+        // Show the final video
+        progressDiv.innerHTML = `
+            <div style="margin-bottom:1rem">✅ Final video assembled (${data.duration?.toFixed(1)}s) — ${data.hookClips} hook clips, ${data.bodySegments} body segments, ${data.sentences} sentences</div>
+            <video src="${data.videoUrl}" controls autoplay muted loop style="width:100%;max-width:360px;border-radius:12px;margin-bottom:0.75rem"></video>
+            <div>
+                <button class="btn btn-green btn-sm" onclick="downloadFile('${data.videoUrl}', 'final-video.mp4')">📥 Download Final Video</button>
+                <button class="btn btn-secondary btn-sm" onclick="assembleVideo()">↻ Re-assemble</button>
+            </div>
+        `;
+        
+    } catch (err) {
+        console.error('Assembly error:', err);
+        progressDiv.innerHTML = `<div style="color:var(--red)">❌ Assembly failed: ${err.message}</div><button class="btn btn-secondary btn-sm" onclick="document.getElementById('assembly-progress')?.remove()" style="margin-top:0.5rem">Dismiss</button>`;
+    } finally {
+        btn.disabled = false; btn.textContent = '🎬 Assemble Final Video';
+    }
 }
 
 // ==================== AUTO MODE ====================
