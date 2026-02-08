@@ -393,6 +393,40 @@ router.get('/assemble/status/:jobId', requireAuth, (req, res) => {
     res.json(status);
 });
 
+// Upload SFX files (hook.mp3, transition.mp3, riser.mp3)
+const sfxUpload = multer({
+    storage: multer.diskStorage({
+        destination: path.join(__dirname, 'editor/assets/sfx'),
+        filename: (req, file, cb) => {
+            // Keep original name (hook.mp3, transition.mp3, riser.mp3)
+            cb(null, file.originalname);
+        }
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('audio/')) cb(null, true);
+        else cb(new Error('Only audio files allowed'));
+    }
+});
+
+router.post('/upload-sfx', requireAuth, sfxUpload.single('sfx'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
+    console.log('🔊 SFX uploaded: ' + req.file.originalname);
+    res.json({ success: true, filename: req.file.originalname });
+});
+
+// List available SFX
+router.get('/sfx', requireAuth, (req, res) => {
+    var sfxDir = path.join(__dirname, 'editor/assets/sfx');
+    var files = [];
+    try {
+        files = fs.readdirSync(sfxDir).filter(function(f) {
+            return f.endsWith('.mp3') || f.endsWith('.wav') || f.endsWith('.aac');
+        });
+    } catch(e) {}
+    res.json({ sfx: files });
+});
+
 // Health check
 router.get('/health', (req, res) => {
     res.json({ 

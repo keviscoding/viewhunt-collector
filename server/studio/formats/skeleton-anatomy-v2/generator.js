@@ -521,7 +521,7 @@ Format your response as JSON:
                         input: {
                             prompt: videoPrompt,
                             image_urls: [imageUrl],
-                            sound: false,
+                            sound: true,
                             duration: '5'
                         }
                     },
