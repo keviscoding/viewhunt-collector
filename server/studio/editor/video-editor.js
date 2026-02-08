@@ -207,6 +207,7 @@ class VideoEditor {
                 src: bodySrc, ss: 0, duration: segDur,
                 type: 'body', startAt: startAt,
                 hasTimeMarker: hasTimeMarker,
+                sceneNum: seg.scene,
                 sentence: scriptLine.substring(0, 60)
             });
         }
@@ -244,6 +245,7 @@ class VideoEditor {
                 src: bodySrc, ss: 0, duration: segDur,
                 type: 'body', startAt: currentTime,
                 hasTimeMarker: hasTimeMarker,
+                sceneNum: seg.scene,
                 sentence: scriptLine.substring(0, 60)
             });
             currentTime += segDur;
@@ -536,11 +538,15 @@ class VideoEditor {
 
     /**
      * Build an ASS (Advanced SubStation Alpha) subtitle file for text overlays.
-     * Much more efficient than chaining 100+ drawtext filters.
      * 
-     * Contains two styles:
-     *   - "Caption" — word-by-word at the bottom, white bold, black outline
-     *   - "TimeTitle" — time markers at the top, white bold, fades out
+     * Word captions are derived from the edit list — each body segment has a
+     * scriptLine and a known startAt/duration. We split the scriptLine into
+     * words and distribute them proportionally within that time window.
+     * This is deterministic math tied to the same timestamps that drive
+     * scene changes, so captions are always in sync with the video.
+     * 
+     * Time marker titles appear at the same time as the transition SFX
+     * (clip.startAt - 2.5s offset).
      * 
      * Returns the file path, or null if no overlays.
      */
@@ -548,42 +554,85 @@ class VideoEditor {
         var captionEvents = [];
         var titleEvents = [];
 
-        // 1. Word-by-word captions
-        if (edl && edl.wordTimestamps && edl.wordTimestamps.length > 0) {
-            var words = edl.wordTimestamps;
-            console.log('  📝 Captions: ' + words.length + ' words');
+        // Caption offset: captions appear slightly before the audio moment
+        // so they feel "on time" rather than lagging behind speech.
+        var CAPTION_OFFSET = 0.3; // seconds earlier
 
+        // 1. Word-by-word captions — derived from edit list segments
+        for (var i = 0; i < editList.length; i++) {
+            var clip = editList[i];
+            if (clip.type !== 'body' || !clip.sentence) continue;
+
+            // Get the full scriptLine (sentence is truncated to 60 chars in editList)
+            var fullLine = '';
+            if (edl && edl.body && clip.sceneNum) {
+                for (var b = 0; b < edl.body.length; b++) {
+                    if (edl.body[b].scene === clip.sceneNum) {
+                        fullLine = edl.body[b].scriptLine || '';
+                        break;
+                    }
+                }
+            }
+            if (!fullLine) fullLine = clip.sentence;
+
+            // Split into words
+            var words = fullLine.split(/\s+/).filter(function(w) { return w.length > 0; });
+            if (words.length === 0) continue;
+
+            // Distribute words proportionally within this segment's time window
+            var segStart = clip.startAt;
+            var segDur = clip.duration;
+            var segEnd = segStart + segDur;
+
+            // Total character length for proportional distribution
+            var totalChars = 0;
             for (var w = 0; w < words.length; w++) {
-                var word = words[w];
-                if (!word.word || typeof word.startSec !== 'number') continue;
+                totalChars += words[w].length;
+            }
 
-                var cleanWord = word.word.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
-                if (!cleanWord) continue;
+            var cursor = segStart;
+            for (var w = 0; w < words.length; w++) {
+                var wordDur = (words[w].length / totalChars) * segDur;
+                // Min 0.15s per word
+                wordDur = Math.max(0.15, wordDur);
 
-                // Subtract 0.3s to compensate for slight caption delay
-                var wStart = Math.max(word.startSec - 0.3, 0);
-                var wEnd = (typeof word.endSec === 'number') ? Math.max(word.endSec - 0.3, wStart + 0.1) : wStart + 0.3;
+                // Don't let cursor exceed segment end
+                if (cursor >= segEnd) break;
+                // Clamp last word to segment boundary
+                if (cursor + wordDur > segEnd) wordDur = segEnd - cursor;
+
+                var cleanWord = words[w].replace(/[^a-zA-Z0-9']/g, '').trim().toUpperCase();
+                if (!cleanWord) { cursor += wordDur; continue; }
+
+                // Apply offset so captions feel in-sync (slightly early)
+                var capStart = Math.max(cursor - CAPTION_OFFSET, 0);
+                var capEnd = Math.max(cursor + wordDur - CAPTION_OFFSET, capStart + 0.1);
 
                 captionEvents.push({
-                    start: this.secsToAssTime(wStart),
-                    end: this.secsToAssTime(wEnd),
+                    start: this.secsToAssTime(capStart),
+                    end: this.secsToAssTime(capEnd),
                     text: cleanWord
                 });
+                cursor += wordDur;
             }
         }
 
-        // 2. Time marker titles at the top
+        if (captionEvents.length > 0) {
+            console.log('  📝 Captions: ' + captionEvents.length + ' words (scene-derived, offset -' + CAPTION_OFFSET + 's)');
+        }
+
+        // 2. Time marker titles — synced to transition SFX timing (startAt - 2.5s)
         for (var i = 0; i < editList.length; i++) {
             var clip = editList[i];
             if (clip.type === 'body' && clip.hasTimeMarker && clip.sentence) {
                 var markerText = this.extractTimeMarkerText(clip.sentence);
                 if (markerText) {
-                    var tStart = clip.startAt;
+                    // Same offset as transition SFX so they appear together
+                    var tStart = Math.max(clip.startAt - 2.5, 0);
                     titleEvents.push({
                         start: this.secsToAssTime(tStart),
                         end: this.secsToAssTime(tStart + 3),
                         text: markerText.toUpperCase(),
-                        // Fade: 0ms fade-in, 2000ms fade-out (last 2s of the 3s display)
                         fade: '\\fad(0,2000)'
                     });
                 }
@@ -610,7 +659,7 @@ class VideoEditor {
             '\n' +
             '[V4+ Styles]\n' +
             'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n' +
-            'Style: Caption,Arial,72,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,280,1\n' +
+            'Style: Caption,Arial,72,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,320,1\n' +
             'Style: TimeTitle,Arial,64,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,8,40,40,180,1\n' +
             '\n' +
             '[Events]\n' +
