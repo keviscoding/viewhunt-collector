@@ -154,11 +154,17 @@ class VideoEditor {
 
     /**
      * Body segments with real timestamps from Gemini voiceover analysis.
-     * Each timestamp tells us when that scriptLine starts in the audio.
-     * Duration = next timestamp - this timestamp (last segment fills to end).
      * 
-     * Always starts clips from ss=0 so the full 5s clip is available.
-     * The looping system in sequentialAssemble handles segments > 5s.
+     * Word timestamps from transcription are ABSOLUTE — they represent
+     * seconds from the start of the voiceover audio, which plays from
+     * the start of the video (time 0). So we do NOT add hookDur.
+     * 
+     * Each scene starts when the voiceover starts saying that line.
+     * Each scene ends when the voiceover starts saying the NEXT line.
+     * The clip loops if it runs out before the voiceover finishes that line.
+     * The clip gets cut short if the voiceover finishes before the clip ends.
+     * 
+     * This is STRICT per-line timing — no smoothing, no spreading.
      */
     buildBodyFromTimestamps(edl, clipPaths, hookDur, voiceDuration) {
         var clips = [];
@@ -180,25 +186,34 @@ class VideoEditor {
 
             var startAt, segDur;
             if (tsEntry) {
-                startAt = hookDur + tsEntry.startSec;
+                // Timestamps are absolute (from start of voiceover = start of video)
+                startAt = tsEntry.startSec;
 
-                // Duration = time until next timestamp (or end of voiceover)
+                // Duration = time until next scene's first word (or end of voiceover)
                 var nextStart = voiceDuration;
                 for (var n = tIdx + 1; n < ts.length; n++) {
                     if (typeof ts[n].startSec === 'number') {
-                        nextStart = hookDur + ts[n].startSec;
+                        nextStart = ts[n].startSec;
                         break;
                     }
                 }
                 segDur = nextStart - startAt;
             } else {
+                // No timestamp match — place after previous clip
                 var prevClip = clips.length > 0 ? clips[clips.length - 1] : null;
                 startAt = prevClip ? prevClip.startAt + prevClip.duration : hookDur;
                 segDur = 5;
             }
 
-            // Min 2s, NO max cap — let looping handle long segments
-            segDur = Math.max(2, segDur);
+            // Min 1s, NO max cap — looping handles long segments
+            segDur = Math.max(1, segDur);
+
+            // Guard: first body clip can't start before hook clips end
+            if (clips.length === 0 && startAt < hookDur) {
+                segDur = segDur - (hookDur - startAt);
+                startAt = hookDur;
+                segDur = Math.max(1, segDur);
+            }
 
             var scriptLine = seg.scriptLine || '';
             var hasTimeMarker = TIME_MARKER_RE.test(scriptLine);
@@ -625,17 +640,10 @@ class VideoEditor {
         var captionEvents = [];
         var titleEvents = [];
 
-        // Calculate hook duration (word timestamps need this offset)
-        var hookDur = 0;
-        for (var h = 0; h < editList.length; h++) {
-            if (editList[h].type === 'hook') {
-                hookDur = editList[h].startAt + editList[h].duration;
-            }
-        }
-
         // 1. Word-by-word captions
         if (edl && edl.wordTimestamps && edl.wordTimestamps.length > 0) {
             // PRIMARY: Real word timestamps from Gemini transcription
+            // These are ABSOLUTE — seconds from start of voiceover = start of video
             var wt = edl.wordTimestamps;
             for (var w = 0; w < wt.length; w++) {
                 var word = wt[w];
@@ -644,9 +652,9 @@ class VideoEditor {
                 var cleanWord = word.word.replace(/[^a-zA-Z0-9']/g, '').trim().toUpperCase();
                 if (!cleanWord) continue;
 
-                // Offset by hookDur since voiceover starts after hook clips
-                var wStart = hookDur + word.startSec;
-                var wEnd = hookDur + (word.endSec || word.startSec + 0.2);
+                // No offset needed — voiceover plays from time 0 of the video
+                var wStart = word.startSec;
+                var wEnd = word.endSec || word.startSec + 0.2;
 
                 captionEvents.push({
                     start: this.secsToAssTime(wStart),
@@ -708,8 +716,8 @@ class VideoEditor {
             if (clip.type === 'body' && clip.hasTimeMarker && clip.sentence) {
                 var markerText = this.extractTimeMarkerText(clip.sentence);
                 if (markerText) {
-                    // Same offset as transition SFX so they appear together
-                    var tStart = Math.max(clip.startAt - 2.5, 0);
+                    // startAt is absolute — when voiceover starts saying this line
+                    var tStart = Math.max(clip.startAt, 0);
                     titleEvents.push({
                         start: this.secsToAssTime(tStart),
                         end: this.secsToAssTime(tStart + 3),
@@ -820,8 +828,9 @@ class VideoEditor {
             }
 
             if (clip.type === 'body' && clip.hasTimeMarker && this.sfx.transition) {
-                // Transition SFX — subtract 2.5s to compensate for consistent delay
-                events.push({ time: Math.max(clip.startAt - 2.5, 0), sfx: this.sfx.transition, label: 'transition' });
+                // Transition SFX — startAt is now absolute (when voiceover says this line)
+                // No offset needed since hookDur is no longer added to startAt
+                events.push({ time: Math.max(clip.startAt, 0), sfx: this.sfx.transition, label: 'transition' });
             }
 
             lastType = clip.type;
