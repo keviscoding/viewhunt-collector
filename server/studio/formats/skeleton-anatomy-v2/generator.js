@@ -346,7 +346,7 @@ Format your response as JSON:
                 requestBody,
                 { 
                     headers,
-                    timeout: 120000 // 2 min timeout for 74 images
+                    timeout: 300000 // 5 min timeout for large image payloads
                 }
             );
             
