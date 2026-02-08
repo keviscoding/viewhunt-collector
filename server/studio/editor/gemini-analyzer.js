@@ -102,10 +102,17 @@ class GeminiAnalyzer {
             timestamps = await this.analyzeVoiceoverTiming(voiceoverPath, body);
         }
 
+        // Try word-level timestamps for captions
+        var wordTimestamps = null;
+        if (voiceoverPath) {
+            wordTimestamps = await this.analyzeWordTiming(voiceoverPath, script);
+        }
+
         var edl = {
             hook: hookResult.hook,
             body: body,
             timestamps: timestamps, // null if analysis failed/skipped
+            wordTimestamps: wordTimestamps, // word-level for captions
             scenes: scenes
         };
 
@@ -203,6 +210,82 @@ class GeminiAnalyzer {
 
         } catch (error) {
             console.warn('⚠️ Voiceover analysis failed: ' + error.message + ' — using proportional timing');
+            return null;
+        }
+    }
+    /**
+     * Get word-level timestamps from voiceover audio for captions.
+     * Returns array of { word, startSec, endSec } or null on failure.
+     */
+    async analyzeWordTiming(voiceoverPath, script) {
+        console.log('📝 Gemini: Analyzing word-level timing for captions...');
+
+        try {
+            var audioBuffer = fs.readFileSync(voiceoverPath);
+            var audioBase64 = audioBuffer.toString('base64');
+
+            var prompt = 'I have a voiceover audio file. I need WORD-LEVEL timestamps for captions.\n\n' +
+                'The script being read is:\n"' + script + '"\n\n' +
+                'Listen to the audio and return the START and END time (in seconds) for EACH WORD.\n\n' +
+                'Return ONLY valid JSON — an array:\n' +
+                '[\n' +
+                '  { "word": "What", "startSec": 0.0, "endSec": 0.3 },\n' +
+                '  { "word": "if", "startSec": 0.3, "endSec": 0.45 }\n' +
+                ']\n\n' +
+                'RULES:\n' +
+                '- Include EVERY word spoken in the audio\n' +
+                '- Times must be ascending\n' +
+                '- Be precise to 0.1s\n' +
+                '- endSec of one word should be close to startSec of the next\n' +
+                '- Include pauses (gaps between words are fine)';
+
+            var response = await this.ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [
+                    {
+                        parts: [
+                            {
+                                inlineData: {
+                                    mimeType: 'audio/wav',
+                                    data: audioBase64
+                                }
+                            },
+                            { text: prompt }
+                        ]
+                    }
+                ],
+                config: { responseMimeType: 'application/json' }
+            });
+
+            var text = response.text || (response.candidates && response.candidates[0] &&
+                response.candidates[0].content && response.candidates[0].content.parts &&
+                response.candidates[0].content.parts[0] && response.candidates[0].content.parts[0].text);
+            if (!text) throw new Error('Empty response');
+
+            var jsonText = text;
+            var jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+            if (jsonMatch) jsonText = jsonMatch[1];
+
+            var words = JSON.parse(jsonText.trim());
+            if (!Array.isArray(words) || words.length < 5) {
+                throw new Error('Too few words returned: ' + (words ? words.length : 0));
+            }
+
+            // Validate ascending order
+            for (var k = 1; k < words.length; k++) {
+                if (words[k].startSec < words[k - 1].startSec) {
+                    throw new Error('Word timestamps not ascending');
+                }
+            }
+
+            console.log('✅ Word timestamps: ' + words.length + ' words (first: "' +
+                words[0].word + '" @' + words[0].startSec + 's, last: "' +
+                words[words.length - 1].word + '" @' + words[words.length - 1].startSec + 's)');
+
+            return words;
+
+        } catch (error) {
+            console.warn('⚠️ Word-level timing failed: ' + error.message + ' — captions will be skipped');
             return null;
         }
     }

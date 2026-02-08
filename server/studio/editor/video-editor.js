@@ -69,9 +69,9 @@ class VideoEditor {
             console.log('🎬 Step 3: Normalizing clips one-by-one...');
             var concatPath = await this.sequentialAssemble(editList, jobDir);
 
-            console.log('🔊 Step 4: Mixing audio...');
+            console.log('🔊 Step 4: Mixing audio + overlays...');
             var finalPath = path.join(this.outputDir, jobId + '.mp4');
-            await this.mixFinalAudio(concatPath, voiceoverPath, editList, finalPath, jobDir);
+            await this.mixFinalAudio(concatPath, voiceoverPath, editList, finalPath, jobDir, edl);
 
             var finalSize = 0;
             try { finalSize = fs.statSync(finalPath).size; } catch(e) {}
@@ -391,6 +391,9 @@ class VideoEditor {
 
     /**
      * Mix final audio: voiceover + clip audio + SFX + background music.
+     * Also burns in text overlays:
+     *   - Word-by-word captions at the bottom (from Gemini word timestamps)
+     *   - Time marker titles at the top (Day 1, Hour 1, etc.) with 3s fade-out
      * 
      * Background music (if uploaded) loops for the full video duration
      * at low volume so it doesn't clash with the voiceover.
@@ -398,7 +401,7 @@ class VideoEditor {
      * Volume strategy: use amix with normalize=0 to prevent auto-normalization,
      * then set each input's volume explicitly.
      */
-    async mixFinalAudio(concatVideoPath, voiceoverPath, editList, outputPath, jobDir) {
+    async mixFinalAudio(concatVideoPath, voiceoverPath, editList, outputPath, jobDir, edl) {
         var sfxEvents = this.buildSfxTimeline(editList);
         var hasBgMusic = this.sfx.bgmusic && fs.existsSync(this.sfx.bgmusic);
 
@@ -451,19 +454,154 @@ class VideoEditor {
             ':duration=shortest:dropout_transition=2:normalize=0[aout]';
         filterParts.push(amixFilter);
 
+        // Build video overlay filters (captions + time titles)
+        var videoFilter = this.buildTextOverlayFilter(editList, edl);
+        var hasOverlays = videoFilter !== null;
+
+        if (hasOverlays) {
+            filterParts.push('[0:v]' + videoFilter + '[vout]');
+        }
+
         var logParts = ['clip audio'];
         if (sfxMixPath) logParts.push(sfxEvents.length + ' SFX');
         if (hasBgMusic) logParts.push('bg music');
+        if (hasOverlays) logParts.push('text overlays');
         console.log('  Mixing: voiceover + ' + logParts.join(' + '));
 
-        var args = inputs.concat([
-            '-filter_complex', filterParts.join(';'),
-            '-map', '0:v', '-map', '[aout]',
-            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
-            '-movflags', '+faststart', '-y', outputPath
-        ]);
+        var filterStr = filterParts.join(';');
+
+        // If filter is very long (many drawtext filters), write to a script file
+        // to avoid command-line length issues
+        var filterScriptPath = null;
+        if (filterStr.length > 4000) {
+            filterScriptPath = path.join(jobDir, 'filter.txt');
+            fs.writeFileSync(filterScriptPath, filterStr);
+            console.log('  📄 Filter written to script file (' + filterStr.length + ' chars)');
+        }
+
+        var args = inputs.concat(
+            filterScriptPath
+                ? ['-filter_complex_script', filterScriptPath]
+                : ['-filter_complex', filterStr]
+        );
+        args.push(
+            '-map', hasOverlays ? '[vout]' : '0:v',
+            '-map', '[aout]',
+            '-c:v', hasOverlays ? 'libx264' : 'copy'
+        );
+
+        if (hasOverlays) {
+            args.push('-preset', 'ultrafast', '-crf', '28', '-pix_fmt', 'yuv420p');
+        }
+
+        args.push('-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-y', outputPath);
 
         await this.ffmpeg(args);
+    }
+
+    /**
+     * Build FFmpeg drawtext filter chain for:
+     *   1. Word-by-word captions at the bottom (white, bold, one word at a time)
+     *   2. Time marker titles at the top (fade out after 3s)
+     * 
+     * Returns a filter string or null if no overlays available.
+     */
+    buildTextOverlayFilter(editList, edl) {
+        var parts = [];
+
+        // Hook duration offset — word timestamps are relative to audio start,
+        // but the video includes hook clips before the voiceover starts.
+        // The voiceover starts at the beginning of the audio file, and the
+        // hook clips play during the first part of the voiceover.
+        // So word timestamps align directly with video time (no offset needed
+        // since voiceover is mixed starting at t=0 of the final video).
+
+        // 1. Word-by-word captions
+        if (edl && edl.wordTimestamps && edl.wordTimestamps.length > 0) {
+            var words = edl.wordTimestamps;
+            console.log('  📝 Captions: ' + words.length + ' words');
+
+            for (var w = 0; w < words.length; w++) {
+                var word = words[w];
+                if (!word.word || typeof word.startSec !== 'number') continue;
+
+                var cleanWord = word.word.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
+                if (!cleanWord) continue;
+
+                var wStart = word.startSec;
+                var wEnd = (typeof word.endSec === 'number') ? word.endSec : wStart + 0.3;
+
+                parts.push(
+                    "drawtext=text='" + cleanWord + "'" +
+                    ':fontsize=72:fontcolor=white:borderw=4:bordercolor=black' +
+                    ':x=(w-text_w)/2:y=h-220' +
+                    ":enable='between(t," + wStart.toFixed(2) + ',' + wEnd.toFixed(2) + ")'"
+                );
+            }
+        }
+
+        // 2. Time marker titles at the top
+        var timeMarkerClips = [];
+        for (var i = 0; i < editList.length; i++) {
+            var clip = editList[i];
+            if (clip.type === 'body' && clip.hasTimeMarker && clip.sentence) {
+                // Extract the time marker text from the sentence
+                var markerText = this.extractTimeMarkerText(clip.sentence);
+                if (markerText) {
+                    timeMarkerClips.push({ text: markerText, startAt: clip.startAt });
+                }
+            }
+        }
+
+        if (timeMarkerClips.length > 0) {
+            console.log('  🏷️ Time titles: ' + timeMarkerClips.map(function(t) {
+                return '"' + t.text + '"@' + t.startAt.toFixed(1) + 's';
+            }).join(', '));
+
+            for (var t = 0; t < timeMarkerClips.length; t++) {
+                var tm = timeMarkerClips[t];
+                var tStart = tm.startAt;
+                var tEnd = tStart + 3;
+
+                // Fade: full opacity for 1s, then fade out over 2s
+                // alpha expression: if t < tStart+1 → 1, else lerp to 0 by tEnd
+                var alphaExpr = "if(lt(t," + (tStart + 1).toFixed(2) + ")\\,1\\," +
+                    "max(0\\,1-((t-" + (tStart + 1).toFixed(2) + ")/2)))";
+
+                var cleanTitle = tm.text.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
+
+                parts.push(
+                    "drawtext=text='" + cleanTitle + "'" +
+                    ':fontsize=64:fontcolor=white:borderw=4:bordercolor=black' +
+                    ':x=(w-text_w)/2:y=180' +
+                    ":alpha='" + alphaExpr + "'" +
+                    ":enable='between(t," + tStart.toFixed(2) + ',' + tEnd.toFixed(2) + ")'"
+                );
+            }
+        }
+
+        if (parts.length === 0) return null;
+        return parts.join(',');
+    }
+
+    /**
+     * Extract time marker text from a sentence.
+     * E.g. "Day one. The planet is tearing..." → "DAY ONE"
+     *       "Minute 1. Your eyes start..." → "MINUTE 1"
+     *       "Hour 12. Everything changes..." → "HOUR 12"
+     */
+    extractTimeMarkerText(sentence) {
+        // Match patterns like "Day 1", "Week one", "Hour 12", "Month 6", "Year 2", "Second 30", "Minute 1"
+        var patterns = [
+            /\b((?:second|minute|hour|day|week|month|year)\s+(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+))/i,
+            /\b(\d+\s*(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?))/i
+        ];
+
+        for (var p = 0; p < patterns.length; p++) {
+            var match = sentence.match(patterns[p]);
+            if (match) return match[1].toUpperCase();
+        }
+        return null;
     }
 
     /**
@@ -489,8 +627,8 @@ class VideoEditor {
             }
 
             if (clip.type === 'body' && clip.hasTimeMarker && this.sfx.transition) {
-                // Transition SFX fires exactly when the scene starts
-                events.push({ time: clip.startAt, sfx: this.sfx.transition, label: 'transition' });
+                // Transition SFX — subtract 2.5s to compensate for consistent delay
+                events.push({ time: Math.max(clip.startAt - 2.5, 0), sfx: this.sfx.transition, label: 'transition' });
             }
 
             lastType = clip.type;
@@ -584,7 +722,7 @@ class VideoEditor {
 
     async ffmpeg(args) {
         try {
-            return await execFileAsync(ffmpegPath, args, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 });
+            return await execFileAsync(ffmpegPath, args, { timeout: 600000, maxBuffer: 10 * 1024 * 1024 });
         } catch (error) {
             if (error.code) {
                 var msg = (error.stderr || '').substring(0, 500);
