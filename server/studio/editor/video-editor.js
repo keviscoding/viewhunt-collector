@@ -133,6 +133,22 @@ class VideoEditor {
             clips = clips.concat(this.buildBodyProportional(edl, clipPaths, hookDur, voiceDuration));
         }
 
+        // SAFETY: Ensure total clip duration covers the voiceover.
+        // If the edit list is shorter than the voiceover, extend the last body
+        // segment so the looping system fills the gap. This prevents the video
+        // from running out of clips before the narration ends.
+        if (clips.length > 0) {
+            var lastClip = clips[clips.length - 1];
+            var totalEditDur = lastClip.startAt + lastClip.duration;
+            var shortfall = voiceDuration - totalEditDur;
+
+            if (shortfall > 0.5) {
+                console.log('  ⚠️ Edit list (' + totalEditDur.toFixed(1) + 's) shorter than voiceover (' +
+                    voiceDuration.toFixed(1) + 's) — extending last segment by ' + shortfall.toFixed(1) + 's');
+                lastClip.duration += shortfall + 0.5; // +0.5s buffer
+            }
+        }
+
         return clips;
     }
 
@@ -563,8 +579,9 @@ class VideoEditor {
                 var cleanWord = word.word.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
                 if (!cleanWord) continue;
 
-                var wStart = word.startSec;
-                var wEnd = (typeof word.endSec === 'number') ? word.endSec : wStart + 0.3;
+                // Subtract 0.3s to compensate for slight caption delay
+                var wStart = Math.max(word.startSec - 0.3, 0);
+                var wEnd = (typeof word.endSec === 'number') ? Math.max(word.endSec - 0.3, wStart + 0.1) : wStart + 0.3;
 
                 captionEvents.push({
                     start: this.secsToAssTime(wStart),
