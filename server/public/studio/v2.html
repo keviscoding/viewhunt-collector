@@ -9,6 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        html { overflow-y: scroll; height: auto; }
 
         :root {
             --bg: #0e0e12;
@@ -38,11 +39,13 @@
             background: var(--bg);
             color: var(--text);
             min-height: 100vh;
+            overflow-x: hidden;
+            overflow-y: auto;
             -webkit-font-smoothing: antialiased;
         }
 
         /* Layout */
-        .app { max-width: 960px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+        .app { max-width: 960px; margin: 0 auto; padding: 2rem 1.25rem 4rem; position: relative; }
 
         /* Header */
         .app-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2.5rem; }
@@ -350,7 +353,7 @@
         </section>
 
         <footer class="app-footer">
-            ViewHunt Studio · Claude Opus 4.5 · Kie.ai · Kling 3 Omni
+            ViewHunt Studio · Claude Opus 4.5 · Kie.ai Kling 2.6
         </footer>
     </div>
 

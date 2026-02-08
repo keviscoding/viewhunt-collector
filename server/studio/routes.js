@@ -318,7 +318,7 @@ router.post('/generate/scene-video', requireAuth, async (req, res) => {
         const generator = getGenerator(format, 'v2');
         if (!generator) return res.status(400).json({ error: 'Invalid format' });
         
-        // Convert relative upload paths to full URLs for Freepik/Kling
+        // Convert relative upload paths to full URLs for Kie.ai
         if (imageUrl.startsWith('/studio/uploads/')) {
             const protocol = req.protocol;
             const host = req.get('host');

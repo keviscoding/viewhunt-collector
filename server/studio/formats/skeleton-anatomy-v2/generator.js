@@ -11,11 +11,7 @@ class SkeletonGeneratorV2 {
             apiKey: process.env.ANTHROPIC_API_KEY
         });
         
-        // Freepik API configuration (for Kling 3 Omni Standard videos)
-        this.freepikApiKey = process.env.FREEPIK_API_KEY;
-        this.freepikBaseUrl = 'https://api.freepik.com/v1/ai/video';
-        
-        // Kie.ai API configuration (for images only)
+        // Kie.ai API configuration (for Kling 2.6 videos AND images)
         this.kieApiKey = process.env.KIEAI_API_KEY;
         this.kieBaseUrl = 'https://api.kie.ai';
         
@@ -503,66 +499,88 @@ Format your response as JSON:
     }
 
     /**
-     * Step 3: Generate video from image using Freepik Kling 3 Omni Standard
-     * Includes 1 retry on failure
+     * Step 3: Generate video from image using Kie.ai Kling 2.6
+     * Includes retry logic (same pattern as image generation)
      */
     async generateVideo(imageUrl, videoPrompt, sceneNumber) {
         console.log(`\n=== Generating video for scene ${sceneNumber} ===`);
-        console.log(`Image URL: ${imageUrl}`);
+        console.log(`Image URL: ${imageUrl.substring(0, 80)}...`);
         console.log(`Video Prompt: "${videoPrompt.substring(0, 120)}..."`);
         console.log(`===\n`);
         
-        const maxAttempts = 2;
+        const maxRetries = 3;
         
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                console.log(`🎬 CALLING Freepik Kling 3 Omni Standard API - Scene ${sceneNumber} (attempt ${attempt}/${maxAttempts})`);
-                
-                const requestBody = {
-                    prompt: videoPrompt,
-                    image_url: imageUrl,
-                    aspect_ratio: '9:16',
-                    duration: '8',
-                    generate_audio: true
-                };
+                console.log(`🎬 Kie.ai Kling 2.6 - Scene ${sceneNumber} (attempt ${attempt}/${maxRetries})`);
                 
                 const createResponse = await axios.post(
-                    `${this.freepikBaseUrl}/kling-v3-omni-std`,
-                    requestBody,
+                    `${this.kieBaseUrl}/api/v1/jobs/createTask`,
+                    {
+                        model: 'kling-2.6/image-to-video',
+                        input: {
+                            prompt: videoPrompt,
+                            image_urls: [imageUrl],
+                            sound: false,
+                            duration: '5'
+                        }
+                    },
                     {
                         headers: {
                             'Content-Type': 'application/json',
-                            'x-freepik-api-key': this.freepikApiKey
+                            'Authorization': `Bearer ${this.kieApiKey}`
                         },
                         timeout: 30000
                     }
                 );
 
-                console.log(`Freepik API response:`, JSON.stringify(createResponse.data, null, 2));
+                const taskId = createResponse.data?.data?.taskId
+                    || createResponse.data?.taskId;
                 
-                // Freepik returns { data: { task_id, status } }
-                const taskId = createResponse.data?.data?.task_id;
                 if (!taskId) {
-                    console.error('Unexpected Freepik API response:', createResponse.data);
-                    throw new Error('Freepik API did not return a task_id');
+                    const code = createResponse.data?.code;
+                    const msg = createResponse.data?.msg || '';
+                    
+                    if (code === 402 || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('balance')) {
+                        throw new Error('Out of Kie.ai credits. Please top up your account.');
+                    }
+                    
+                    console.warn(`Scene ${sceneNumber}: No taskId (attempt ${attempt}/${maxRetries}). Code: ${code}, Msg: ${msg}`);
+                    
+                    if (attempt < maxRetries) {
+                        const delay = attempt * 3000;
+                        console.log(`Retrying in ${delay / 1000}s...`);
+                        await new Promise(r => setTimeout(r, delay));
+                        continue;
+                    }
+                    throw new Error(`Kie.ai failed to create video task after ${maxRetries} attempts`);
                 }
 
                 console.log(`Video task created: ${taskId}`);
                 
-                const videoUrl = await this.pollFreepikTask(taskId, 600000);
-                console.log(`✅ Video ${sceneNumber} generated successfully (Kling 3 Omni Standard)`);
+                // Reuse the same Kie.ai polling function (same API, same response format)
+                const videoUrl = await this.pollKieTaskForImage(taskId, 600000);
+                console.log(`✅ Video ${sceneNumber} generated successfully (Kling 2.6)`);
                 
                 return videoUrl;
                 
             } catch (error) {
-                console.error(`Error generating video ${sceneNumber} (attempt ${attempt}):`, error.message);
-                
-                if (attempt < maxAttempts) {
-                    console.log(`⏳ Retrying scene ${sceneNumber} in 5 seconds...`);
-                    await new Promise(resolve => setTimeout(resolve, 5000));
-                } else {
+                if (error.message.includes('credit') || error.message.includes('balance') || error.message.includes('authentication')) {
                     throw error;
                 }
+                
+                const status = error.response?.status;
+                const isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
+                
+                if (isRetryable && attempt < maxRetries) {
+                    const delay = attempt * 3000;
+                    console.warn(`Scene ${sceneNumber} video error (attempt ${attempt}/${maxRetries}): ${error.message}. Retrying in ${delay / 1000}s...`);
+                    await new Promise(r => setTimeout(r, delay));
+                    continue;
+                }
+                
+                console.error(`Error generating video ${sceneNumber}:`, error.response?.data || error.message);
+                throw error;
             }
         }
     }
@@ -640,82 +658,6 @@ Format your response as JSON:
         }
         
         throw new Error(`Task timeout after ${Math.floor(timeout/1000)}s - Kie.ai servers may be overloaded. Try again later.`);
-    }
-
-    /**
-     * Poll Freepik task for Kling 3 Omni video generation
-     */
-    async pollFreepikTask(taskId, timeout = 600000) {
-        const startTime = Date.now();
-        const pollInterval = 5000; // 5 seconds
-        let pollCount = 0;
-        
-        const endpoint = `${this.freepikBaseUrl}/kling-v3-omni/${taskId}`;
-        
-        while (Date.now() - startTime < timeout) {
-            pollCount++;
-            const elapsed = Math.floor((Date.now() - startTime) / 1000);
-            
-            try {
-                const response = await axios.get(endpoint, {
-                    headers: {
-                        'x-freepik-api-key': this.freepikApiKey
-                    }
-                });
-
-                const data = response.data?.data;
-                if (!data) {
-                    throw new Error('Freepik API returned empty data');
-                }
-
-                const status = data.status;
-                
-                // Log progress every 30 seconds
-                if (pollCount % 6 === 0) {
-                    console.log(`Video task ${taskId} status: ${status} (${elapsed}s elapsed)`);
-                }
-                
-                // Check if video is ready
-                if (status === 'COMPLETED') {
-                    const generated = data.generated;
-                    if (generated && generated.length > 0) {
-                        console.log(`✅ Video task completed in ${elapsed}s`);
-                        return generated[0]; // Return first video URL
-                    } else {
-                        throw new Error('Video completed but no outputs found');
-                    }
-                }
-                
-                // Check for failure
-                if (status === 'FAILED' || status === 'ERROR') {
-                    const error = data.error || data.message || 'Unknown error';
-                    throw new Error(`Video generation failed: ${error}`);
-                }
-                
-                // Still processing (CREATED, PROCESSING, etc.), wait and retry
-                await new Promise(resolve => setTimeout(resolve, pollInterval));
-                
-            } catch (error) {
-                if (error.response?.status === 401) {
-                    throw new Error('Freepik authentication failed. Check your API key.');
-                } else if (error.response?.status === 402 || error.response?.status === 403) {
-                    throw new Error('Freepik API access denied. Check your subscription/credits.');
-                } else if (error.response?.status === 429) {
-                    console.warn('Rate limit hit, waiting 10 seconds...');
-                    await new Promise(resolve => setTimeout(resolve, 10000));
-                } else if (error.response?.status === 404) {
-                    // Task not found yet, wait and retry
-                    await new Promise(resolve => setTimeout(resolve, pollInterval));
-                } else if (error.message.includes('Freepik') || error.message.includes('failed')) {
-                    throw error;
-                } else {
-                    console.error('Video polling error:', error.message);
-                    await new Promise(resolve => setTimeout(resolve, pollInterval));
-                }
-            }
-        }
-        
-        throw new Error(`Video task timeout after ${Math.floor(timeout/1000)}s - Kling 3 Omni servers may be overloaded. Try again later.`);
     }
 
     /**
@@ -803,12 +745,10 @@ Format your response as JSON:
                 const videoSuccessCount = videoResults.filter(r => r.success).length;
                 console.log(`\n✅ Batch complete: ${videoSuccessCount}/${scenesWithImages.length} videos generated successfully\n`);
                 
-                // Cost summary (Freepik Kling 3 Omni Standard)
-                const videoCost = videoSuccessCount * 0.50; // estimate
+                // Cost summary (Kie.ai Kling 2.6)
                 console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
                 console.log(`   Videos generated: ${videoSuccessCount}`);
-                console.log(`   Provider: Freepik Kling 3 Omni Standard`);
-                console.log(`   Cost: ~${videoCost.toFixed(2)} (estimated)`);
+                console.log(`   Provider: Kie.ai Kling 2.6`);
                 console.log(`\n`);
             }
 
@@ -996,11 +936,11 @@ Format your response as JSON:
                 const videoSuccessCount = videoResults.filter(r => r.success).length;
                 console.log(`\n✅ Batch complete: ${videoSuccessCount}/${scenesWithImages.length} videos generated successfully\n`);
                 
-                const videoCost = videoSuccessCount * 0.50;
+
                 console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
                 console.log(`   Videos generated: ${videoSuccessCount}`);
-                console.log(`   Provider: Freepik Kling 3 Omni Standard`);
-                console.log(`   Cost: ~$${videoCost.toFixed(2)} (estimated)`);
+                console.log(`   Provider: Kie.ai Kling 2.6`);
+
                 console.log(`\n`);
                 
                 onProgress({
@@ -1009,7 +949,7 @@ Format your response as JSON:
                     message: `${videoSuccessCount}/${scenesWithImages.length} videos generated`,
                     total: scenesWithImages.length,
                     completed: scenesWithImages.length,
-                    cost: videoCost
+
                 });
             }
 
