@@ -9,6 +9,7 @@ const GeminiAnalyzer = require('./editor/gemini-analyzer');
 const GeminiTTS = require('./editor/gemini-tts');
 const VideoEditor = require('./editor/video-editor');
 const assemblyQueue = require('./editor/job-queue');
+const { saveSfx, listSfx, loadAllSfx } = require('./editor/sfx-store');
 
 // Configure multer for scene image uploads
 const uploadDir = path.join(__dirname, '../public/studio/uploads');
@@ -393,15 +394,9 @@ router.get('/assemble/status/:jobId', requireAuth, (req, res) => {
     res.json(status);
 });
 
-// Upload SFX files (hook.mp3, transition.mp3, riser.mp3)
+// Upload SFX files to MongoDB (hook, transition, riser)
 const sfxUpload = multer({
-    storage: multer.diskStorage({
-        destination: path.join(__dirname, 'editor/assets/sfx'),
-        filename: (req, file, cb) => {
-            // Keep original name (hook.mp3, transition.mp3, riser.mp3)
-            cb(null, file.originalname);
-        }
-    }),
+    storage: multer.memoryStorage(),
     limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         if (file.mimetype.startsWith('audio/')) cb(null, true);
@@ -409,30 +404,47 @@ const sfxUpload = multer({
     }
 });
 
-router.post('/upload-sfx', requireAuth, sfxUpload.single('sfx'), (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
-    console.log('🔊 SFX uploaded: ' + req.file.originalname);
-    res.json({ success: true, filename: req.file.originalname });
-});
-
-// List available SFX
-router.get('/sfx', requireAuth, (req, res) => {
-    var sfxDir = path.join(__dirname, 'editor/assets/sfx');
-    var files = [];
+router.post('/upload-sfx', requireAuth, sfxUpload.single('sfx'), async (req, res) => {
     try {
-        files = fs.readdirSync(sfxDir).filter(function(f) {
-            return f.endsWith('.mp3') || f.endsWith('.wav') || f.endsWith('.aac');
-        });
-    } catch(e) {}
-    res.json({ sfx: files });
+        if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
+        // Extract SFX name from filename (e.g. "hook.mp3" → "hook")
+        var name = path.basename(req.file.originalname, path.extname(req.file.originalname));
+        var validNames = ['hook', 'transition', 'riser'];
+        if (validNames.indexOf(name) === -1) {
+            return res.status(400).json({ error: 'File must be named hook, transition, or riser (e.g. hook.mp3)' });
+        }
+        await saveSfx(name, req.file.buffer, req.file.originalname);
+        console.log('🔊 SFX "' + name + '" uploaded to MongoDB');
+        res.json({ success: true, filename: req.file.originalname });
+    } catch (err) {
+        console.error('SFX upload error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// Serve SFX file for preview
-router.get('/sfx/:filename', requireAuth, (req, res) => {
-    var sfxDir = path.join(__dirname, 'editor/assets/sfx');
-    var filePath = path.join(sfxDir, req.params.filename);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
-    res.sendFile(filePath);
+// List available SFX from MongoDB
+router.get('/sfx', requireAuth, async (req, res) => {
+    try {
+        var items = await listSfx();
+        var files = items.map(function(i) { return i.filename; });
+        res.json({ sfx: files });
+    } catch (e) {
+        res.json({ sfx: [] });
+    }
+});
+
+// Serve SFX file for preview (load from MongoDB → disk → serve)
+router.get('/sfx/:filename', requireAuth, async (req, res) => {
+    try {
+        // Ensure SFX are on disk
+        await loadAllSfx();
+        var sfxDir = path.join(__dirname, 'editor/assets/sfx');
+        var filePath = path.join(sfxDir, req.params.filename);
+        if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
+        res.sendFile(filePath);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Health check

@@ -37,7 +37,7 @@ RULES:
 2. Map each sentence (or group of short sentences) to the most relevant scene based on content match.
 3. For the HOOK (first ~3 seconds): Pick the 4-5 most visually dynamic/interesting scenes. These will be rapid-fire 0.4-0.5 second clips that tease the video. The hook plays OVER the first sentence of narration.
 4. Identify where the hook ends and the main body begins (usually after the opening question/statement).
-5. For click sounds: randomly assign click sounds to ~40-50% of scene transitions in the body. The hook transitions ALWAYS get click sounds.
+5. For click sounds: ALWAYS assign a click sound on sentences that contain time markers (Day 1, Day 7, Hour 1, Minute 1, Week 2, Month 3, Year 1, etc.). These show progression and MUST have click sounds. For other scene transitions, randomly assign click sounds to ~40-50%.
 6. Each scene clip is ~5 seconds long. You can use a portion of it (specify startSec and duration).
 
 Return ONLY valid JSON in this exact format:

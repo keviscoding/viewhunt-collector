@@ -23,6 +23,7 @@ const axios = require('axios');
 
 const ffmpegPath = require('ffmpeg-static');
 const ffprobePath = require('ffprobe-static').path;
+const { loadAllSfx } = require('./sfx-store');
 
 var SFX_DIR = path.join(__dirname, 'assets', 'sfx');
 
@@ -35,30 +36,15 @@ class VideoEditor {
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         }
 
-        // Load available SFX
-        this.sfx = {
-            hook: this.findSfx('hook'),
-            transition: this.findSfx('transition'),
-            riser: this.findSfx('riser')
-        };
-        var loaded = Object.keys(this.sfx).filter(function(k) { return this.sfx[k]; }.bind(this));
-        if (loaded.length > 0) {
-            console.log('🔊 SFX loaded: ' + loaded.join(', '));
-        } else {
-            console.log('🔇 No SFX found in ' + SFX_DIR + ' (optional)');
-        }
+        // SFX will be loaded from MongoDB before each assembly
+        this.sfx = { hook: null, transition: null, riser: null };
     }
 
     /**
-     * Find an SFX file by name (checks .mp3 and .wav)
+     * Load SFX from MongoDB to local disk. Called before each assembly.
      */
-    findSfx(name) {
-        var exts = ['.mp3', '.wav', '.aac', '.ogg'];
-        for (var i = 0; i < exts.length; i++) {
-            var p = path.join(SFX_DIR, name + exts[i]);
-            if (fs.existsSync(p)) return p;
-        }
-        return null;
+    async loadSfx() {
+        this.sfx = await loadAllSfx();
     }
 
     /**
@@ -72,6 +58,8 @@ class VideoEditor {
         console.log('\n🎬 Video Editor: Starting assembly (job: ' + jobId + ')');
 
         try {
+            // Load SFX from MongoDB
+            await this.loadSfx();
             // Step 1: Download clips
             console.log('📥 Step 1: Downloading scene clips...');
             var clipPaths = await this.downloadClips(scenes, jobDir);
@@ -346,7 +334,10 @@ class VideoEditor {
     }
 
     /**
-     * Build SFX timeline from edit list
+     * Build SFX timeline from edit list.
+     * Uses the "transition" SFX for all scene changes (hook and body).
+     * Hook clips always get it. Body clips get it on time markers (always)
+     * and randomly (~50%) on other transitions.
      */
     buildSfxTimeline(editList) {
         var events = [];
@@ -367,17 +358,17 @@ class VideoEditor {
             }
 
             if (clip.type === 'body' && lastType === 'body' && this.sfx.transition) {
-                // Random ~50% chance of transition click on body scene changes
-                if (Math.random() < 0.5) {
-                    events.push({ time: clip.startAt, sfx: this.sfx.transition, label: 'transition' });
-                }
+                // Always put transition sound on every body scene change
+                // (Gemini already handles the time-marker logic in the EDL,
+                //  but we add it on every transition for progression feel)
+                events.push({ time: clip.startAt, sfx: this.sfx.transition, label: 'transition' });
             }
 
             lastType = clip.type;
         }
 
         if (events.length > 0) {
-            console.log('  🔊 SFX timeline: ' + events.map(function(e) { return e.label + '@' + e.time.toFixed(1) + 's'; }).join(', '));
+            console.log('  🔊 SFX timeline: ' + events.length + ' events');
         }
 
         return events;

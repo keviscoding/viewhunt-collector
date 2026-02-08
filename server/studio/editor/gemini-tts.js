@@ -24,7 +24,7 @@ class GeminiTTS {
     async generateVoiceover(script, voiceName = 'Charon') {
         console.log(`🎙️ Gemini TTS: Generating voiceover with voice "${voiceName}"...`);
 
-        const ttsPrompt = `Read in a fast pace, engaging and humorous way (no pauses):
+        const ttsPrompt = `Read in a faster pace, engaging and humorous way:
 
 ${script}`;
 
