@@ -386,9 +386,7 @@ router.post('/assemble', requireAuth, async (req, res) => {
         
         // Step 3: Assemble video with FFmpeg
         const editor = new VideoEditor();
-        const result = await editor.assemble(edl, scenesWithVideo, voiceoverPath, {
-            addCaptions: true
-        });
+        const result = await editor.assemble(edl, scenesWithVideo, voiceoverPath);
         
         res.json({
             success: true,

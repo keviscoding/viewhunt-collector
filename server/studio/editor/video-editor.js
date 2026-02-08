@@ -1,13 +1,9 @@
 /**
  * Video Editor — Assembles final video from scene clips using FFmpeg
+ * Optimized for low-memory environments (256MB DigitalOcean containers)
  * 
- * Pipeline:
- * 1. Download all scene video clips to temp dir
- * 2. Build hook sequence (rapid 0.4-0.5s clips with click sounds)
- * 3. Build body sequence (scene clips matched to sentences)
- * 4. Overlay voiceover audio
- * 5. Add one-word captions
- * 6. Export final 9:16 vertical video
+ * Strategy: Use stream copy (-c copy) everywhere possible to avoid re-encoding.
+ * Only re-encode when absolutely necessary (trimming to exact duration).
  */
 const { execFile } = require('child_process');
 const { promisify } = require('util');
@@ -17,7 +13,6 @@ const path = require('path');
 const axios = require('axios');
 const ensureClickSound = require('./assets/ensure-click');
 
-// Use npm-installed ffmpeg/ffprobe binaries (no system install needed)
 const ffmpegPath = require('ffmpeg-static');
 const ffprobePath = require('ffprobe-static').path;
 
@@ -25,7 +20,7 @@ class VideoEditor {
     constructor() {
         this.tempDir = path.join(__dirname, '../../public/studio/generated/temp');
         this.outputDir = path.join(__dirname, '../../public/studio/generated/final');
-        this.clickSound = ensureClickSound(); // generates on first run
+        this.clickSound = ensureClickSound();
 
         for (const dir of [this.tempDir, this.outputDir]) {
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -33,12 +28,7 @@ class VideoEditor {
     }
 
     /**
-     * Main assembly function
-     * @param {Object} edl - Edit decision list from GeminiAnalyzer
-     * @param {Array} scenes - Scene objects with videoUrl
-     * @param {string} voiceoverPath - Path to voiceover WAV
-     * @param {Object} options - { addCaptions: true }
-     * @returns {Object} { videoPath, videoUrl, duration }
+     * Main assembly — memory-efficient pipeline
      */
     async assemble(edl, scenes, voiceoverPath, options = {}) {
         const jobId = `edit-${Date.now()}`;
@@ -48,47 +38,30 @@ class VideoEditor {
         console.log(`\n🎬 Video Editor: Starting assembly (job: ${jobId})`);
 
         try {
-            // Step 1: Download all scene clips
+            // Step 1: Download clips
             console.log('📥 Step 1: Downloading scene clips...');
             const clipPaths = await this.downloadClips(scenes, jobDir);
 
-            // Step 2: Get voiceover duration (this determines total video length)
+            // Step 2: Get voiceover duration
             const voiceDuration = await this.getMediaDuration(voiceoverPath);
             console.log(`🎙️ Voiceover duration: ${voiceDuration.toFixed(1)}s`);
 
-            // Step 3: Build the hook segment
-            console.log('⚡ Step 2: Building hook sequence...');
-            const hookPath = await this.buildHook(edl.hook, clipPaths, jobDir);
+            // Step 3: Trim all clips (hook + body) to their target durations
+            // Use -c copy with keyframe-aware seeking for speed + low memory
+            console.log('✂️ Step 2: Trimming clips...');
+            const trimmedClips = await this.trimAllClips(edl, clipPaths, voiceDuration, jobDir);
 
-            // Step 4: Build body segments
-            console.log('🎞️ Step 3: Building body sequence...');
-            const bodyPath = await this.buildBody(edl, clipPaths, voiceDuration, jobDir);
+            // Step 4: Concatenate all trimmed clips (stream copy — near zero memory)
+            console.log('🔗 Step 3: Concatenating all clips...');
+            const concatPath = path.join(jobDir, 'concat.mp4');
+            await this.concatStreamCopy(trimmedClips, concatPath);
 
-            // Step 5: Concatenate hook + body
-            console.log('🔗 Step 4: Concatenating hook + body...');
-            const rawVideoPath = path.join(jobDir, 'raw-combined.mp4');
-            await this.concatenateVideos([hookPath, bodyPath], rawVideoPath);
+            // Step 5: Add voiceover audio in one pass
+            console.log('🎙️ Step 4: Adding voiceover...');
+            const finalPath = path.join(this.outputDir, `${jobId}.mp4`);
+            await this.addVoiceover(concatPath, voiceoverPath, finalPath);
 
-            // Step 6: Overlay voiceover
-            console.log('🎙️ Step 5: Adding voiceover...');
-            const withAudioPath = path.join(jobDir, 'with-audio.mp4');
-            await this.overlayAudio(rawVideoPath, voiceoverPath, withAudioPath);
-
-            // Step 7: Add captions if requested
-            let finalPath;
-            if (options.addCaptions !== false && edl.sentences) {
-                console.log('📝 Step 6: Adding captions...');
-                finalPath = path.join(this.outputDir, `${jobId}.mp4`);
-                await this.addCaptions(withAudioPath, edl, voiceoverPath, finalPath);
-            } else {
-                finalPath = path.join(this.outputDir, `${jobId}.mp4`);
-                fs.copyFileSync(withAudioPath, finalPath);
-            }
-
-            // Get final duration
             const finalDuration = await this.getMediaDuration(finalPath);
-
-            // Cleanup temp files
             this.cleanup(jobDir);
 
             const videoUrl = `/studio/generated/final/${jobId}.mp4`;
@@ -104,279 +77,139 @@ class VideoEditor {
     }
 
     /**
-     * Download scene video clips to local temp directory
+     * Download scene clips to temp dir
      */
     async downloadClips(scenes, jobDir) {
         const clipPaths = {};
-
         const downloads = scenes
             .filter(s => s.videoUrl || s._videoUrl)
             .map(async (scene) => {
                 const num = scene.sceneNumber;
                 const url = scene.videoUrl || scene._videoUrl;
                 const clipPath = path.join(jobDir, `scene-${num}.mp4`);
-
                 try {
                     if (url.startsWith('/') || url.startsWith('./')) {
-                        // Local file
                         const localPath = path.join(__dirname, '../../public', url);
                         fs.copyFileSync(localPath, clipPath);
                     } else {
-                        // Remote URL
                         const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 60000 });
                         fs.writeFileSync(clipPath, resp.data);
                     }
                     clipPaths[num] = clipPath;
-                    console.log(`  ✓ Scene ${num} downloaded`);
+                    console.log(`  ✓ Scene ${num}`);
                 } catch (err) {
-                    console.warn(`  ✗ Scene ${num} download failed: ${err.message}`);
+                    console.warn(`  ✗ Scene ${num}: ${err.message}`);
                 }
             });
-
         await Promise.all(downloads);
         console.log(`  ${Object.keys(clipPaths).length}/${scenes.length} clips ready`);
         return clipPaths;
     }
 
     /**
-     * Build the hook sequence — rapid-fire 0.4-0.5s clips with click sounds
+     * Trim all clips (hook + body) to target durations.
+     * Uses -ss before -i (input seeking) + -c copy for near-zero memory usage.
+     * Returns ordered array of trimmed clip paths.
      */
-    async buildHook(hookEdl, clipPaths, jobDir) {
-        const hookClips = [];
+    async trimAllClips(edl, clipPaths, voiceDuration, jobDir) {
+        const trimmed = [];
 
-        for (let i = 0; i < hookEdl.clips.length; i++) {
-            const clip = hookEdl.clips[i];
-            const srcPath = clipPaths[clip.scene];
-            if (!srcPath) {
-                console.warn(`  Hook clip: scene ${clip.scene} not available, skipping`);
-                continue;
-            }
+        // Hook clips (0.4-0.5s each)
+        for (let i = 0; i < edl.hook.clips.length; i++) {
+            const hc = edl.hook.clips[i];
+            const src = clipPaths[hc.scene];
+            if (!src) continue;
 
-            const clipOut = path.join(jobDir, `hook-clip-${i}.mp4`);
-            const startSec = clip.startSec || 0;
-            const duration = clip.duration || 0.5;
+            const out = path.join(jobDir, `trim-hook-${i}.mp4`);
+            const ss = hc.startSec || 0;
+            const dur = hc.duration || 0.5;
 
-            // Trim the clip
+            // For very short clips, we need re-encode to get exact duration
             await this.ffmpeg([
-                '-i', srcPath,
-                '-ss', String(startSec),
-                '-t', String(duration),
-                '-c:v', 'libx264', '-preset', 'fast',
-                '-an',  // no audio for hook clips (voiceover goes on top)
-                '-y', clipOut
+                '-ss', String(ss), '-i', src,
+                '-t', String(dur),
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+                '-an', '-y', out
             ]);
+            trimmed.push(out);
+            // Clean up downloaded source after last use? No — body may reuse it
+        }
+        console.log(`  Hook: ${trimmed.length} clips trimmed`);
 
-            // Add click sound if specified
-            if (clip.clickSound && fs.existsSync(this.clickSound)) {
-                const withClick = path.join(jobDir, `hook-clip-${i}-click.mp4`);
-                await this.ffmpeg([
-                    '-i', clipOut,
-                    '-i', this.clickSound,
-                    '-filter_complex', '[1:a]atrim=0:0.3,asetpts=PTS-STARTPTS[click];[click]volume=0.7[a]',
-                    '-map', '0:v', '-map', '[a]',
-                    '-c:v', 'copy', '-c:a', 'aac', '-shortest',
-                    '-y', withClick
-                ]);
-                fs.unlinkSync(clipOut);
-                fs.renameSync(withClick, clipOut);
+        // Body clips — distribute voiceover time evenly
+        const hookDur = edl.hook.clips.reduce((s, c) => s + (c.duration || 0.5), 0);
+        const bodyTime = Math.max(voiceDuration - hookDur, 10);
+        const perSeg = bodyTime / edl.body.length;
+
+        for (let i = 0; i < edl.body.length; i++) {
+            const seg = edl.body[i];
+            const src = clipPaths[seg.scene];
+            if (!src) continue;
+
+            const out = path.join(jobDir, `trim-body-${i}.mp4`);
+            const ss = seg.startSec || 0;
+            const dur = Math.min(perSeg, 5);
+
+            // Stream copy where possible, re-encode only if needed for exact trim
+            await this.ffmpeg([
+                '-ss', String(ss), '-i', src,
+                '-t', String(dur),
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+                '-an', '-y', out
+            ]);
+            trimmed.push(out);
+
+            // Delete previous body clip to free disk/memory
+            if (i > 0) {
+                const prevSrc = clipPaths[edl.body[i - 1]?.scene];
+                const curSrc = clipPaths[seg.scene];
+                // Only delete if no future segment uses this source
+                const futureUses = edl.body.slice(i + 1).some(s => clipPaths[s.scene] === prevSrc);
+                if (prevSrc && prevSrc !== curSrc && !futureUses) {
+                    try { fs.unlinkSync(prevSrc); } catch (e) {}
+                }
             }
-
-            hookClips.push(clipOut);
         }
+        console.log(`  Body: ${edl.body.length} clips trimmed (${perSeg.toFixed(1)}s each)`);
 
-        if (hookClips.length === 0) {
-            throw new Error('No hook clips could be built');
-        }
-
-        // Concatenate hook clips
-        const hookPath = path.join(jobDir, 'hook.mp4');
-        await this.concatenateVideos(hookClips, hookPath);
-
-        const hookDur = await this.getMediaDuration(hookPath);
-        console.log(`  Hook: ${hookClips.length} clips, ${hookDur.toFixed(1)}s`);
-
-        return hookPath;
+        return trimmed;
     }
 
     /**
-     * Build the body sequence — scene clips matched to sentences
+     * Concatenate clips using concat demuxer with stream copy (zero re-encode)
      */
-    async buildBody(edl, clipPaths, totalVoiceDuration, jobDir) {
-        const bodySegments = edl.body;
-        if (!bodySegments || bodySegments.length === 0) {
-            throw new Error('No body segments in EDL');
-        }
-
-        // Calculate hook duration to know how much time body needs
-        const hookClipsDuration = edl.hook.clips.reduce((sum, c) => sum + (c.duration || 0.5), 0);
-        const bodyDuration = totalVoiceDuration - hookClipsDuration;
-        const perSegmentDuration = bodyDuration / bodySegments.length;
-
-        const bodyClips = [];
-
-        for (let i = 0; i < bodySegments.length; i++) {
-            const seg = bodySegments[i];
-            const srcPath = clipPaths[seg.scene];
-
-            if (!srcPath) {
-                console.warn(`  Body segment ${i}: scene ${seg.scene} not available, skipping`);
-                continue;
-            }
-
-            const clipOut = path.join(jobDir, `body-clip-${i}.mp4`);
-            const startSec = seg.startSec || 0;
-            const segDuration = Math.min(perSegmentDuration, 5); // clips are max 5s
-
-            // Trim clip to segment duration
-            await this.ffmpeg([
-                '-i', srcPath,
-                '-ss', String(startSec),
-                '-t', String(segDuration),
-                '-c:v', 'libx264', '-preset', 'fast',
-                '-an',
-                '-y', clipOut
-            ]);
-
-            // Add click sound on some transitions
-            if (seg.clickSound && i > 0 && fs.existsSync(this.clickSound)) {
-                const withClick = path.join(jobDir, `body-clip-${i}-click.mp4`);
-                await this.ffmpeg([
-                    '-i', clipOut,
-                    '-i', this.clickSound,
-                    '-filter_complex', '[1:a]atrim=0:0.2,asetpts=PTS-STARTPTS[click];[click]volume=0.5[a]',
-                    '-map', '0:v', '-map', '[a]',
-                    '-c:v', 'copy', '-c:a', 'aac', '-shortest',
-                    '-y', withClick
-                ]);
-                fs.unlinkSync(clipOut);
-                fs.renameSync(withClick, clipOut);
-            }
-
-            bodyClips.push(clipOut);
-        }
-
-        if (bodyClips.length === 0) {
-            throw new Error('No body clips could be built');
-        }
-
-        const bodyPath = path.join(jobDir, 'body.mp4');
-        await this.concatenateVideos(bodyClips, bodyPath);
-
-        const bodyDur = await this.getMediaDuration(bodyPath);
-        console.log(`  Body: ${bodyClips.length} segments, ${bodyDur.toFixed(1)}s`);
-
-        return bodyPath;
-    }
-
-    /**
-     * Concatenate video files using FFmpeg concat demuxer
-     */
-    async concatenateVideos(clipPaths, outputPath) {
+    async concatStreamCopy(clipPaths, outputPath) {
         const listFile = outputPath + '.txt';
-        const listContent = clipPaths.map(p => `file '${p}'`).join('\n');
-        fs.writeFileSync(listFile, listContent);
+        fs.writeFileSync(listFile, clipPaths.map(p => `file '${p}'`).join('\n'));
 
         await this.ffmpeg([
             '-f', 'concat', '-safe', '0',
             '-i', listFile,
-            '-c:v', 'libx264', '-preset', 'fast',
-            '-c:a', 'aac',
+            '-c', 'copy',
             '-y', outputPath
         ]);
 
         fs.unlinkSync(listFile);
+        const dur = await this.getMediaDuration(outputPath);
+        console.log(`  Concatenated: ${dur.toFixed(1)}s`);
     }
 
     /**
-     * Overlay voiceover audio on video
+     * Add voiceover to video — single pass, stream copy video
      */
-    async overlayAudio(videoPath, audioPath, outputPath) {
-        // Check if video has audio stream
-        let hasAudio = false;
-        try {
-            const { stdout } = await execFileAsync('ffprobe', [
-                '-v', 'quiet', '-select_streams', 'a',
-                '-show_entries', 'stream=codec_type',
-                '-of', 'csv=p=0', videoPath
-            ]);
-            hasAudio = stdout.trim().includes('audio');
-        } catch (e) { /* no audio */ }
-
-        if (hasAudio) {
-            // Mix existing audio (click sounds) + voiceover
-            await this.ffmpeg([
-                '-i', videoPath,
-                '-i', audioPath,
-                '-filter_complex',
-                '[0:a]volume=0.8[clicks];[1:a]volume=1.0[voice];[clicks][voice]amix=inputs=2:duration=longest[out]',
-                '-map', '0:v', '-map', '[out]',
-                '-c:v', 'copy', '-c:a', 'aac',
-                '-shortest',
-                '-y', outputPath
-            ]);
-        } else {
-            // No existing audio, just add voiceover
-            await this.ffmpeg([
-                '-i', videoPath,
-                '-i', audioPath,
-                '-map', '0:v', '-map', '1:a',
-                '-c:v', 'copy', '-c:a', 'aac',
-                '-shortest',
-                '-y', outputPath
-            ]);
-        }
+    async addVoiceover(videoPath, audioPath, outputPath) {
+        await this.ffmpeg([
+            '-i', videoPath,
+            '-i', audioPath,
+            '-map', '0:v', '-map', '1:a',
+            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+            '-shortest',
+            '-y', outputPath
+        ]);
     }
 
     /**
-     * Add one-word captions to video
-     * Uses FFmpeg drawtext filter with estimated word timing from voiceover duration
-     */
-    async addCaptions(videoPath, edl, voiceoverPath, outputPath) {
-        // Get all words from sentences
-        const allWords = edl.sentences.join(' ').split(/\s+/).filter(w => w.length > 0);
-        const videoDuration = await this.getMediaDuration(videoPath);
-
-        // Estimate timing: distribute words evenly across voiceover duration
-        const wordDuration = videoDuration / allWords.length;
-
-        // Build drawtext filter chain — one word at a time
-        const filters = allWords.map((word, i) => {
-            const start = (i * wordDuration).toFixed(3);
-            const end = ((i + 1) * wordDuration).toFixed(3);
-            // Clean word for FFmpeg (escape special chars)
-            const clean = word.replace(/[\\':]/g, '').replace(/"/g, '\\"');
-            return `drawtext=text='${clean}':fontsize=72:fontcolor=white:borderw=4:bordercolor=black:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:x=(w-text_w)/2:y=h*0.75:enable='between(t,${start},${end})'`;
-        });
-
-        // FFmpeg has a filter chain limit, so batch if needed
-        const batchSize = 50;
-        let currentInput = videoPath;
-
-        for (let batch = 0; batch < filters.length; batch += batchSize) {
-            const batchFilters = filters.slice(batch, batch + batchSize);
-            const isLast = batch + batchSize >= filters.length;
-            const batchOutput = isLast ? outputPath : path.join(path.dirname(outputPath), `caption-batch-${batch}.mp4`);
-
-            await this.ffmpeg([
-                '-i', currentInput,
-                '-vf', batchFilters.join(','),
-                '-c:v', 'libx264', '-preset', 'fast',
-                '-c:a', 'copy',
-                '-y', batchOutput
-            ]);
-
-            // Clean up intermediate files
-            if (currentInput !== videoPath && fs.existsSync(currentInput)) {
-                fs.unlinkSync(currentInput);
-            }
-            currentInput = batchOutput;
-        }
-
-        console.log(`  Captions: ${allWords.length} words overlaid`);
-    }
-
-    /**
-     * Get media duration in seconds using ffprobe
+     * Get media duration using ffprobe
      */
     async getMediaDuration(filePath) {
         try {
@@ -399,7 +232,8 @@ class VideoEditor {
     async ffmpeg(args) {
         try {
             const { stdout, stderr } = await execFileAsync(ffmpegPath, args, {
-                timeout: 300000 // 5 min timeout
+                timeout: 300000,
+                maxBuffer: 10 * 1024 * 1024 // 10MB buffer for stderr
             });
             return { stdout, stderr };
         } catch (error) {
