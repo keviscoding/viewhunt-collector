@@ -140,11 +140,13 @@ class VideoEditor {
      * Body segments with real timestamps from Gemini voiceover analysis.
      * Each timestamp tells us when that scriptLine starts in the audio.
      * Duration = next timestamp - this timestamp (last segment fills to end).
+     * 
+     * Always starts clips from ss=0 so the full 5s clip is available.
+     * The looping system in sequentialAssemble handles segments > 5s.
      */
     buildBodyFromTimestamps(edl, clipPaths, hookDur, voiceDuration) {
         var clips = [];
         var ts = edl.timestamps;
-        var sceneUsage = {};
 
         for (var k = 0; k < edl.body.length; k++) {
             var seg = edl.body[k];
@@ -153,21 +155,20 @@ class VideoEditor {
 
             // Find matching timestamp for this segment
             var tsEntry = null;
+            var tIdx = -1;
             for (var t = 0; t < ts.length; t++) {
                 if (ts[t].scene === seg.scene || ts[t].index === k + 1) {
-                    tsEntry = ts[t]; break;
+                    tsEntry = ts[t]; tIdx = t; break;
                 }
             }
 
             var startAt, segDur;
             if (tsEntry) {
-                // Offset by hookDur since timestamps are relative to voiceover start
-                // but our video starts with hook clips before the voiceover body
                 startAt = hookDur + tsEntry.startSec;
 
                 // Duration = time until next timestamp (or end of voiceover)
                 var nextStart = voiceDuration;
-                for (var n = t + 1; n < ts.length; n++) {
+                for (var n = tIdx + 1; n < ts.length; n++) {
                     if (typeof ts[n].startSec === 'number') {
                         nextStart = hookDur + ts[n].startSec;
                         break;
@@ -175,27 +176,19 @@ class VideoEditor {
                 }
                 segDur = nextStart - startAt;
             } else {
-                // No timestamp found for this segment — estimate
                 var prevClip = clips.length > 0 ? clips[clips.length - 1] : null;
                 startAt = prevClip ? prevClip.startAt + prevClip.duration : hookDur;
                 segDur = 5;
             }
 
-            // Clamp: min 2s, max 12s
-            segDur = Math.max(2, Math.min(segDur, 12));
-
-            // Track scene usage to vary start position within clip
-            var sceneKey = String(seg.scene);
-            if (!sceneUsage[sceneKey]) sceneUsage[sceneKey] = 0;
-            var ss = sceneUsage[sceneKey];
-            if (ss + segDur > 5) ss = 0;
-            sceneUsage[sceneKey] = ss + segDur;
+            // Min 2s, NO max cap — let looping handle long segments
+            segDur = Math.max(2, segDur);
 
             var scriptLine = seg.scriptLine || '';
             var hasTimeMarker = TIME_MARKER_RE.test(scriptLine);
 
             clips.push({
-                src: bodySrc, ss: ss, duration: segDur,
+                src: bodySrc, ss: 0, duration: segDur,
                 type: 'body', startAt: startAt,
                 hasTimeMarker: hasTimeMarker,
                 sentence: scriptLine.substring(0, 60)
@@ -207,12 +200,12 @@ class VideoEditor {
 
     /**
      * Fallback: proportional timing based on scriptLine character length.
+     * Always starts clips from ss=0, looping handles overflow.
      */
     buildBodyProportional(edl, clipPaths, hookDur, voiceDuration) {
         var clips = [];
         var currentTime = hookDur;
         var bodyTime = Math.max(voiceDuration - hookDur, 10);
-        var sceneUsage = {};
 
         var totalChars = 0;
         for (var b = 0; b < edl.body.length; b++) {
@@ -227,18 +220,12 @@ class VideoEditor {
             var scriptLine = seg.scriptLine || '';
             var charLen = Math.max(scriptLine.length, 5);
             var segDur = (charLen / totalChars) * bodyTime;
-            segDur = Math.max(2, Math.min(segDur, 10));
-
-            var sceneKey = String(seg.scene);
-            if (!sceneUsage[sceneKey]) sceneUsage[sceneKey] = 0;
-            var ss = sceneUsage[sceneKey];
-            if (ss + segDur > 5) ss = 0;
-            sceneUsage[sceneKey] = ss + segDur;
+            segDur = Math.max(2, segDur); // no max cap, looping handles it
 
             var hasTimeMarker = TIME_MARKER_RE.test(scriptLine);
 
             clips.push({
-                src: bodySrc, ss: ss, duration: segDur,
+                src: bodySrc, ss: 0, duration: segDur,
                 type: 'body', startAt: currentTime,
                 hasTimeMarker: hasTimeMarker,
                 sentence: scriptLine.substring(0, 60)
@@ -337,7 +324,7 @@ class VideoEditor {
             }
 
             var tag = hasAudio ? '🔊' : '🔇';
-            var loopTag = (clip.duration > availableFromSs + 0.3) ? ' 🔄' : '';
+            var loopTag = (clip.duration > availableFromSs + 0.3) ? ' 🔄loop(' + availableFromSs.toFixed(1) + 's avail, ' + clip.duration.toFixed(1) + 's needed)' : '';
             var info = clip.sentence ? ' "' + clip.sentence + '"' : '';
             console.log('  ✓ Seg ' + i + '/' + (editList.length - 1) + ' (' + clip.type + ', ' + clip.duration.toFixed(1) + 's) ' + tag + loopTag + info);
         }
@@ -484,7 +471,7 @@ class VideoEditor {
      * - hook.mp3 on every hook clip
      * - riser.mp3 before first body clip
      * - transition.mp3 ONLY on time-marker sentences (Day 1, Hour 1, etc.)
-     *   → placed 0.05s BEFORE the scene change so it hits right on the cut
+     *   → fires at exact clip.startAt (same timestamp as the scene change)
      */
     buildSfxTimeline(editList) {
         var events = [];
@@ -502,9 +489,8 @@ class VideoEditor {
             }
 
             if (clip.type === 'body' && clip.hasTimeMarker && this.sfx.transition) {
-                // Place transition SFX 0.05s before the scene change so it syncs with the cut
-                var transTime = Math.max(clip.startAt - 0.05, 0);
-                events.push({ time: transTime, sfx: this.sfx.transition, label: 'transition' });
+                // Transition SFX fires exactly when the scene starts
+                events.push({ time: clip.startAt, sfx: this.sfx.transition, label: 'transition' });
             }
 
             lastType = clip.type;
