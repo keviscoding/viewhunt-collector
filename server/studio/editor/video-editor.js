@@ -255,12 +255,13 @@ class VideoEditor {
     /**
      * Sequential assembly: normalize each clip one at a time, then concat.
      * 
-     * CLIP LOOPING: When a segment needs more time than the clip provides,
-     * we loop it — play through to the end, then jump back to the midpoint
-     * and replay from there, filling the needed duration seamlessly.
+     * EVERY body segment uses the loop strategy to guarantee exact duration:
+     *   1. Encode from ss to end of clip (or requested duration, whichever is shorter)
+     *   2. If more time needed, jump back to midpoint and replay
+     *   3. Repeat until the full requested duration is filled
      * 
-     * After encoding, we verify the actual output duration. If FFmpeg produced
-     * less than requested (clip was shorter than reported), we loop to fill.
+     * This ensures we NEVER run out of clip content — each segment is
+     * exactly as long as the voiceover needs it to be.
      */
     async sequentialAssemble(editList, jobDir) {
         var tsFiles = [];
@@ -275,107 +276,87 @@ class VideoEditor {
                 clipDurationCache[clip.src] = await this.getMediaDuration(clip.src);
             }
             var clipLen = clipDurationCache[clip.src] || 5;
-
-            // How much clip is available from the start offset
             var availableFromSs = Math.max(clipLen - clip.ss, 0.5);
 
-            // Always try single pass first, then verify duration
-            var tsPath = path.join(jobDir, 'seg-' + i + '.ts');
-            var needsLoop = false;
-
-            if (clip.duration <= availableFromSs - 0.1) {
-                // Clip should be long enough — single pass
+            // Hook clips are short (0.4-0.5s) — always single pass
+            if (clip.type === 'hook') {
+                var tsPath = path.join(jobDir, 'seg-' + i + '.ts');
                 await this.encodeSegment(clip.src, clip.ss, clip.duration, hasAudio, tsPath);
                 var segSize = 0;
                 try { segSize = fs.statSync(tsPath).size; } catch(e) {}
-                if (segSize < 100) {
-                    console.warn('  ⚠️ Segment ' + i + ' too small, skipping');
-                    continue;
-                }
-
-                // Verify actual duration — if FFmpeg gave us less, we need to loop
-                var actualDur = await this.getMediaDuration(tsPath);
-                if (actualDur > 0 && actualDur < clip.duration - 0.5) {
-                    console.log('  ⚠️ Seg ' + i + ': requested ' + clip.duration.toFixed(1) + 's but got ' + actualDur.toFixed(1) + 's — switching to loop');
-                    needsLoop = true;
-                    try { fs.unlinkSync(tsPath); } catch(e) {}
-                }
-
-                if (!needsLoop) {
+                if (segSize >= 100) {
                     tsFiles.push(tsPath);
+                } else {
+                    console.warn('  ⚠️ Segment ' + i + ' too small, skipping');
                 }
-            } else {
-                needsLoop = true;
+                var info = clip.sentence ? ' "' + clip.sentence + '"' : '';
+                console.log('  ✓ Seg ' + i + '/' + (editList.length - 1) + ' (hook, ' + clip.duration.toFixed(1) + 's)' + info);
+                continue;
             }
 
-            if (needsLoop) {
-                // Clip too short for this segment — loop it
-                var remaining = clip.duration;
-                var loopIdx = 0;
-                var midpoint = clipLen * 0.5; // loop-back point
-                var partFiles = [];
+            // BODY segments: always use loop-fill strategy to guarantee exact duration
+            var remaining = clip.duration;
+            var loopIdx = 0;
+            var midpoint = clipLen * 0.5;
+            var partFiles = [];
 
-                // First pass: play from ss to end of clip
-                var firstDur = Math.min(remaining, availableFromSs);
-                var partPath = path.join(jobDir, 'seg-' + i + '-p' + loopIdx + '.ts');
-                await this.encodeSegment(clip.src, clip.ss, firstDur, hasAudio, partPath);
-                var pSize = 0;
+            // First pass: play from ss toward end of clip
+            var firstDur = Math.min(remaining, availableFromSs);
+            var partPath = path.join(jobDir, 'seg-' + i + '-p' + loopIdx + '.ts');
+            await this.encodeSegment(clip.src, clip.ss, firstDur, hasAudio, partPath);
+            var pSize = 0;
+            try { pSize = fs.statSync(partPath).size; } catch(e) {}
+            if (pSize >= 100) {
+                var partActual = await this.getMediaDuration(partPath);
+                if (partActual > 0) {
+                    partFiles.push(partPath);
+                    remaining -= partActual;
+                }
+            }
+            loopIdx++;
+
+            // Loop: jump back to midpoint (~2.5s), play to end (~2.5s chunk), repeat
+            while (remaining > 0.3) {
+                var loopAvail = clipLen - midpoint;
+                var loopDur = Math.min(remaining, loopAvail);
+                partPath = path.join(jobDir, 'seg-' + i + '-p' + loopIdx + '.ts');
+                await this.encodeSegment(clip.src, midpoint, loopDur, hasAudio, partPath);
+                pSize = 0;
                 try { pSize = fs.statSync(partPath).size; } catch(e) {}
                 if (pSize >= 100) {
-                    // Check actual duration of this part
-                    var partActual = await this.getMediaDuration(partPath);
-                    if (partActual > 0) {
+                    var loopActual = await this.getMediaDuration(partPath);
+                    if (loopActual > 0) {
                         partFiles.push(partPath);
-                        remaining -= partActual; // use ACTUAL duration, not requested
-                    }
-                }
+                        remaining -= loopActual;
+                    } else break;
+                } else break;
                 loopIdx++;
-
-                // Loop: jump back to midpoint, play to end, repeat
-                while (remaining > 0.3) {
-                    var loopAvail = clipLen - midpoint;
-                    var loopDur = Math.min(remaining, loopAvail);
-                    partPath = path.join(jobDir, 'seg-' + i + '-p' + loopIdx + '.ts');
-                    await this.encodeSegment(clip.src, midpoint, loopDur, hasAudio, partPath);
-                    pSize = 0;
-                    try { pSize = fs.statSync(partPath).size; } catch(e) {}
-                    if (pSize >= 100) {
-                        var loopActual = await this.getMediaDuration(partPath);
-                        if (loopActual > 0) {
-                            partFiles.push(partPath);
-                            remaining -= loopActual;
-                        } else break;
-                    }
-                    else break;
-                    loopIdx++;
-                    if (loopIdx > 10) break; // safety
-                }
-
-                if (partFiles.length > 0) {
-                    var loopedPath = path.join(jobDir, 'seg-' + i + '.ts');
-                    if (partFiles.length === 1) {
-                        fs.renameSync(partFiles[0], loopedPath);
-                    } else {
-                        await this.ffmpeg([
-                            '-i', 'concat:' + partFiles.join('|'),
-                            '-c', 'copy', '-f', 'mpegts',
-                            '-y', loopedPath
-                        ]);
-                        for (var p = 0; p < partFiles.length; p++) {
-                            try { fs.unlinkSync(partFiles[p]); } catch(e) {}
-                        }
-                    }
-                    tsFiles.push(loopedPath);
-                } else {
-                    console.warn('  ⚠️ Segment ' + i + ' loop failed, skipping');
-                    continue;
-                }
+                if (loopIdx > 20) break; // safety
             }
 
-            var tag = hasAudio ? '🔊' : '🔇';
-            var loopTag = needsLoop ? ' 🔄loop(' + availableFromSs.toFixed(1) + 's avail, ' + clip.duration.toFixed(1) + 's needed)' : '';
-            var info = clip.sentence ? ' "' + clip.sentence + '"' : '';
-            console.log('  ✓ Seg ' + i + '/' + (editList.length - 1) + ' (' + clip.type + ', ' + clip.duration.toFixed(1) + 's) ' + tag + loopTag + info);
+            if (partFiles.length > 0) {
+                var loopedPath = path.join(jobDir, 'seg-' + i + '.ts');
+                if (partFiles.length === 1) {
+                    fs.renameSync(partFiles[0], loopedPath);
+                } else {
+                    await this.ffmpeg([
+                        '-i', 'concat:' + partFiles.join('|'),
+                        '-c', 'copy', '-f', 'mpegts',
+                        '-y', loopedPath
+                    ]);
+                    for (var p = 0; p < partFiles.length; p++) {
+                        try { fs.unlinkSync(partFiles[p]); } catch(e) {}
+                    }
+                }
+                tsFiles.push(loopedPath);
+
+                var loopTag = (partFiles.length > 1) ? ' 🔄loop(' + partFiles.length + ' parts)' : '';
+                var tag = hasAudio ? '🔊' : '🔇';
+                var info2 = clip.sentence ? ' "' + clip.sentence + '"' : '';
+                console.log('  ✓ Seg ' + i + '/' + (editList.length - 1) + ' (body, ' + clip.duration.toFixed(1) + 's) ' + tag + loopTag + info2);
+            } else {
+                console.warn('  ⚠️ Segment ' + i + ' failed, skipping');
+            }
         }
 
         if (tsFiles.length === 0) throw new Error('No valid segments produced');
