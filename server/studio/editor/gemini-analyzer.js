@@ -118,6 +118,7 @@ class GeminiAnalyzer {
             body: body,
             timestamps: timestamps,
             wordTimestamps: wordTimestamps,
+            transcription: transcription, // ALL words including hook line — for captions
             scenes: scenes
         };
 

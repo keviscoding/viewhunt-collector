@@ -73,6 +73,22 @@ class VideoEditor {
             var finalPath = path.join(this.outputDir, jobId + '.mp4');
             await this.mixFinalAudio(concatPath, voiceoverPath, editList, finalPath, jobDir, edl);
 
+            // Step 5: Trim ending — video ends 1s after voiceover finishes
+            var maxDuration = voiceDuration + 1.0;
+            var preTrimDur = await this.getMediaDuration(finalPath);
+            if (preTrimDur > maxDuration + 0.5) {
+                console.log('✂️ Trimming: ' + preTrimDur.toFixed(1) + 's → ' + maxDuration.toFixed(1) + 's (voiceover + 1s)');
+                var trimmedPath = path.join(jobDir, 'trimmed.mp4');
+                await this.ffmpeg([
+                    '-i', finalPath,
+                    '-t', String(maxDuration.toFixed(2)),
+                    '-c', 'copy', '-movflags', '+faststart',
+                    '-y', trimmedPath
+                ]);
+                fs.unlinkSync(finalPath);
+                fs.renameSync(trimmedPath, finalPath);
+            }
+
             var finalSize = 0;
             try { finalSize = fs.statSync(finalPath).size; } catch(e) {}
             if (finalSize < 1000) {
@@ -625,36 +641,38 @@ class VideoEditor {
      * Build an ASS subtitle file for text overlays.
      * 
      * Two caption strategies:
-     *   PRIMARY: Use real word timestamps from Gemini transcription (edl.wordTimestamps).
-     *            These are actual audio-analyzed timestamps — perfectly in sync.
+     *   PRIMARY: Use real word timestamps from Gemini transcription (edl.transcription).
+     *            Includes ALL words (hook + body). Shifted slightly early for sync.
      *   FALLBACK: Proportional distribution within each segment's time window.
      * 
-     * Time marker titles appear at the same time as the transition SFX
-     * (clip.startAt - 2.5s offset).
+     * Time marker titles fire at clip.startAt (absolute voiceover time).
      * 
-     * hookDur offset: word timestamps from Gemini are relative to the start of
-     * the voiceover audio. But in the final video, the voiceover starts AFTER
-     * the hook clips. So we add hookDur to every word timestamp.
+     * Returns the file path, or null if no overlays.
      */
     buildAssSubtitles(editList, edl, jobDir) {
         var captionEvents = [];
         var titleEvents = [];
 
-        // 1. Word-by-word captions
-        if (edl && edl.wordTimestamps && edl.wordTimestamps.length > 0) {
+        // Caption offset: show captions slightly before the audio so they
+        // feel perfectly in sync (accounts for visual processing delay)
+        var CAPTION_LEAD = 0.5; // seconds earlier
+
+        // 1. Word-by-word captions from full transcription (includes hook + body)
+        var allWords = (edl && edl.transcription) ? edl.transcription :
+                       (edl && edl.wordTimestamps) ? edl.wordTimestamps : null;
+
+        if (allWords && allWords.length > 0) {
             // PRIMARY: Real word timestamps from Gemini transcription
-            // These are ABSOLUTE — seconds from start of voiceover = start of video
-            var wt = edl.wordTimestamps;
-            for (var w = 0; w < wt.length; w++) {
-                var word = wt[w];
+            for (var w = 0; w < allWords.length; w++) {
+                var word = allWords[w];
                 if (!word.word || typeof word.startSec !== 'number') continue;
 
                 var cleanWord = word.word.replace(/[^a-zA-Z0-9']/g, '').trim().toUpperCase();
                 if (!cleanWord) continue;
 
-                // No offset needed — voiceover plays from time 0 of the video
-                var wStart = word.startSec;
-                var wEnd = word.endSec || word.startSec + 0.2;
+                // Shift captions earlier so they feel in sync
+                var wStart = Math.max(word.startSec - CAPTION_LEAD, 0);
+                var wEnd = Math.max((word.endSec || word.startSec + 0.2) - CAPTION_LEAD, wStart + 0.1);
 
                 captionEvents.push({
                     start: this.secsToAssTime(wStart),
@@ -662,7 +680,7 @@ class VideoEditor {
                     text: cleanWord
                 });
             }
-            console.log('  📝 Captions: ' + captionEvents.length + ' words (Gemini transcription — real timestamps)');
+            console.log('  📝 Captions: ' + captionEvents.length + ' words (Gemini transcription, lead -' + CAPTION_LEAD + 's)');
         } else {
             // FALLBACK: Proportional distribution from edit list
             for (var i = 0; i < editList.length; i++) {
