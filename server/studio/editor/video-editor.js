@@ -116,11 +116,13 @@ class VideoEditor {
     }
 
     /**
-     * Build ordered list of clips with cumulative timestamps for SFX placement
+     * Build ordered list of clips with cumulative timestamps for SFX placement.
+     * Tracks per-scene usage so repeated scenes play the NEXT portion, not restart.
      */
     buildEditList(edl, clipPaths, voiceDuration) {
         var clips = [];
         var currentTime = 0;
+        var sceneUsage = {}; // track how many seconds of each scene we've used
 
         // Hook clips first
         if (edl.hook && edl.hook.clips) {
@@ -150,9 +152,18 @@ class VideoEditor {
             var bodySrc = clipPaths[seg.scene];
             if (!bodySrc) continue;
             var segDur = Math.min(perSeg, 5);
+
+            // Calculate start offset: advance past previously used portions of this scene
+            var sceneKey = String(seg.scene);
+            if (!sceneUsage[sceneKey]) sceneUsage[sceneKey] = 0;
+            var ss = sceneUsage[sceneKey];
+            // Clips are ~5s long. If we've used it all, wrap around to 0
+            if (ss + segDur > 5) ss = 0;
+            sceneUsage[sceneKey] = ss + segDur;
+
             clips.push({
                 src: bodySrc,
-                ss: seg.startSec || 0,
+                ss: ss,
                 duration: segDur,
                 type: 'body',
                 startAt: currentTime
@@ -276,11 +287,12 @@ class VideoEditor {
         if (sfxEvents.length === 0) {
             // No SFX — just mix voiceover over clip audio
             console.log('  No SFX files found, mixing voiceover only');
+            // amix with 2 inputs divides by 2, so boost to compensate
             await this.ffmpeg([
                 '-i', concatVideoPath,
                 '-i', voiceoverPath,
                 '-filter_complex',
-                '[0:a]volume=1.0[clip];[1:a]volume=1.0[vo];[clip][vo]amix=inputs=2:duration=shortest:dropout_transition=2[aout]',
+                '[0:a]volume=0.4[clip];[1:a]volume=2.0[vo];[clip][vo]amix=inputs=2:duration=shortest:dropout_transition=2[aout]',
                 '-map', '0:v', '-map', '[aout]',
                 '-c:v', 'copy',
                 '-c:a', 'aac', '-b:a', '128k',
@@ -299,12 +311,16 @@ class VideoEditor {
 
         if (sfxMixExists) {
             console.log('  Mixing: clip audio + voiceover + ' + sfxEvents.length + ' SFX events');
+            // amix with 3 inputs normalizes by dividing by 3, so boost volumes to compensate
+            // Clip audio: 0.2 base * 3 = 0.6 (stays subtle)
+            // Voiceover: 1.0 * 3 = 3.0 (dominant)
+            // SFX: 1.0 * 3 = 3.0 (punchy, matches voiceover)
             await this.ffmpeg([
                 '-i', concatVideoPath,
                 '-i', voiceoverPath,
                 '-i', sfxMixPath,
                 '-filter_complex',
-                '[0:a]volume=1.0[clip];[1:a]volume=1.0[vo];[2:a]volume=0.8[sfx];[clip][vo][sfx]amix=inputs=3:duration=shortest:dropout_transition=2[aout]',
+                '[0:a]volume=0.6[clip];[1:a]volume=3.0[vo];[2:a]volume=3.0[sfx];[clip][vo][sfx]amix=inputs=3:duration=shortest:dropout_transition=2[aout]',
                 '-map', '0:v', '-map', '[aout]',
                 '-c:v', 'copy',
                 '-c:a', 'aac', '-b:a', '128k',
@@ -314,11 +330,12 @@ class VideoEditor {
         } else {
             // SFX track failed to build, fall back to voiceover only
             console.log('  SFX track failed, mixing voiceover only');
+            // amix with 2 inputs normalizes by dividing by 2
             await this.ffmpeg([
                 '-i', concatVideoPath,
                 '-i', voiceoverPath,
                 '-filter_complex',
-                '[0:a]volume=1.0[clip];[1:a]volume=1.0[vo];[clip][vo]amix=inputs=2:duration=shortest:dropout_transition=2[aout]',
+                '[0:a]volume=0.4[clip];[1:a]volume=2.0[vo];[clip][vo]amix=inputs=2:duration=shortest:dropout_transition=2[aout]',
                 '-map', '0:v', '-map', '[aout]',
                 '-c:v', 'copy',
                 '-c:a', 'aac', '-b:a', '128k',

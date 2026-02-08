@@ -404,18 +404,32 @@ async function pollAssemblyJob(jobId, resultDiv) {
         analyzing_edit_points: '🧠 Analyzing edit points...',
         assembling_video: '🎬 Assembling video (1-3 min)...'
     };
+    var failCount = 0;
     while (true) {
         await sleep(3000);
-        var res = await fetch('/api/studio/assemble/status/' + jobId, {
-            headers: { 'Authorization': 'Bearer ' + getAuthToken() }
-        });
-        if (!res.ok) throw new Error('Failed to check status');
-        var d = await res.json();
-        if (d.status === 'complete' && d.result) return d.result;
-        if (d.status === 'failed') throw new Error(d.error || 'Assembly failed');
-        var msg = msgs[d.status] || d.message || 'Processing...';
-        if (d.position > 1) msg = 'Position ' + d.position + ' in queue. ' + msg;
-        resultDiv.innerHTML = '<div class="assembly-progress">' + msg + '</div>';
+        try {
+            var res = await fetch('/api/studio/assemble/status/' + jobId, {
+                headers: { 'Authorization': 'Bearer ' + getAuthToken() }
+            });
+            if (!res.ok) {
+                failCount++;
+                if (failCount >= 10) throw new Error('Lost connection to server');
+                resultDiv.innerHTML = '<div class="assembly-progress">⏳ Reconnecting... (' + failCount + '/10)</div>';
+                continue;
+            }
+            failCount = 0;
+            var d = await res.json();
+            if (d.status === 'complete' && d.result) return d.result;
+            if (d.status === 'failed') throw new Error(d.error || 'Assembly failed');
+            var msg = msgs[d.status] || d.message || 'Processing...';
+            if (d.position > 1) msg = 'Position ' + d.position + ' in queue. ' + msg;
+            resultDiv.innerHTML = '<div class="assembly-progress">' + msg + '</div>';
+        } catch (err) {
+            if (err.message === 'Lost connection to server' || err.message.includes('Assembly failed')) throw err;
+            failCount++;
+            if (failCount >= 10) throw new Error('Lost connection to server');
+            resultDiv.innerHTML = '<div class="assembly-progress">⏳ Reconnecting... (' + failCount + '/10)</div>';
+        }
     }
 }
 
