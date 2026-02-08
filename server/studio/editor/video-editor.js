@@ -67,7 +67,7 @@ class VideoEditor {
             console.log('  ' + editList.length + ' clips in sequence');
 
             console.log('🎬 Step 3: Normalizing clips one-by-one...');
-            var concatPath = await this.sequentialAssemble(editList, jobDir);
+            var concatPath = await this.sequentialAssemble(editList, jobDir, voiceDuration);
 
             console.log('🔊 Step 4: Mixing audio + overlays...');
             var finalPath = path.join(this.outputDir, jobId + '.mp4');
@@ -265,7 +265,7 @@ class VideoEditor {
      * This ensures we NEVER run out of clip content — each segment is
      * exactly as long as the voiceover needs it to be.
      */
-    async sequentialAssemble(editList, jobDir) {
+    async sequentialAssemble(editList, jobDir, voiceDuration) {
         var tsFiles = [];
         var clipDurationCache = {};
 
@@ -371,6 +371,76 @@ class VideoEditor {
         ]);
 
         console.log('  ✅ Concat complete: ' + tsFiles.length + ' segments');
+
+        // POST-CONCAT SAFETY: Check actual concat duration vs voiceover.
+        // FFmpeg encoding can produce slightly shorter segments than requested,
+        // and those tiny shortfalls accumulate. If the concat is shorter than
+        // the voiceover, we extend by looping the last clip's final 3 seconds.
+        if (voiceDuration && voiceDuration > 0) {
+            var concatDur = await this.getMediaDuration(concatPath);
+            var gap = voiceDuration - concatDur;
+
+            if (gap > 0.5) {
+                console.log('  ⚠️ Concat (' + concatDur.toFixed(1) + 's) shorter than voiceover (' +
+                    voiceDuration.toFixed(1) + 's) — extending by ' + gap.toFixed(1) + 's');
+
+                // Find the last body clip to use as filler
+                var lastBodyClip = null;
+                for (var x = editList.length - 1; x >= 0; x--) {
+                    if (editList[x].type === 'body') { lastBodyClip = editList[x]; break; }
+                }
+
+                if (lastBodyClip) {
+                    var fillClipLen = await this.getMediaDuration(lastBodyClip.src);
+                    var fillHasAudio = await this.hasAudioStream(lastBodyClip.src);
+                    // Play from last 3 seconds of the clip, looping as needed
+                    var fillStart = Math.max(fillClipLen - 3, 0);
+                    var fillRemaining = gap + 1.0; // +1s buffer
+                    var fillIdx = 0;
+                    var fillParts = [];
+
+                    while (fillRemaining > 0.3 && fillIdx < 20) {
+                        var fillDur = Math.min(fillRemaining, fillClipLen - fillStart);
+                        var fillPath = path.join(jobDir, 'fill-' + fillIdx + '.ts');
+                        await this.encodeSegment(lastBodyClip.src, fillStart, fillDur, fillHasAudio, fillPath);
+                        var fSize = 0;
+                        try { fSize = fs.statSync(fillPath).size; } catch(e) {}
+                        if (fSize >= 100) {
+                            var fillActual = await this.getMediaDuration(fillPath);
+                            if (fillActual > 0) {
+                                fillParts.push(fillPath);
+                                fillRemaining -= fillActual;
+                            } else break;
+                        } else break;
+                        fillIdx++;
+                    }
+
+                    if (fillParts.length > 0) {
+                        // Re-concat: original + fill parts
+                        var allTs = tsFiles.concat(fillParts);
+                        var extendedPath = path.join(jobDir, 'concat-extended.mp4');
+                        await this.ffmpeg([
+                            '-i', 'concat:' + allTs.join('|'),
+                            '-c', 'copy', '-movflags', '+faststart',
+                            '-y', extendedPath
+                        ]);
+
+                        // Replace concat with extended version
+                        try { fs.unlinkSync(concatPath); } catch(e) {}
+                        fs.renameSync(extendedPath, concatPath);
+
+                        var newDur = await this.getMediaDuration(concatPath);
+                        console.log('  ✅ Extended concat: ' + newDur.toFixed(1) + 's (was ' + concatDur.toFixed(1) + 's)');
+
+                        // Clean up fill parts
+                        for (var fp = 0; fp < fillParts.length; fp++) {
+                            try { fs.unlinkSync(fillParts[fp]); } catch(e) {}
+                        }
+                    }
+                }
+            }
+        }
+
         return concatPath;
     }
 
