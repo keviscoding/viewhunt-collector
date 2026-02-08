@@ -395,8 +395,10 @@ class VideoEditor {
      *   - Word-by-word captions at the bottom (from Gemini word timestamps)
      *   - Time marker titles at the top (Day 1, Hour 1, etc.) with 3s fade-out
      * 
-     * Background music (if uploaded) loops for the full video duration
-     * at low volume so it doesn't clash with the voiceover.
+     * Two-pass approach for memory efficiency on 256MB:
+     *   Pass 1: Mix all audio tracks (voiceover + clip + SFX + bgmusic) with -c:v copy
+     *   Pass 2: Burn in text overlays via ASS subtitles (re-encode video)
+     * If no overlays, only pass 1 runs.
      * 
      * Volume strategy: use amix with normalize=0 to prevent auto-normalization,
      * then set each input's volume explicitly.
@@ -454,67 +456,67 @@ class VideoEditor {
             ':duration=shortest:dropout_transition=2:normalize=0[aout]';
         filterParts.push(amixFilter);
 
-        // Build video overlay filters (captions + time titles)
-        var videoFilter = this.buildTextOverlayFilter(editList, edl);
-        var hasOverlays = videoFilter !== null;
-
-        if (hasOverlays) {
-            filterParts.push('[0:v]' + videoFilter + '[vout]');
-        }
-
         var logParts = ['clip audio'];
         if (sfxMixPath) logParts.push(sfxEvents.length + ' SFX');
         if (hasBgMusic) logParts.push('bg music');
-        if (hasOverlays) logParts.push('text overlays');
-        console.log('  Mixing: voiceover + ' + logParts.join(' + '));
+        console.log('  Pass 1 — audio mix: voiceover + ' + logParts.join(' + '));
 
-        var filterStr = filterParts.join(';');
-
-        // If filter is very long (many drawtext filters), write to a script file
-        // to avoid command-line length issues
-        var filterScriptPath = null;
-        if (filterStr.length > 4000) {
-            filterScriptPath = path.join(jobDir, 'filter.txt');
-            fs.writeFileSync(filterScriptPath, filterStr);
-            console.log('  📄 Filter written to script file (' + filterStr.length + ' chars)');
-        }
-
-        var args = inputs.concat(
-            filterScriptPath
-                ? ['-filter_complex_script', filterScriptPath]
-                : ['-filter_complex', filterStr]
-        );
-        args.push(
-            '-map', hasOverlays ? '[vout]' : '0:v',
-            '-map', '[aout]',
-            '-c:v', hasOverlays ? 'libx264' : 'copy'
-        );
+        // Check if we have text overlays
+        var assPath = this.buildAssSubtitles(editList, edl, jobDir);
+        var hasOverlays = assPath !== null;
 
         if (hasOverlays) {
-            args.push('-preset', 'ultrafast', '-crf', '28', '-pix_fmt', 'yuv420p');
+            // Two-pass: first mix audio, then burn subtitles
+            var audioMixPath = path.join(jobDir, 'audio-mixed.mp4');
+
+            // Pass 1: audio mix only (fast, -c:v copy)
+            var pass1Args = inputs.concat([
+                '-filter_complex', filterParts.join(';'),
+                '-map', '0:v', '-map', '[aout]',
+                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+                '-movflags', '+faststart', '-y', audioMixPath
+            ]);
+            await this.ffmpeg(pass1Args);
+
+            // Pass 2: burn in ASS subtitles (re-encode video)
+            // Escape the path for FFmpeg's subtitle filter (colons and backslashes)
+            var escapedAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "'\\''");
+            console.log('  Pass 2 — burning text overlays via ASS subtitles');
+
+            var pass2Args = [
+                '-i', audioMixPath,
+                '-vf', 'ass=' + escapedAssPath,
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-pix_fmt', 'yuv420p',
+                '-c:a', 'copy',
+                '-movflags', '+faststart', '-y', outputPath
+            ];
+            await this.ffmpeg(pass2Args);
+
+        } else {
+            // Single pass: audio mix only, no overlays
+            var args = inputs.concat([
+                '-filter_complex', filterParts.join(';'),
+                '-map', '0:v', '-map', '[aout]',
+                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+                '-movflags', '+faststart', '-y', outputPath
+            ]);
+            await this.ffmpeg(args);
         }
-
-        args.push('-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-y', outputPath);
-
-        await this.ffmpeg(args);
     }
 
     /**
-     * Build FFmpeg drawtext filter chain for:
-     *   1. Word-by-word captions at the bottom (white, bold, one word at a time)
-     *   2. Time marker titles at the top (fade out after 3s)
+     * Build an ASS (Advanced SubStation Alpha) subtitle file for text overlays.
+     * Much more efficient than chaining 100+ drawtext filters.
      * 
-     * Returns a filter string or null if no overlays available.
+     * Contains two styles:
+     *   - "Caption" — word-by-word at the bottom, white bold, black outline
+     *   - "TimeTitle" — time markers at the top, white bold, fades out
+     * 
+     * Returns the file path, or null if no overlays.
      */
-    buildTextOverlayFilter(editList, edl) {
-        var parts = [];
-
-        // Hook duration offset — word timestamps are relative to audio start,
-        // but the video includes hook clips before the voiceover starts.
-        // The voiceover starts at the beginning of the audio file, and the
-        // hook clips play during the first part of the voiceover.
-        // So word timestamps align directly with video time (no offset needed
-        // since voiceover is mixed starting at t=0 of the final video).
+    buildAssSubtitles(editList, edl, jobDir) {
+        var captionEvents = [];
+        var titleEvents = [];
 
         // 1. Word-by-word captions
         if (edl && edl.wordTimestamps && edl.wordTimestamps.length > 0) {
@@ -531,57 +533,85 @@ class VideoEditor {
                 var wStart = word.startSec;
                 var wEnd = (typeof word.endSec === 'number') ? word.endSec : wStart + 0.3;
 
-                parts.push(
-                    "drawtext=text='" + cleanWord + "'" +
-                    ':fontsize=72:fontcolor=white:borderw=4:bordercolor=black' +
-                    ':x=(w-text_w)/2:y=h-220' +
-                    ":enable='between(t," + wStart.toFixed(2) + ',' + wEnd.toFixed(2) + ")'"
-                );
+                captionEvents.push({
+                    start: this.secsToAssTime(wStart),
+                    end: this.secsToAssTime(wEnd),
+                    text: cleanWord
+                });
             }
         }
 
         // 2. Time marker titles at the top
-        var timeMarkerClips = [];
         for (var i = 0; i < editList.length; i++) {
             var clip = editList[i];
             if (clip.type === 'body' && clip.hasTimeMarker && clip.sentence) {
-                // Extract the time marker text from the sentence
                 var markerText = this.extractTimeMarkerText(clip.sentence);
                 if (markerText) {
-                    timeMarkerClips.push({ text: markerText, startAt: clip.startAt });
+                    var tStart = clip.startAt;
+                    titleEvents.push({
+                        start: this.secsToAssTime(tStart),
+                        end: this.secsToAssTime(tStart + 3),
+                        text: markerText.toUpperCase(),
+                        // Fade: 0ms fade-in, 2000ms fade-out (last 2s of the 3s display)
+                        fade: '\\fad(0,2000)'
+                    });
                 }
             }
         }
 
-        if (timeMarkerClips.length > 0) {
-            console.log('  🏷️ Time titles: ' + timeMarkerClips.map(function(t) {
-                return '"' + t.text + '"@' + t.startAt.toFixed(1) + 's';
+        if (captionEvents.length === 0 && titleEvents.length === 0) return null;
+
+        if (titleEvents.length > 0) {
+            console.log('  🏷️ Time titles: ' + titleEvents.map(function(t) {
+                return '"' + t.text + '"@' + t.start;
             }).join(', '));
-
-            for (var t = 0; t < timeMarkerClips.length; t++) {
-                var tm = timeMarkerClips[t];
-                var tStart = tm.startAt;
-                var tEnd = tStart + 3;
-
-                // Fade: full opacity for 1s, then fade out over 2s
-                // alpha expression: if t < tStart+1 → 1, else lerp to 0 by tEnd
-                var alphaExpr = "if(lt(t," + (tStart + 1).toFixed(2) + ")\\,1\\," +
-                    "max(0\\,1-((t-" + (tStart + 1).toFixed(2) + ")/2)))";
-
-                var cleanTitle = tm.text.replace(/[^a-zA-Z0-9 ]/g, '').trim().toUpperCase();
-
-                parts.push(
-                    "drawtext=text='" + cleanTitle + "'" +
-                    ':fontsize=64:fontcolor=white:borderw=4:bordercolor=black' +
-                    ':x=(w-text_w)/2:y=180' +
-                    ":alpha='" + alphaExpr + "'" +
-                    ":enable='between(t," + tStart.toFixed(2) + ',' + tEnd.toFixed(2) + ")'"
-                );
-            }
         }
 
-        if (parts.length === 0) return null;
-        return parts.join(',');
+        // Build ASS file content
+        // PlayResX/PlayResY match our 1080x1920 vertical video
+        var ass = '[Script Info]\n' +
+            'ScriptType: v4.00+\n' +
+            'PlayResX: 1080\n' +
+            'PlayResY: 1920\n' +
+            'WrapStyle: 0\n' +
+            '\n' +
+            '[V4+ Styles]\n' +
+            'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n' +
+            'Style: Caption,Arial,72,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,200,1\n' +
+            'Style: TimeTitle,Arial,64,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,8,40,40,180,1\n' +
+            '\n' +
+            '[Events]\n' +
+            'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n';
+
+        // Caption events (bottom, Alignment 2 = bottom-center)
+        for (var c = 0; c < captionEvents.length; c++) {
+            var ce = captionEvents[c];
+            ass += 'Dialogue: 0,' + ce.start + ',' + ce.end + ',Caption,,0,0,0,,' + ce.text + '\n';
+        }
+
+        // Time title events (top, Alignment 8 = top-center, with fade)
+        for (var t = 0; t < titleEvents.length; t++) {
+            var te = titleEvents[t];
+            ass += 'Dialogue: 1,' + te.start + ',' + te.end + ',TimeTitle,,0,0,0,,{' + te.fade + '}' + te.text + '\n';
+        }
+
+        var assFilePath = path.join(jobDir, 'overlays.ass');
+        fs.writeFileSync(assFilePath, ass);
+        console.log('  📄 ASS subtitle file: ' + captionEvents.length + ' captions + ' + titleEvents.length + ' titles');
+
+        return assFilePath;
+    }
+
+    /**
+     * Convert seconds to ASS timestamp format: H:MM:SS.CC
+     */
+    secsToAssTime(secs) {
+        var h = Math.floor(secs / 3600);
+        var m = Math.floor((secs % 3600) / 60);
+        var s = Math.floor(secs % 60);
+        var cs = Math.round((secs % 1) * 100);
+        if (cs >= 100) { cs = 0; s++; }
+        return h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s + '.' + (cs < 10 ? '0' : '') + cs;
     }
 
     /**
