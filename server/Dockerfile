@@ -2,9 +2,6 @@ FROM node:18
 
 WORKDIR /workspace/server
 
-# Install FFmpeg for video assembly
-RUN apt-get update && apt-get install -y ffmpeg fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
-
 # Copy package files
 COPY package*.json ./
 

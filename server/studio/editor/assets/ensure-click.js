@@ -13,7 +13,8 @@ function ensureClickSound() {
 
     console.log('🔊 Generating click sound effect...');
     try {
-        execFileSync('ffmpeg', [
+        const ffmpegPath = require('ffmpeg-static');
+        execFileSync(ffmpegPath, [
             '-f', 'lavfi',
             '-i', 'sine=frequency=800:duration=0.05',
             '-af', 'afade=t=out:st=0.02:d=0.03,volume=2',

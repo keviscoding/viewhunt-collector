@@ -17,6 +17,10 @@ const path = require('path');
 const axios = require('axios');
 const ensureClickSound = require('./assets/ensure-click');
 
+// Use npm-installed ffmpeg/ffprobe binaries (no system install needed)
+const ffmpegPath = require('ffmpeg-static');
+const ffprobePath = require('ffprobe-static').path;
+
 class VideoEditor {
     constructor() {
         this.tempDir = path.join(__dirname, '../../public/studio/generated/temp');
@@ -376,7 +380,7 @@ class VideoEditor {
      */
     async getMediaDuration(filePath) {
         try {
-            const { stdout } = await execFileAsync('ffprobe', [
+            const { stdout } = await execFileAsync(ffprobePath, [
                 '-v', 'quiet',
                 '-show_entries', 'format=duration',
                 '-of', 'csv=p=0',
@@ -394,12 +398,11 @@ class VideoEditor {
      */
     async ffmpeg(args) {
         try {
-            const { stdout, stderr } = await execFileAsync('ffmpeg', args, {
+            const { stdout, stderr } = await execFileAsync(ffmpegPath, args, {
                 timeout: 300000 // 5 min timeout
             });
             return { stdout, stderr };
         } catch (error) {
-            // FFmpeg outputs to stderr even on success, only throw on actual errors
             if (error.code) {
                 console.error('FFmpeg error:', error.stderr?.substring(0, 500));
                 throw new Error('FFmpeg failed: ' + (error.stderr?.substring(0, 200) || error.message));
