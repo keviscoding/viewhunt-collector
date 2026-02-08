@@ -1,19 +1,24 @@
 /**
- * Gemini Analyzer — Voiceover-driven approach:
+ * Analyzer — Voiceover-driven approach:
  *   1. Gemini picks 4-5 hook clips (visual analysis)
  *   2. Body segments come from Claude's scriptLine mapping
- *   3. Gemini transcribes the voiceover audio word-by-word with timestamps
- *      → We match words back to script lines to get exact scene start times
- *      → Word timestamps drive captions directly (no guessing)
+ *   3. OpenAI Whisper transcribes voiceover word-by-word (~50ms accuracy)
+ *      → We match words back to script lines for exact scene start times
+ *      → Word timestamps drive captions directly
+ *   4. Falls back to Gemini transcription if OPENAI_API_KEY not set
  * 
  * Skips scene 1 (hook line) from body since it's already covered by hook clips.
  */
 const { GoogleGenAI } = require('@google/genai');
+const OpenAI = require('openai');
 const fs = require('fs');
 
 class GeminiAnalyzer {
     constructor() {
         this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        if (process.env.OPENAI_API_KEY) {
+            this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        }
     }
 
     /**
@@ -87,7 +92,7 @@ class GeminiAnalyzer {
         for (var j = 0; j < scenes.length; j++) {
             var s = scenes[j];
             var num = s.sceneNumber || j + 1;
-            if (num === 1) continue; // skip hook scene
+            if (num === 1) continue;
             body.push({
                 scene: num,
                 scriptLine: s.scriptLine || '',
@@ -103,11 +108,16 @@ class GeminiAnalyzer {
         var wordTimestamps = null;
 
         if (voiceoverPath) {
-            transcription = await this.transcribeVoiceover(voiceoverPath);
+            // Try Whisper first (most accurate), fall back to Gemini
+            if (this.openai) {
+                transcription = await this.transcribeWithWhisper(voiceoverPath);
+            }
+            if (!transcription) {
+                transcription = await this.transcribeWithGemini(voiceoverPath);
+            }
         }
 
         if (transcription && transcription.length > 0) {
-            // Match transcribed words back to script lines → scene-level timestamps
             var matched = this.matchWordsToScenes(transcription, body);
             timestamps = matched.sceneTimestamps;
             wordTimestamps = matched.wordTimestamps;
@@ -118,7 +128,7 @@ class GeminiAnalyzer {
             body: body,
             timestamps: timestamps,
             wordTimestamps: wordTimestamps,
-            transcription: transcription, // ALL words including hook line — for captions
+            transcription: transcription,
             scenes: scenes
         };
 
@@ -126,13 +136,70 @@ class GeminiAnalyzer {
     }
 
     /**
-     * Transcribe voiceover audio word-by-word with timestamps using Gemini.
-     * Sends the WAV audio and asks for every word + its start/end time.
+     * Transcribe voiceover using OpenAI Whisper API.
+     * Returns word-level timestamps with ~50ms accuracy.
      * 
-     * Returns array of { word, startSec, endSec } or null on failure.
+     * Whisper response.words = [{ word: "hello", start: 0.0, end: 0.5 }, ...]
+     * We normalize to our format: { word, startSec, endSec }
      */
-    async transcribeVoiceover(voiceoverPath) {
-        console.log('🎧 Gemini: Transcribing voiceover word-by-word...');
+    async transcribeWithWhisper(voiceoverPath) {
+        console.log('🎧 Whisper: Transcribing voiceover word-by-word...');
+
+        try {
+            var response = await this.openai.audio.transcriptions.create({
+                file: fs.createReadStream(voiceoverPath),
+                model: 'whisper-1',
+                response_format: 'verbose_json',
+                timestamp_granularities: ['word']
+            });
+
+            if (!response.words || response.words.length === 0) {
+                throw new Error('No words in Whisper response');
+            }
+
+            // Normalize to our format
+            var words = response.words.map(function(w) {
+                return {
+                    word: w.word || '',
+                    startSec: w.start,
+                    endSec: w.end
+                };
+            });
+
+            // Validate ascending order
+            var valid = true;
+            for (var k = 0; k < words.length; k++) {
+                if (typeof words[k].startSec !== 'number' || words[k].startSec < 0) {
+                    valid = false; break;
+                }
+                if (k > 0 && words[k].startSec < words[k - 1].startSec - 0.05) {
+                    valid = false; break;
+                }
+            }
+
+            if (!valid) {
+                console.warn('⚠️ Whisper timestamps invalid, falling back to Gemini');
+                return null;
+            }
+
+            console.log('✅ Whisper: ' + words.length + ' words (' +
+                words[0].word + ' @ ' + words[0].startSec.toFixed(2) + 's → ' +
+                words[words.length - 1].word + ' @ ' + words[words.length - 1].startSec.toFixed(2) + 's)');
+
+            return words;
+
+        } catch (error) {
+            console.warn('⚠️ Whisper transcription failed: ' + error.message + ' — trying Gemini');
+            return null;
+        }
+    }
+
+    /**
+     * Fallback: Transcribe voiceover using Gemini 2.5 Flash.
+     * Less accurate than Whisper but works without OpenAI key.
+     */
+    async transcribeWithGemini(voiceoverPath) {
+        console.log('🎧 Gemini: Transcribing voiceover word-by-word (fallback)...');
 
         try {
             var audioBuffer = fs.readFileSync(voiceoverPath);
@@ -186,7 +253,6 @@ class GeminiAnalyzer {
                 throw new Error('Invalid word array');
             }
 
-            // Validate: ascending, reasonable
             var valid = true;
             for (var k = 0; k < words.length; k++) {
                 if (typeof words[k].startSec !== 'number' || words[k].startSec < 0) {
@@ -198,18 +264,18 @@ class GeminiAnalyzer {
             }
 
             if (!valid) {
-                console.warn('⚠️ Word timestamps not valid/ascending, falling back');
+                console.warn('⚠️ Gemini timestamps invalid, using proportional fallback');
                 return null;
             }
 
-            console.log('✅ Transcription: ' + words.length + ' words (' +
+            console.log('✅ Gemini: ' + words.length + ' words (' +
                 words[0].word + ' @ ' + words[0].startSec.toFixed(1) + 's → ' +
                 words[words.length - 1].word + ' @ ' + words[words.length - 1].startSec.toFixed(1) + 's)');
 
             return words;
 
         } catch (error) {
-            console.warn('⚠️ Voiceover transcription failed: ' + error.message + ' — using proportional timing');
+            console.warn('⚠️ Gemini transcription failed: ' + error.message + ' — using proportional timing');
             return null;
         }
     }
@@ -217,19 +283,14 @@ class GeminiAnalyzer {
     /**
      * Match transcribed words back to script lines.
      * 
-     * Strategy: For each body segment's scriptLine, find where its first
-     * few words appear in the transcription. The timestamp of the first
-     * matched word = when that scene line starts being spoken.
-     * 
-     * Also builds a per-scene word timestamp array for captions.
-     * 
-     * Returns { sceneTimestamps, wordTimestamps }
+     * For each body segment's scriptLine, find where its first few words
+     * appear in the transcription. The timestamp of the first matched word
+     * = when that scene line starts being spoken.
      */
     matchWordsToScenes(transcription, bodySegments) {
         var sceneTimestamps = [];
         var wordTimestamps = [];
 
-        // Normalize transcription words for matching
         var tWords = transcription.map(function(w) {
             return {
                 word: (w.word || '').toLowerCase().replace(/[^a-z0-9]/g, ''),
@@ -239,7 +300,7 @@ class GeminiAnalyzer {
             };
         });
 
-        var searchFrom = 0; // Track position in transcription to avoid matching backwards
+        var searchFrom = 0;
 
         for (var i = 0; i < bodySegments.length; i++) {
             var seg = bodySegments[i];
@@ -247,13 +308,11 @@ class GeminiAnalyzer {
             var lineWords = line.split(/\s+/).filter(function(w) { return w.length > 0; });
             if (lineWords.length === 0) continue;
 
-            // Normalize the first few words of this script line for matching
             var matchWords = [];
             for (var m = 0; m < Math.min(4, lineWords.length); m++) {
                 matchWords.push(lineWords[m].replace(/[^a-z0-9]/g, ''));
             }
 
-            // Search for these words in the transcription (starting from searchFrom)
             var bestMatch = -1;
             for (var t = searchFrom; t < tWords.length - matchWords.length + 1; t++) {
                 var matched = 0;
@@ -262,7 +321,6 @@ class GeminiAnalyzer {
                         matched++;
                     }
                 }
-                // Require at least 2 words to match (or all if line has < 3 words)
                 var threshold = Math.min(2, matchWords.length);
                 if (matched >= threshold) {
                     bestMatch = t;
@@ -271,31 +329,24 @@ class GeminiAnalyzer {
             }
 
             if (bestMatch >= 0) {
-                var startSec = tWords[bestMatch].startSec;
                 sceneTimestamps.push({
                     index: i + 1,
                     scene: seg.scene,
-                    startSec: startSec
+                    startSec: tWords[bestMatch].startSec
                 });
-
-                // Find where this scene's words end (= where next scene starts, or end of transcription)
-                // We'll assign word timestamps for this scene later after all scenes are matched
                 seg._transcriptionStart = bestMatch;
                 searchFrom = bestMatch + 1;
             } else {
-                // Couldn't match — will use proportional fallback for this segment
                 seg._transcriptionStart = -1;
             }
         }
 
-        // Now build per-scene word timestamps
-        // For each scene, its words run from _transcriptionStart to the next scene's _transcriptionStart
+        // Build per-scene word timestamps
         for (var i = 0; i < bodySegments.length; i++) {
             var seg = bodySegments[i];
             var tStart = seg._transcriptionStart;
             if (tStart < 0) continue;
 
-            // Find end: next scene's transcription start, or end of transcription
             var tEnd = tWords.length;
             for (var j = i + 1; j < bodySegments.length; j++) {
                 if (bodySegments[j]._transcriptionStart >= 0) {
@@ -312,12 +363,9 @@ class GeminiAnalyzer {
                     scene: seg.scene
                 });
             }
-
-            // Clean up temp property
             delete seg._transcriptionStart;
         }
 
-        // Clean up any remaining temp properties
         for (var i = 0; i < bodySegments.length; i++) {
             delete bodySegments[i]._transcriptionStart;
         }
