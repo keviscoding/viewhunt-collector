@@ -11,7 +11,7 @@ class SkeletonGeneratorV2 {
             apiKey: process.env.ANTHROPIC_API_KEY
         });
         
-        // Freepik API configuration (for Kling 3 Omni Pro videos)
+        // Freepik API configuration (for Kling 3 Omni Standard videos)
         this.freepikApiKey = process.env.FREEPIK_API_KEY;
         this.freepikBaseUrl = 'https://api.freepik.com/v1/ai/video';
         
@@ -503,7 +503,7 @@ Format your response as JSON:
     }
 
     /**
-     * Step 3: Generate video from image using Freepik Kling 3 Omni Pro
+     * Step 3: Generate video from image using Freepik Kling 3 Omni Standard
      * Includes 1 retry on failure
      */
     async generateVideo(imageUrl, videoPrompt, sceneNumber) {
@@ -516,7 +516,7 @@ Format your response as JSON:
         
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                console.log(`🎬 CALLING Freepik Kling 3 Omni Pro API - Scene ${sceneNumber} (attempt ${attempt}/${maxAttempts})`);
+                console.log(`🎬 CALLING Freepik Kling 3 Omni Standard API - Scene ${sceneNumber} (attempt ${attempt}/${maxAttempts})`);
                 
                 const requestBody = {
                     prompt: videoPrompt,
@@ -527,7 +527,7 @@ Format your response as JSON:
                 };
                 
                 const createResponse = await axios.post(
-                    `${this.freepikBaseUrl}/kling-v3-omni-pro`,
+                    `${this.freepikBaseUrl}/kling-v3-omni-std`,
                     requestBody,
                     {
                         headers: {
@@ -550,7 +550,7 @@ Format your response as JSON:
                 console.log(`Video task created: ${taskId}`);
                 
                 const videoUrl = await this.pollFreepikTask(taskId, 600000);
-                console.log(`✅ Video ${sceneNumber} generated successfully (Kling 3 Omni Pro)`);
+                console.log(`✅ Video ${sceneNumber} generated successfully (Kling 3 Omni Standard)`);
                 
                 return videoUrl;
                 
@@ -803,12 +803,12 @@ Format your response as JSON:
                 const videoSuccessCount = videoResults.filter(r => r.success).length;
                 console.log(`\n✅ Batch complete: ${videoSuccessCount}/${scenesWithImages.length} videos generated successfully\n`);
                 
-                // Cost summary (Freepik Kling 3 Omni Pro)
+                // Cost summary (Freepik Kling 3 Omni Standard)
                 const videoCost = videoSuccessCount * 0.50; // estimate
                 console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
                 console.log(`   Videos generated: ${videoSuccessCount}`);
-                console.log(`   Provider: Freepik Kling 3 Omni Pro`);
-                console.log(`   Cost: ~$${videoCost.toFixed(2)} (estimated)`);
+                console.log(`   Provider: Freepik Kling 3 Omni Standard`);
+                console.log(`   Cost: ~${videoCost.toFixed(2)} (estimated)`);
                 console.log(`\n`);
             }
 
@@ -999,7 +999,7 @@ Format your response as JSON:
                 const videoCost = videoSuccessCount * 0.50;
                 console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
                 console.log(`   Videos generated: ${videoSuccessCount}`);
-                console.log(`   Provider: Freepik Kling 3 Omni Pro`);
+                console.log(`   Provider: Freepik Kling 3 Omni Standard`);
                 console.log(`   Cost: ~$${videoCost.toFixed(2)} (estimated)`);
                 console.log(`\n`);
                 
