@@ -5,12 +5,13 @@
  * Strategy: Process ONE clip at a time to avoid OOM.
  *   1. Download all clips
  *   2. Re-encode each clip individually to normalized .ts files
- *      - Keeps clip audio at 35% volume (environmental sounds from Kling 2.6)
  *   3. Concat all .ts files with -c copy (near-zero memory)
  *   4. Mix voiceover + SFX onto the concat result
  * 
- * Timing: Uses sentence lengths from the EDL to calculate per-segment durations
- * so scene switches align with sentence boundaries in the voiceover.
+ * Timing: Hybrid approach —
+ *   Primary: Gemini analyzes the voiceover audio to find real timestamps
+ *   for each scriptLine → scene switches land exactly on the narration.
+ *   Fallback: Proportional timing based on scriptLine character length.
  */
 const { execFile } = require('child_process');
 const { promisify } = require('util');
@@ -94,16 +95,17 @@ class VideoEditor {
     }
 
     /**
-     * Build edit list using Claude's scriptLine mapping for body timing.
+     * Build edit list — hybrid approach:
+     *   1. Hook clips from Gemini (rapid-fire teaser)
+     *   2. Body segments from Claude's scriptLine mapping
+     *   3. Timing from Gemini voiceover analysis (real timestamps)
+     *      OR proportional fallback if analysis unavailable
      * 
-     * Each scene has a scriptLine (the chunk of script Claude assigned to it).
-     * Duration is proportional to scriptLine length — longer lines get more time.
-     * This naturally aligns scene switches with the voiceover.
+     * Scene 1 (hook line) is already excluded from edl.body by the analyzer.
      */
     buildEditList(edl, clipPaths, voiceDuration) {
         var clips = [];
         var currentTime = 0;
-        var sceneUsage = {};
 
         // Hook clips first
         if (edl.hook && edl.hook.clips) {
@@ -120,11 +122,98 @@ class VideoEditor {
             }
         }
 
-        // Body: use scriptLine lengths for proportional timing
         var hookDur = currentTime;
-        var bodyTime = Math.max(voiceDuration - hookDur, 10);
 
-        // Calculate total character count across all body scriptLines
+        // Choose timing strategy
+        if (edl.timestamps && edl.timestamps.length > 0) {
+            console.log('  ⏱️ Using voiceover-analyzed timestamps');
+            clips = clips.concat(this.buildBodyFromTimestamps(edl, clipPaths, hookDur, voiceDuration));
+        } else {
+            console.log('  📏 Using proportional timing (fallback)');
+            clips = clips.concat(this.buildBodyProportional(edl, clipPaths, hookDur, voiceDuration));
+        }
+
+        return clips;
+    }
+
+    /**
+     * Body segments with real timestamps from Gemini voiceover analysis.
+     * Each timestamp tells us when that scriptLine starts in the audio.
+     * Duration = next timestamp - this timestamp (last segment fills to end).
+     */
+    buildBodyFromTimestamps(edl, clipPaths, hookDur, voiceDuration) {
+        var clips = [];
+        var ts = edl.timestamps;
+        var sceneUsage = {};
+
+        for (var k = 0; k < edl.body.length; k++) {
+            var seg = edl.body[k];
+            var bodySrc = clipPaths[seg.scene];
+            if (!bodySrc) continue;
+
+            // Find matching timestamp for this segment
+            var tsEntry = null;
+            for (var t = 0; t < ts.length; t++) {
+                if (ts[t].scene === seg.scene || ts[t].index === k + 1) {
+                    tsEntry = ts[t]; break;
+                }
+            }
+
+            var startAt, segDur;
+            if (tsEntry) {
+                // Offset by hookDur since timestamps are relative to voiceover start
+                // but our video starts with hook clips before the voiceover body
+                startAt = hookDur + tsEntry.startSec;
+
+                // Duration = time until next timestamp (or end of voiceover)
+                var nextStart = voiceDuration;
+                for (var n = t + 1; n < ts.length; n++) {
+                    if (typeof ts[n].startSec === 'number') {
+                        nextStart = hookDur + ts[n].startSec;
+                        break;
+                    }
+                }
+                segDur = nextStart - startAt;
+            } else {
+                // No timestamp found for this segment — estimate
+                var prevClip = clips.length > 0 ? clips[clips.length - 1] : null;
+                startAt = prevClip ? prevClip.startAt + prevClip.duration : hookDur;
+                segDur = 5;
+            }
+
+            // Clamp: min 2s, max 12s
+            segDur = Math.max(2, Math.min(segDur, 12));
+
+            // Track scene usage to vary start position within clip
+            var sceneKey = String(seg.scene);
+            if (!sceneUsage[sceneKey]) sceneUsage[sceneKey] = 0;
+            var ss = sceneUsage[sceneKey];
+            if (ss + segDur > 5) ss = 0;
+            sceneUsage[sceneKey] = ss + segDur;
+
+            var scriptLine = seg.scriptLine || '';
+            var hasTimeMarker = TIME_MARKER_RE.test(scriptLine);
+
+            clips.push({
+                src: bodySrc, ss: ss, duration: segDur,
+                type: 'body', startAt: startAt,
+                hasTimeMarker: hasTimeMarker,
+                sentence: scriptLine.substring(0, 60)
+            });
+        }
+
+        return clips;
+    }
+
+    /**
+     * Fallback: proportional timing based on scriptLine character length.
+     */
+    buildBodyProportional(edl, clipPaths, hookDur, voiceDuration) {
+        var clips = [];
+        var currentTime = hookDur;
+        var bodyTime = Math.max(voiceDuration - hookDur, 10);
+        var sceneUsage = {};
+
         var totalChars = 0;
         for (var b = 0; b < edl.body.length; b++) {
             totalChars += Math.max((edl.body[b].scriptLine || '').length, 5);
@@ -137,20 +226,15 @@ class VideoEditor {
 
             var scriptLine = seg.scriptLine || '';
             var charLen = Math.max(scriptLine.length, 5);
-
-            // Duration proportional to this scriptLine's share of total text
             var segDur = (charLen / totalChars) * bodyTime;
-            // Clamp: min 2s, max 10s (let clips play their full duration)
             segDur = Math.max(2, Math.min(segDur, 10));
 
-            // Track scene usage to avoid replaying same portion
             var sceneKey = String(seg.scene);
             if (!sceneUsage[sceneKey]) sceneUsage[sceneKey] = 0;
             var ss = sceneUsage[sceneKey];
             if (ss + segDur > 5) ss = 0;
             sceneUsage[sceneKey] = ss + segDur;
 
-            // Detect time markers for SFX
             var hasTimeMarker = TIME_MARKER_RE.test(scriptLine);
 
             clips.push({

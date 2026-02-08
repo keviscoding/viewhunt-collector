@@ -1,14 +1,14 @@
 /**
- * Gemini Analyzer — Uses Gemini ONLY for hook clip selection.
+ * Gemini Analyzer — Hybrid approach:
+ *   1. Gemini picks 4-5 hook clips (visual analysis)
+ *   2. Body segments come from Claude's scriptLine mapping
+ *   3. Gemini analyzes the voiceover audio to find real timestamps
+ *      for each scriptLine → scene switches land exactly on the narration
  * 
- * Body timing is handled directly by the video editor using Claude's
- * scene-to-scriptLine mapping (each scene already has a scriptLine
- * that tells us exactly which part of the script it covers).
- * 
- * Gemini picks the 4-5 most visually dynamic scenes for the rapid-fire
- * hook at the start of the video.
+ * Skips scene 1 (hook line) from body since it's already covered by hook clips.
  */
 const { GoogleGenAI } = require('@google/genai');
+const fs = require('fs');
 
 class GeminiAnalyzer {
     constructor() {
@@ -16,10 +16,10 @@ class GeminiAnalyzer {
     }
 
     /**
-     * Analyze scenes and pick hook clips.
-     * Body segments are built directly from the scenes array (no Gemini needed).
+     * Analyze scenes: pick hook clips + build body segments.
+     * If voiceoverPath is provided, also timestamps body segments against the audio.
      */
-    async analyze(script, scenes) {
+    async analyze(script, scenes, voiceoverPath) {
         console.log('🧠 Gemini: Selecting hook clips...');
 
         var sceneList = scenes.map(function(s, i) {
@@ -46,6 +46,7 @@ class GeminiAnalyzer {
             '- startSec is where in the 5-second clip to grab from (0-4)\n' +
             '- Pick 4-5 clips total';
 
+        var hookResult;
         try {
             var response = await this.ai.models.generateContent({
                 model: 'gemini-2.5-flash',
@@ -62,48 +63,147 @@ class GeminiAnalyzer {
             var jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
             if (jsonMatch) jsonText = jsonMatch[1];
 
-            var result = JSON.parse(jsonText.trim());
-            if (!result.hook || !result.hook.clips) {
-                throw new Error('Invalid hook structure from Gemini');
+            hookResult = JSON.parse(jsonText.trim());
+            if (!hookResult.hook || !hookResult.hook.clips) {
+                throw new Error('Invalid hook structure');
             }
-
-            // Build body segments directly from scenes (Claude's scriptLine mapping)
-            var body = scenes.map(function(s, i) {
-                return {
-                    scene: s.sceneNumber || i + 1,
-                    scriptLine: s.scriptLine || '',
-                    startSec: 0
-                };
-            });
-
-            var edl = {
-                hook: result.hook,
-                body: body,
-                scenes: scenes
-            };
-
-            console.log('✅ Hook: ' + edl.hook.clips.length + ' clips, Body: ' + edl.body.length + ' segments (from Claude scriptLines)');
-            return edl;
-
+            console.log('✅ Hook: ' + hookResult.hook.clips.length + ' clips selected');
         } catch (error) {
-            console.error('Gemini analysis error:', error.message);
-            // Fallback: auto-pick first 5 scenes for hook
+            console.error('Gemini hook selection error:', error.message);
             console.log('⚠️ Using fallback hook selection');
-            var fallbackHook = [];
+            hookResult = { hook: { clips: [] } };
             for (var i = 0; i < Math.min(5, scenes.length); i++) {
-                fallbackHook.push({
+                hookResult.hook.clips.push({
                     scene: scenes[i].sceneNumber || i + 1,
                     startSec: 1.0,
                     duration: 0.5
                 });
             }
-            return {
-                hook: { clips: fallbackHook },
-                body: scenes.map(function(s, j) {
-                    return { scene: s.sceneNumber || j + 1, scriptLine: s.scriptLine || '', startSec: 0 };
-                }),
-                scenes: scenes
-            };
+        }
+
+        // Build body segments — skip scene 1 (hook line already processed)
+        var body = [];
+        for (var j = 0; j < scenes.length; j++) {
+            var s = scenes[j];
+            var num = s.sceneNumber || j + 1;
+            if (num === 1) continue; // skip hook scene
+            body.push({
+                scene: num,
+                scriptLine: s.scriptLine || '',
+                startSec: 0
+            });
+        }
+
+        console.log('📋 Body: ' + body.length + ' segments (scene 1 skipped — hook line)');
+
+        // Try voiceover-aware timestamping
+        var timestamps = null;
+        if (voiceoverPath) {
+            timestamps = await this.analyzeVoiceoverTiming(voiceoverPath, body);
+        }
+
+        var edl = {
+            hook: hookResult.hook,
+            body: body,
+            timestamps: timestamps, // null if analysis failed/skipped
+            scenes: scenes
+        };
+
+        return edl;
+    }
+
+    /**
+     * Send voiceover audio + scriptLines to Gemini.
+     * Ask it to find the timestamp (in seconds) where each scriptLine
+     * starts being spoken in the audio.
+     * 
+     * Returns array of { index, startSec } or null on failure.
+     */
+    async analyzeVoiceoverTiming(voiceoverPath, bodySegments) {
+        console.log('🎧 Gemini: Analyzing voiceover for scene timestamps...');
+
+        try {
+            var audioBuffer = fs.readFileSync(voiceoverPath);
+            var audioBase64 = audioBuffer.toString('base64');
+
+            var scriptLines = bodySegments.map(function(seg, i) {
+                return (i + 1) + '. Scene ' + seg.scene + ': "' + seg.scriptLine + '"';
+            }).join('\n');
+
+            var prompt = 'I have a voiceover audio file and a list of script lines. ' +
+                'Listen to the audio and tell me the TIMESTAMP (in seconds) where each script line STARTS being spoken.\n\n' +
+                'The audio begins with the hook line (first sentence of the script) which is NOT in the list below. ' +
+                'The lines below start AFTER the hook.\n\n' +
+                'SCRIPT LINES:\n' + scriptLines + '\n\n' +
+                'Return ONLY valid JSON — an array of objects:\n' +
+                '[\n' +
+                '  { "index": 1, "scene": 3, "startSec": 4.2 },\n' +
+                '  { "index": 2, "scene": 5, "startSec": 12.8 }\n' +
+                ']\n\n' +
+                'RULES:\n' +
+                '- Listen carefully to the audio for when each line starts\n' +
+                '- startSec is seconds from the beginning of the audio file\n' +
+                '- Times should be in ascending order\n' +
+                '- Be as precise as possible (to 0.1s)\n' +
+                '- Include ALL lines from the list';
+
+            var response = await this.ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [
+                    {
+                        parts: [
+                            {
+                                inlineData: {
+                                    mimeType: 'audio/wav',
+                                    data: audioBase64
+                                }
+                            },
+                            { text: prompt }
+                        ]
+                    }
+                ],
+                config: { responseMimeType: 'application/json' }
+            });
+
+            var text = response.text || (response.candidates && response.candidates[0] &&
+                response.candidates[0].content && response.candidates[0].content.parts &&
+                response.candidates[0].content.parts[0] && response.candidates[0].content.parts[0].text);
+            if (!text) throw new Error('Empty response');
+
+            var jsonText = text;
+            var jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+            if (jsonMatch) jsonText = jsonMatch[1];
+
+            var timestamps = JSON.parse(jsonText.trim());
+            if (!Array.isArray(timestamps) || timestamps.length === 0) {
+                throw new Error('Invalid timestamps array');
+            }
+
+            // Validate: must be ascending and reasonable
+            var valid = true;
+            for (var k = 0; k < timestamps.length; k++) {
+                if (typeof timestamps[k].startSec !== 'number' || timestamps[k].startSec < 0) {
+                    valid = false; break;
+                }
+                if (k > 0 && timestamps[k].startSec < timestamps[k - 1].startSec) {
+                    valid = false; break;
+                }
+            }
+
+            if (!valid) {
+                console.warn('⚠️ Timestamps not ascending or invalid, falling back to proportional');
+                return null;
+            }
+
+            console.log('✅ Voiceover timestamps: ' + timestamps.map(function(t) {
+                return 'S' + t.scene + '@' + t.startSec.toFixed(1) + 's';
+            }).join(', '));
+
+            return timestamps;
+
+        } catch (error) {
+            console.warn('⚠️ Voiceover analysis failed: ' + error.message + ' — using proportional timing');
+            return null;
         }
     }
 }

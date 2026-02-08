@@ -99,10 +99,10 @@ class JobQueue {
             const tts = new GeminiTTS();
             const voiceoverPath = await tts.generateVoiceover(job.script, job.voiceName);
 
-            // Step 2: Analyze
+            // Step 2: Analyze (hook selection + voiceover-aware timestamps)
             this.updateJob(jobId, STATES.ANALYZING, 'Analyzing edit points...');
             const analyzer = new GeminiAnalyzer();
-            const edl = await analyzer.analyze(job.script, job.scenes);
+            const edl = await analyzer.analyze(job.script, job.scenes, voiceoverPath);
 
             // Step 3: Assemble
             this.updateJob(jobId, STATES.ASSEMBLING, 'Assembling video...');
