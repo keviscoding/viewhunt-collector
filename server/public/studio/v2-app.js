@@ -361,125 +361,110 @@ async function downloadAllDirectorVideos() {
     btn.disabled = false; btn.textContent = '📥 Download All Videos';
 }
 
-// ==================== VIDEO ASSEMBLY ====================
 
 // ==================== VIDEO ASSEMBLY ====================
+
+async function submitAssemblyJob(scenesWithVideo, videoUrlKey) {
+    var script = document.getElementById('script').value.trim();
+    if (!script) { alert('Script is required'); return null; }
+    var payload = scenesWithVideo.map(function(s) {
+        return {
+            sceneNumber: s.sceneNumber, scriptLine: s.scriptLine,
+            shotType: s.shotType, imagePrompt: s.imagePrompt,
+            videoPrompt: s.videoPrompt, videoUrl: s[videoUrlKey]
+        };
+    });
+    var res = await fetch('/api/studio/assemble', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getAuthToken() },
+        body: JSON.stringify({ script: script, scenes: payload })
+    });
+    if (!res.ok) {
+        var err = await res.json().catch(function() { return {}; });
+        throw new Error(err.error || 'Server error ' + res.status);
+    }
+    var data = await res.json();
+    return data.jobId;
+}
+
+async function pollAssemblyJob(jobId, resultDiv) {
+    var msgs = {
+        queued: '⏳ Waiting in queue...',
+        generating_voiceover: '🎙️ Generating voiceover...',
+        analyzing_edit_points: '🧠 Analyzing edit points...',
+        assembling_video: '🎬 Assembling video (1-3 min)...'
+    };
+    while (true) {
+        await sleep(3000);
+        var res = await fetch('/api/studio/assemble/status/' + jobId, {
+            headers: { 'Authorization': 'Bearer ' + getAuthToken() }
+        });
+        if (!res.ok) throw new Error('Failed to check status');
+        var d = await res.json();
+        if (d.status === 'complete' && d.result) return d.result;
+        if (d.status === 'failed') throw new Error(d.error || 'Assembly failed');
+        var msg = msgs[d.status] || d.message || 'Processing...';
+        if (d.position > 1) msg = 'Position ' + d.position + ' in queue. ' + msg;
+        resultDiv.innerHTML = '<div class="assembly-progress">' + msg + '</div>';
+    }
+}
+
+function renderAssemblyResult(container, result, retryFnName) {
+    container.innerHTML = '<div class="assembly-progress">' +
+        '<div style="margin-bottom:1rem">✅ Final video (' + result.duration.toFixed(1) + 's) — ' +
+        result.hookClips + ' hook clips, ' + result.bodySegments + ' body segments</div>' +
+        '<video src="' + result.videoUrl + '" controls autoplay muted loop ' +
+        'style="width:100%;max-width:360px;border-radius:12px;margin-bottom:0.75rem"></video>' +
+        '<div><button class="btn btn-green btn-sm" onclick="downloadFile(\'' +
+        result.videoUrl + '\', \'final-video.mp4\')">📥 Download</button> ' +
+        '<button class="btn btn-secondary btn-sm" onclick="' + retryFnName +
+        '()">↻ Re-assemble</button></div></div>';
+}
 
 async function assembleAutoVideo() {
-    const scenesWithVideo = currentScenes.filter(s => s.videoUrl);
-    if (scenesWithVideo.length === 0) return alert('No videos generated yet');
-    
-    const script = document.getElementById('script').value.trim();
-    if (!script) return alert('Script is required for assembly');
-    
-    if (!confirm(`Assemble final video from ${scenesWithVideo.length} scenes?\nThis will:\n• Generate voiceover (Gemini TTS)\n• Create hook intro (rapid clips)\n• Add scene transitions + click sounds\n• Overlay one-word captions\n\nThis may take 1-3 minutes.`)) return;
-    
-    const btn = document.getElementById('auto-assemble-btn');
-    btn.disabled = true; btn.textContent = '⏳ Assembling...';
-    
-    const resultDiv = document.getElementById('auto-assembly-result');
-    resultDiv.innerHTML = '<div class="assembly-progress">🎬 Assembling final video... generating voiceover, analyzing edit points, compositing...</div>';
-    
+    var scenes = currentScenes.filter(function(s) { return s.videoUrl; });
+    if (scenes.length === 0) return alert('No videos generated yet');
+    if (!confirm('Assemble final video from ' + scenes.length + ' scenes?\nEstimated time: 2-4 minutes.')) return;
+    var btn = document.getElementById('auto-assemble-btn');
+    btn.disabled = true; btn.textContent = '⏳ Submitting...';
+    var rd = document.getElementById('auto-assembly-result');
+    rd.innerHTML = '<div class="assembly-progress">🎬 Submitting job...</div>';
     try {
-        const scenesPayload = scenesWithVideo.map(s => ({
-            sceneNumber: s.sceneNumber,
-            scriptLine: s.scriptLine,
-            shotType: s.shotType,
-            imagePrompt: s.imagePrompt,
-            videoPrompt: s.videoPrompt,
-            videoUrl: s.videoUrl
-        }));
-        
-        const res = await fetch('/api/studio/assemble', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
-            body: JSON.stringify({ script, scenes: scenesPayload })
-        });
-        
-        if (!res.ok) {
-            const errData = await res.json().catch(() => ({ error: `Server error ${res.status}` }));
-            throw new Error(errData.error || `Server error ${res.status}`);
-        }
-        
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Assembly failed');
-        
-        resultDiv.innerHTML = `
-            <div class="assembly-progress">
-                <div style="margin-bottom:1rem">✅ Final video assembled (${data.duration?.toFixed(1)}s) — ${data.hookClips} hook clips, ${data.bodySegments} body segments</div>
-                <video src="${data.videoUrl}" controls autoplay muted loop style="width:100%;max-width:360px;border-radius:12px;margin-bottom:0.75rem"></video>
-                <div>
-                    <button class="btn btn-green btn-sm" onclick="downloadFile('${data.videoUrl}', 'final-video.mp4')">📥 Download Final Video</button>
-                    <button class="btn btn-secondary btn-sm" onclick="assembleAutoVideo()">↻ Re-assemble</button>
-                </div>
-            </div>
-        `;
+        var jobId = await submitAssemblyJob(scenes, 'videoUrl');
+        if (!jobId) return;
+        btn.textContent = '⏳ Processing...';
+        var result = await pollAssemblyJob(jobId, rd);
+        renderAssemblyResult(rd, result, 'assembleAutoVideo');
     } catch (err) {
         console.error('Assembly error:', err);
-        resultDiv.innerHTML = `<div class="assembly-progress" style="color:var(--red)">❌ Assembly failed: ${err.message}<br><button class="btn btn-secondary btn-sm" onclick="document.getElementById('auto-assembly-result').innerHTML=''" style="margin-top:0.5rem">Dismiss</button></div>`;
+        rd.innerHTML = '<div class="assembly-progress" style="color:var(--red)">❌ ' + err.message + '</div>';
     } finally {
         btn.disabled = false; btn.textContent = '🎬 Assemble Final Video';
     }
 }
 
 async function assembleVideo() {
-    const scenesWithVideo = currentScenes.filter(s => s._videoUrl);
-    if (scenesWithVideo.length === 0) return alert('Generate videos for scenes first');
-    
-    const script = document.getElementById('script').value.trim();
-    if (!script) return alert('Script is required for assembly');
-    
-    if (!confirm(`Assemble final video from ${scenesWithVideo.length} scenes?\nThis will:\n• Generate voiceover (Gemini TTS)\n• Create hook intro (rapid clips)\n• Add scene transitions + click sounds\n• Overlay one-word captions\n\nThis may take 1-3 minutes.`)) return;
-    
-    const btn = document.getElementById('director-assemble-btn');
-    btn.disabled = true; btn.textContent = '⏳ Assembling...';
-    
-    // Show progress area
-    const bar = document.getElementById('director-action-bar');
-    const progressDiv = document.createElement('div');
-    progressDiv.id = 'assembly-progress';
-    progressDiv.className = 'assembly-progress';
-    progressDiv.innerHTML = '🎬 Assembling final video... generating voiceover, analyzing edit points, compositing...';
-    bar.parentNode.insertBefore(progressDiv, bar.nextSibling);
-    
+    var scenes = currentScenes.filter(function(s) { return s._videoUrl; });
+    if (scenes.length === 0) return alert('Generate videos first');
+    if (!confirm('Assemble final video from ' + scenes.length + ' scenes?\nEstimated time: 2-4 minutes.')) return;
+    var btn = document.getElementById('director-assemble-btn');
+    btn.disabled = true; btn.textContent = '⏳ Submitting...';
+    var old = document.getElementById('assembly-progress');
+    if (old) old.remove();
+    var bar = document.getElementById('director-action-bar');
+    var rd = document.createElement('div');
+    rd.id = 'assembly-progress'; rd.className = 'assembly-progress';
+    rd.innerHTML = '🎬 Submitting job...';
+    bar.parentNode.insertBefore(rd, bar.nextSibling);
     try {
-        // Prepare scenes payload
-        const scenesPayload = scenesWithVideo.map(s => ({
-            sceneNumber: s.sceneNumber,
-            scriptLine: s.scriptLine,
-            shotType: s.shotType,
-            imagePrompt: s.imagePrompt,
-            videoPrompt: s.videoPrompt,
-            videoUrl: s._videoUrl
-        }));
-        
-        const res = await fetch('/api/studio/assemble', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
-            body: JSON.stringify({ script, scenes: scenesPayload })
-        });
-        
-        if (!res.ok) {
-            const errData = await res.json().catch(() => ({ error: `Server error ${res.status}` }));
-            throw new Error(errData.error || `Server error ${res.status}`);
-        }
-        
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Assembly failed');
-        
-        // Show the final video
-        progressDiv.innerHTML = `
-            <div style="margin-bottom:1rem">✅ Final video assembled (${data.duration?.toFixed(1)}s) — ${data.hookClips} hook clips, ${data.bodySegments} body segments, ${data.sentences} sentences</div>
-            <video src="${data.videoUrl}" controls autoplay muted loop style="width:100%;max-width:360px;border-radius:12px;margin-bottom:0.75rem"></video>
-            <div>
-                <button class="btn btn-green btn-sm" onclick="downloadFile('${data.videoUrl}', 'final-video.mp4')">📥 Download Final Video</button>
-                <button class="btn btn-secondary btn-sm" onclick="assembleVideo()">↻ Re-assemble</button>
-            </div>
-        `;
-        
+        var jobId = await submitAssemblyJob(scenes, '_videoUrl');
+        if (!jobId) return;
+        btn.textContent = '⏳ Processing...';
+        var result = await pollAssemblyJob(jobId, rd);
+        renderAssemblyResult(rd, result, 'assembleVideo');
     } catch (err) {
         console.error('Assembly error:', err);
-        progressDiv.innerHTML = `<div style="color:var(--red)">❌ Assembly failed: ${err.message}</div><button class="btn btn-secondary btn-sm" onclick="document.getElementById('assembly-progress')?.remove()" style="margin-top:0.5rem">Dismiss</button>`;
+        rd.innerHTML = '<div style="color:var(--red)">❌ ' + err.message + '</div>';
     } finally {
         btn.disabled = false; btn.textContent = '🎬 Assemble Final Video';
     }

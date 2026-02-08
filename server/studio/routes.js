@@ -8,6 +8,7 @@ const SkeletonGeneratorV2 = require('./formats/skeleton-anatomy-v2/generator');
 const GeminiAnalyzer = require('./editor/gemini-analyzer');
 const GeminiTTS = require('./editor/gemini-tts');
 const VideoEditor = require('./editor/video-editor');
+const assemblyQueue = require('./editor/job-queue');
 
 // Configure multer for scene image uploads
 const uploadDir = path.join(__dirname, '../public/studio/uploads');
@@ -357,10 +358,10 @@ router.post('/upload-scene-image', requireAuth, upload.single('image'), (req, re
     }
 });
 
-// === VIDEO ASSEMBLY ENDPOINT ===
+// === VIDEO ASSEMBLY ENDPOINTS (Queue-based) ===
 
-// Assemble final video from generated scenes
-router.post('/assemble', requireAuth, async (req, res) => {
+// Submit assembly job — returns immediately with jobId
+router.post('/assemble', requireAuth, (req, res) => {
     try {
         const { script, scenes, voiceName } = req.body;
         
@@ -368,39 +369,28 @@ router.post('/assemble', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'script and scenes array are required' });
         }
         
-        // Filter to scenes that have video URLs
         const scenesWithVideo = scenes.filter(s => s.videoUrl || s._videoUrl);
         if (scenesWithVideo.length === 0) {
             return res.status(400).json({ error: 'No scenes have generated videos' });
         }
         
-        console.log(`\n🎬 Video Assembly: ${scenesWithVideo.length} scenes, script ${script.length} chars\n`);
+        console.log(`\n🎬 Assembly job submitted: ${scenesWithVideo.length} scenes, ${script.length} chars\n`);
         
-        // Step 1: Generate voiceover with Gemini TTS
-        const tts = new GeminiTTS();
-        const voiceoverPath = await tts.generateVoiceover(script, voiceName || 'Charon');
+        const jobId = assemblyQueue.submit(script, scenesWithVideo, voiceName);
         
-        // Step 2: Get edit decision list from Gemini
-        const analyzer = new GeminiAnalyzer();
-        const edl = await analyzer.analyze(script, scenesWithVideo);
-        
-        // Step 3: Assemble video with FFmpeg
-        const editor = new VideoEditor();
-        const result = await editor.assemble(edl, scenesWithVideo, voiceoverPath);
-        
-        res.json({
-            success: true,
-            videoUrl: result.videoUrl,
-            duration: result.duration,
-            hookClips: edl.hook.clips.length,
-            bodySegments: edl.body.length,
-            sentences: edl.sentences.length
-        });
+        res.json({ success: true, jobId });
         
     } catch (error) {
-        console.error('Video assembly error:', error);
+        console.error('Assembly submit error:', error);
         res.status(500).json({ error: error.message });
     }
+});
+
+// Poll assembly job status
+router.get('/assemble/status/:jobId', requireAuth, (req, res) => {
+    const status = assemblyQueue.getStatus(req.params.jobId);
+    if (!status) return res.status(404).json({ error: 'Job not found' });
+    res.json(status);
 });
 
 // Health check

@@ -1,9 +1,10 @@
 /**
  * Video Editor — Assembles final video from scene clips using FFmpeg
- * Optimized for low-memory environments (256MB DigitalOcean containers)
+ * Optimized for low-memory (256MB containers).
  * 
- * Strategy: Use stream copy (-c copy) everywhere possible to avoid re-encoding.
- * Only re-encode when absolutely necessary (trimming to exact duration).
+ * Key strategy: Do ONE single FFmpeg command that reads all inputs,
+ * trims/scales/concatenates them, and adds voiceover in a single pass.
+ * This avoids creating dozens of intermediate files and re-encoding multiple times.
  */
 const { execFile } = require('child_process');
 const { promisify } = require('util');
@@ -11,7 +12,6 @@ const execFileAsync = promisify(execFile);
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const ensureClickSound = require('./assets/ensure-click');
 
 const ffmpegPath = require('ffmpeg-static');
 const ffprobePath = require('ffprobe-static').path;
@@ -20,7 +20,6 @@ class VideoEditor {
     constructor() {
         this.tempDir = path.join(__dirname, '../../public/studio/generated/temp');
         this.outputDir = path.join(__dirname, '../../public/studio/generated/final');
-        this.clickSound = ensureClickSound();
 
         for (const dir of [this.tempDir, this.outputDir]) {
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -28,9 +27,9 @@ class VideoEditor {
     }
 
     /**
-     * Main assembly — memory-efficient pipeline
+     * Main assembly
      */
-    async assemble(edl, scenes, voiceoverPath, options = {}) {
+    async assemble(edl, scenes, voiceoverPath) {
         const jobId = `edit-${Date.now()}`;
         const jobDir = path.join(this.tempDir, jobId);
         fs.mkdirSync(jobDir, { recursive: true });
@@ -46,20 +45,15 @@ class VideoEditor {
             const voiceDuration = await this.getMediaDuration(voiceoverPath);
             console.log(`🎙️ Voiceover duration: ${voiceDuration.toFixed(1)}s`);
 
-            // Step 3: Trim all clips (hook + body) to their target durations
-            // Use -c copy with keyframe-aware seeking for speed + low memory
-            console.log('✂️ Step 2: Trimming clips...');
-            const trimmedClips = await this.trimAllClips(edl, clipPaths, voiceDuration, jobDir);
+            // Step 3: Build the ordered clip list with timings
+            console.log('📋 Step 2: Building edit list...');
+            const editList = this.buildEditList(edl, clipPaths, voiceDuration);
+            console.log(`  ${editList.length} clips in sequence`);
 
-            // Step 4: Concatenate all trimmed clips (stream copy — near zero memory)
-            console.log('🔗 Step 3: Concatenating all clips...');
-            const concatPath = path.join(jobDir, 'concat.mp4');
-            await this.concatStreamCopy(trimmedClips, concatPath);
-
-            // Step 5: Add voiceover audio in one pass
-            console.log('🎙️ Step 4: Adding voiceover...');
+            // Step 4: Single-pass FFmpeg assembly
+            console.log('🎬 Step 3: Assembling video (single-pass)...');
             const finalPath = path.join(this.outputDir, `${jobId}.mp4`);
-            await this.addVoiceover(concatPath, voiceoverPath, finalPath);
+            await this.singlePassAssemble(editList, voiceoverPath, finalPath, jobDir);
 
             const finalDuration = await this.getMediaDuration(finalPath);
             this.cleanup(jobDir);
@@ -74,6 +68,97 @@ class VideoEditor {
             this.cleanup(jobDir);
             throw error;
         }
+    }
+
+    /**
+     * Build ordered list of clips with source path, start time, and duration
+     */
+    buildEditList(edl, clipPaths, voiceDuration) {
+        const clips = [];
+
+        // Hook clips first
+        for (const hc of edl.hook.clips) {
+            const src = clipPaths[hc.scene];
+            if (!src) continue;
+            clips.push({
+                src,
+                ss: hc.startSec || 0,
+                duration: hc.duration || 0.5,
+                type: 'hook'
+            });
+        }
+
+        // Body clips — distribute remaining time evenly
+        const hookDur = clips.reduce((s, c) => s + c.duration, 0);
+        const bodyTime = Math.max(voiceDuration - hookDur, 10);
+        const perSeg = bodyTime / edl.body.length;
+
+        for (const seg of edl.body) {
+            const src = clipPaths[seg.scene];
+            if (!src) continue;
+            clips.push({
+                src,
+                ss: seg.startSec || 0,
+                duration: Math.min(perSeg, 5),
+                type: 'body'
+            });
+        }
+
+        return clips;
+    }
+
+    /**
+     * Single-pass assembly using FFmpeg filter_complex.
+     * Reads all source clips + voiceover, trims/scales/concatenates, outputs one file.
+     * This is the most memory-efficient approach — one FFmpeg process, streaming.
+     */
+    async singlePassAssemble(editList, voiceoverPath, outputPath, jobDir) {
+        // Collect unique source files to avoid duplicate inputs
+        const uniqueSources = [...new Set(editList.map(c => c.src))];
+        const sourceIndex = {};
+        uniqueSources.forEach((src, i) => { sourceIndex[src] = i; });
+
+        // Build FFmpeg args
+        const args = [];
+
+        // Input files
+        for (const src of uniqueSources) {
+            args.push('-i', src);
+        }
+        // Voiceover as last input
+        const voiceIdx = uniqueSources.length;
+        args.push('-i', voiceoverPath);
+
+        // Build filter_complex
+        const filterParts = [];
+        const concatInputs = [];
+
+        for (let i = 0; i < editList.length; i++) {
+            const clip = editList[i];
+            const srcIdx = sourceIndex[clip.src];
+            // Trim + scale each clip to consistent 1080x1920 (9:16)
+            filterParts.push(
+                `[${srcIdx}:v]trim=start=${clip.ss}:duration=${clip.duration},setpts=PTS-STARTPTS,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}]`
+            );
+            concatInputs.push(`[v${i}]`);
+        }
+
+        // Concat all video segments
+        filterParts.push(
+            `${concatInputs.join('')}concat=n=${editList.length}:v=1:a=0[outv]`
+        );
+
+        args.push('-filter_complex', filterParts.join(';'));
+        args.push('-map', '[outv]');
+        args.push('-map', `${voiceIdx}:a`);
+        args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28');
+        args.push('-c:a', 'aac', '-b:a', '128k');
+        args.push('-shortest');
+        args.push('-movflags', '+faststart');
+        args.push('-y', outputPath);
+
+        console.log(`  FFmpeg: ${uniqueSources.length} source clips, ${editList.length} segments`);
+        await this.ffmpeg(args);
     }
 
     /**
@@ -107,108 +192,6 @@ class VideoEditor {
     }
 
     /**
-     * Trim all clips (hook + body) to target durations.
-     * Uses -ss before -i (input seeking) + -c copy for near-zero memory usage.
-     * Returns ordered array of trimmed clip paths.
-     */
-    async trimAllClips(edl, clipPaths, voiceDuration, jobDir) {
-        const trimmed = [];
-
-        // Hook clips (0.4-0.5s each)
-        for (let i = 0; i < edl.hook.clips.length; i++) {
-            const hc = edl.hook.clips[i];
-            const src = clipPaths[hc.scene];
-            if (!src) continue;
-
-            const out = path.join(jobDir, `trim-hook-${i}.mp4`);
-            const ss = hc.startSec || 0;
-            const dur = hc.duration || 0.5;
-
-            // For very short clips, we need re-encode to get exact duration
-            await this.ffmpeg([
-                '-ss', String(ss), '-i', src,
-                '-t', String(dur),
-                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
-                '-an', '-y', out
-            ]);
-            trimmed.push(out);
-            // Clean up downloaded source after last use? No — body may reuse it
-        }
-        console.log(`  Hook: ${trimmed.length} clips trimmed`);
-
-        // Body clips — distribute voiceover time evenly
-        const hookDur = edl.hook.clips.reduce((s, c) => s + (c.duration || 0.5), 0);
-        const bodyTime = Math.max(voiceDuration - hookDur, 10);
-        const perSeg = bodyTime / edl.body.length;
-
-        for (let i = 0; i < edl.body.length; i++) {
-            const seg = edl.body[i];
-            const src = clipPaths[seg.scene];
-            if (!src) continue;
-
-            const out = path.join(jobDir, `trim-body-${i}.mp4`);
-            const ss = seg.startSec || 0;
-            const dur = Math.min(perSeg, 5);
-
-            // Stream copy where possible, re-encode only if needed for exact trim
-            await this.ffmpeg([
-                '-ss', String(ss), '-i', src,
-                '-t', String(dur),
-                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
-                '-an', '-y', out
-            ]);
-            trimmed.push(out);
-
-            // Delete previous body clip to free disk/memory
-            if (i > 0) {
-                const prevSrc = clipPaths[edl.body[i - 1]?.scene];
-                const curSrc = clipPaths[seg.scene];
-                // Only delete if no future segment uses this source
-                const futureUses = edl.body.slice(i + 1).some(s => clipPaths[s.scene] === prevSrc);
-                if (prevSrc && prevSrc !== curSrc && !futureUses) {
-                    try { fs.unlinkSync(prevSrc); } catch (e) {}
-                }
-            }
-        }
-        console.log(`  Body: ${edl.body.length} clips trimmed (${perSeg.toFixed(1)}s each)`);
-
-        return trimmed;
-    }
-
-    /**
-     * Concatenate clips using concat demuxer with stream copy (zero re-encode)
-     */
-    async concatStreamCopy(clipPaths, outputPath) {
-        const listFile = outputPath + '.txt';
-        fs.writeFileSync(listFile, clipPaths.map(p => `file '${p}'`).join('\n'));
-
-        await this.ffmpeg([
-            '-f', 'concat', '-safe', '0',
-            '-i', listFile,
-            '-c', 'copy',
-            '-y', outputPath
-        ]);
-
-        fs.unlinkSync(listFile);
-        const dur = await this.getMediaDuration(outputPath);
-        console.log(`  Concatenated: ${dur.toFixed(1)}s`);
-    }
-
-    /**
-     * Add voiceover to video — single pass, stream copy video
-     */
-    async addVoiceover(videoPath, audioPath, outputPath) {
-        await this.ffmpeg([
-            '-i', videoPath,
-            '-i', audioPath,
-            '-map', '0:v', '-map', '1:a',
-            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
-            '-shortest',
-            '-y', outputPath
-        ]);
-    }
-
-    /**
      * Get media duration using ffprobe
      */
     async getMediaDuration(filePath) {
@@ -232,14 +215,14 @@ class VideoEditor {
     async ffmpeg(args) {
         try {
             const { stdout, stderr } = await execFileAsync(ffmpegPath, args, {
-                timeout: 300000,
-                maxBuffer: 10 * 1024 * 1024 // 10MB buffer for stderr
+                timeout: 600000, // 10 min timeout for full assembly
+                maxBuffer: 10 * 1024 * 1024
             });
             return { stdout, stderr };
         } catch (error) {
             if (error.code) {
-                console.error('FFmpeg error:', error.stderr?.substring(0, 500));
-                throw new Error('FFmpeg failed: ' + (error.stderr?.substring(0, 200) || error.message));
+                console.error('FFmpeg error:', error.stderr?.substring(0, 800));
+                throw new Error('FFmpeg failed: ' + (error.stderr?.substring(0, 300) || error.message));
             }
             return { stdout: error.stdout, stderr: error.stderr };
         }
