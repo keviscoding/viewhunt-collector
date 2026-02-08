@@ -216,7 +216,8 @@ async function generateSceneImages(sceneIndex, count) {
             const w = document.createElement('div');
             w.className = 'gallery-item';
             if (img.error) {
-                w.innerHTML = `<div class="gallery-error">❌<br><small>${img.error.substring(0, 30)}</small></div>`;
+                // Don't create individual error cards — just skip failed variants
+                return;
             } else {
                 w.innerHTML = `<img src="${img.url}" alt="Variant" loading="lazy"><div class="gallery-check">✓</div>`;
                 w.onclick = () => selectImage(sceneIndex, img.url, w);
@@ -224,6 +225,15 @@ async function generateSceneImages(sceneIndex, count) {
             }
             gallery.appendChild(w);
         });
+        
+        // If ALL images failed, show one single error message
+        var successCount = data.images.filter(function(img) { return !img.error; }).length;
+        if (successCount === 0) {
+            var errEl = document.createElement('div');
+            errEl.className = 'gallery-error';
+            errEl.innerHTML = 'Generation failed · <a href="#" onclick="event.preventDefault();generateSceneImages(' + sceneIndex + ', 4)" style="color:var(--accent);text-decoration:underline">Retry</a>';
+            gallery.appendChild(errEl);
+        }
         
         const more = document.createElement('div');
         more.className = 'gallery-item gallery-regen';
@@ -234,7 +244,7 @@ async function generateSceneImages(sceneIndex, count) {
     } catch (error) {
         console.error(`Scene ${sceneIndex + 1} image error:`, error);
         if (existing.length === 0) {
-            gallery.innerHTML = `<div class="gallery-error">❌ ${error.message}<br><button class="btn btn-secondary btn-sm" onclick="generateSceneImages(${sceneIndex}, 4)" style="margin-top:0.5rem">Retry</button></div>`;
+            gallery.innerHTML = '<div class="gallery-error">Generation failed · <a href="#" onclick="event.preventDefault();generateSceneImages(' + sceneIndex + ', 4)" style="color:var(--accent);text-decoration:underline">Retry</a></div>';
         }
     }
 }
@@ -314,7 +324,7 @@ async function generateSceneVideo(idx) {
         
     } catch (err) {
         console.error(`Scene ${idx + 1} video error:`, err);
-        result.innerHTML = `<div class="video-error">❌ ${err.message}<br><button class="btn btn-secondary btn-sm" onclick="generateSceneVideo(${idx})" style="margin-top:0.35rem">Retry</button></div>`;
+        result.innerHTML = '<div class="video-error">Failed · <a href="#" onclick="event.preventDefault();generateSceneVideo(' + idx + ')" style="color:var(--accent);text-decoration:underline">Retry</a></div>';
     } finally {
         btn.disabled = false; btn.textContent = '🎥 Generate Video';
     }

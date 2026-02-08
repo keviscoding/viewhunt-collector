@@ -130,6 +130,7 @@ class VideoEditor {
     /**
      * Sequential assembly: normalize each clip one at a time, then concat.
      * This keeps peak memory to ~one clip's worth of decode+encode.
+     * Preserves audio from clips at low volume for environmental sounds.
      */
     async sequentialAssemble(editList, jobDir) {
         var tsFiles = [];
@@ -139,14 +140,18 @@ class VideoEditor {
             var tsPath = path.join(jobDir, 'seg-' + i + '.ts');
 
             // Re-encode this single clip to normalized MPEG-TS
+            // Generate silent audio track (clips from Kling 2.6 are typically mute)
+            // Voiceover gets mixed in at the final mux step
             var args = [
                 '-ss', String(clip.ss),
                 '-t', String(clip.duration),
                 '-i', clip.src,
+                '-f', 'lavfi', '-t', String(clip.duration), '-i', 'anullsrc=r=44100:cl=stereo',
                 '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1',
                 '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '30',
                 '-pix_fmt', 'yuv420p',
-                '-an',  // strip audio from clips
+                '-map', '0:v', '-map', '1:a',
+                '-c:a', 'aac', '-b:a', '64k', '-shortest',
                 '-f', 'mpegts',
                 '-y', tsPath
             ];
@@ -184,12 +189,14 @@ class VideoEditor {
     }
 
     /**
-     * Mux voiceover audio onto the video
+     * Mux voiceover audio onto the video, replacing the silent placeholder audio.
      */
     async muxAudio(videoPath, audioPath, outputPath) {
         await this.ffmpeg([
             '-i', videoPath,
             '-i', audioPath,
+            '-map', '0:v',
+            '-map', '1:a',
             '-c:v', 'copy',
             '-c:a', 'aac', '-b:a', '128k',
             '-shortest',
