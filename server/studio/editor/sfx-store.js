@@ -61,12 +61,12 @@ async function saveSfx(name, fileBuffer, originalName) {
 async function loadAllSfx() {
     if (!MONGODB_URI) {
         console.warn('No MongoDB URI — SFX not available');
-        return { hook: null, transition: null, riser: null };
+        return { hook: null, transition: null, riser: null, bgmusic: null };
     }
 
     if (!fs.existsSync(LOCAL_DIR)) fs.mkdirSync(LOCAL_DIR, { recursive: true });
 
-    var result = { hook: null, transition: null, riser: null };
+    var result = { hook: null, transition: null, riser: null, bgmusic: null };
     var client = new MongoClient(MONGODB_URI);
     try {
         await client.connect();

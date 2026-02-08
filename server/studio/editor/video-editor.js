@@ -36,7 +36,7 @@ class VideoEditor {
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         }
 
-        this.sfx = { hook: null, transition: null, riser: null };
+        this.sfx = { hook: null, transition: null, riser: null, bgmusic: null };
     }
 
     async loadSfx() {
@@ -403,52 +403,80 @@ class VideoEditor {
     }
 
     /**
-     * Mix final audio: voiceover + clip audio + SFX.
-     * Volume strategy (compensating for amix normalization):
-     *   3 inputs: amix divides by 3 → boost each by 3x
-     *   2 inputs: amix divides by 2 → boost each by 2x
+     * Mix final audio: voiceover + clip audio + SFX + background music.
+     * 
+     * Background music (if uploaded) loops for the full video duration
+     * at low volume so it doesn't clash with the voiceover.
+     * 
+     * Volume strategy: use amix with normalize=0 to prevent auto-normalization,
+     * then set each input's volume explicitly.
      */
     async mixFinalAudio(concatVideoPath, voiceoverPath, editList, outputPath, jobDir) {
         var sfxEvents = this.buildSfxTimeline(editList);
+        var hasBgMusic = this.sfx.bgmusic && fs.existsSync(this.sfx.bgmusic);
 
-        if (sfxEvents.length === 0) {
-            console.log('  No SFX, mixing voiceover + clip audio');
-            await this.ffmpeg([
-                '-i', concatVideoPath, '-i', voiceoverPath,
-                '-filter_complex',
-                '[0:a]volume=0.9[clip];[1:a]volume=2.0[vo];[clip][vo]amix=inputs=2:duration=shortest:dropout_transition=2[aout]',
-                '-map', '0:v', '-map', '[aout]',
-                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
-                '-movflags', '+faststart', '-y', outputPath
-            ]);
-            return;
+        // Build SFX track if needed
+        var sfxMixPath = null;
+        if (sfxEvents.length > 0) {
+            sfxMixPath = path.join(jobDir, 'sfx-mix.wav');
+            await this.buildSfxTrack(sfxEvents, editList, sfxMixPath, jobDir);
+            if (!fs.existsSync(sfxMixPath) || fs.statSync(sfxMixPath).size < 100) {
+                sfxMixPath = null;
+            }
         }
 
-        var sfxMixPath = path.join(jobDir, 'sfx-mix.wav');
-        await this.buildSfxTrack(sfxEvents, editList, sfxMixPath, jobDir);
-        var sfxOk = fs.existsSync(sfxMixPath) && fs.statSync(sfxMixPath).size > 100;
+        // Build the filter_complex dynamically based on available inputs
+        var inputs = ['-i', concatVideoPath, '-i', voiceoverPath];
+        var filterParts = [];
+        var mixLabels = [];
+        var inputIdx = 0;
 
-        if (sfxOk) {
-            console.log('  Mixing: clip audio + voiceover + ' + sfxEvents.length + ' SFX');
-            await this.ffmpeg([
-                '-i', concatVideoPath, '-i', voiceoverPath, '-i', sfxMixPath,
-                '-filter_complex',
-                '[0:a]volume=1.5[clip];[1:a]volume=3.0[vo];[2:a]volume=8.0[sfx];[clip][vo][sfx]amix=inputs=3:duration=shortest:dropout_transition=2[aout]',
-                '-map', '0:v', '-map', '[aout]',
-                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
-                '-movflags', '+faststart', '-y', outputPath
-            ]);
-        } else {
-            console.log('  SFX track failed, voiceover only');
-            await this.ffmpeg([
-                '-i', concatVideoPath, '-i', voiceoverPath,
-                '-filter_complex',
-                '[0:a]volume=0.9[clip];[1:a]volume=2.0[vo];[clip][vo]amix=inputs=2:duration=shortest:dropout_transition=2[aout]',
-                '-map', '0:v', '-map', '[aout]',
-                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
-                '-movflags', '+faststart', '-y', outputPath
-            ]);
+        // [0] = concat video (clip audio)
+        filterParts.push('[0:a]volume=0.45[clip]');
+        mixLabels.push('[clip]');
+        inputIdx = 2;
+
+        // [1] = voiceover
+        filterParts.push('[1:a]volume=1.0[vo]');
+        mixLabels.push('[vo]');
+
+        // SFX track
+        if (sfxMixPath) {
+            inputs.push('-i', sfxMixPath);
+            filterParts.push('[' + inputIdx + ':a]volume=3.0[sfx]');
+            mixLabels.push('[sfx]');
+            inputIdx++;
         }
+
+        // Background music — loop it for the full video duration
+        if (hasBgMusic) {
+            var concatDur = await this.getMediaDuration(concatVideoPath);
+            inputs.push('-stream_loop', '-1', '-i', this.sfx.bgmusic);
+            filterParts.push('[' + inputIdx + ':a]volume=0.12,afade=t=in:st=0:d=2,afade=t=out:st=' +
+                Math.max(concatDur - 3, 0).toFixed(1) + ':d=3[bgm]');
+            mixLabels.push('[bgm]');
+            inputIdx++;
+            console.log('  🎵 Background music: looped, volume=0.12, fade in/out');
+        }
+
+        var numInputs = mixLabels.length;
+        var amixFilter = mixLabels.join('') + 'amix=inputs=' + numInputs +
+            ':duration=shortest:dropout_transition=2:normalize=0[aout]';
+        filterParts.push(amixFilter);
+
+        var logParts = ['clip audio'];
+        if (sfxMixPath) logParts.push(sfxEvents.length + ' SFX');
+        if (hasBgMusic) logParts.push('bg music');
+        console.log('  Mixing: voiceover + ' + logParts.join(' + '));
+
+        var args = inputs.concat([
+            '-filter_complex', filterParts.join(';'),
+            '-map', '0:v', '-map', '[aout]',
+            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+            '-movflags', '+faststart', '-y', outputPath
+        ]);
+
+        await this.ffmpeg(args);
     }
 
     /**
@@ -456,6 +484,7 @@ class VideoEditor {
      * - hook.mp3 on every hook clip
      * - riser.mp3 before first body clip
      * - transition.mp3 ONLY on time-marker sentences (Day 1, Hour 1, etc.)
+     *   → placed 0.05s BEFORE the scene change so it hits right on the cut
      */
     buildSfxTimeline(editList) {
         var events = [];
@@ -473,7 +502,9 @@ class VideoEditor {
             }
 
             if (clip.type === 'body' && clip.hasTimeMarker && this.sfx.transition) {
-                events.push({ time: clip.startAt, sfx: this.sfx.transition, label: 'transition' });
+                // Place transition SFX 0.05s before the scene change so it syncs with the cut
+                var transTime = Math.max(clip.startAt - 0.05, 0);
+                events.push({ time: transTime, sfx: this.sfx.transition, label: 'transition' });
             }
 
             lastType = clip.type;

@@ -368,7 +368,7 @@
                                 <div class="sfx-icon">⚡</div>
                                 <div class="sfx-info">
                                     <div class="sfx-name">Transition Click</div>
-                                    <div class="sfx-desc">Whoosh/click on scene changes (plays randomly ~50%)</div>
+                                    <div class="sfx-desc">Click/whoosh on time markers (Day 1, Hour 1, etc.)</div>
                                     <div class="sfx-status" id="sfx-status-transition">Not uploaded</div>
                                 </div>
                                 <div class="sfx-actions">
@@ -391,6 +391,21 @@
                                     <label class="sfx-upload-btn">
                                         Upload
                                         <input type="file" accept="audio/*" style="display:none" onchange="uploadSfx('riser', this)">
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="sfx-row">
+                                <div class="sfx-icon">🎵</div>
+                                <div class="sfx-info">
+                                    <div class="sfx-name">Background Music</div>
+                                    <div class="sfx-desc">Loops quietly under the voiceover for the full video</div>
+                                    <div class="sfx-status" id="sfx-status-bgmusic">Not uploaded</div>
+                                </div>
+                                <div class="sfx-actions">
+                                    <button class="sfx-play-btn" id="sfx-play-bgmusic" onclick="playSfx('bgmusic')" disabled title="Preview">▶</button>
+                                    <label class="sfx-upload-btn">
+                                        Upload
+                                        <input type="file" accept="audio/*" style="display:none" onchange="uploadSfx('bgmusic', this)">
                                     </label>
                                 </div>
                             </div>
@@ -441,6 +456,6 @@
         </footer>
     </div>
 
-    <script src="/studio/v2-app.js?v=20260208h"></script>
+    <script src="/studio/v2-app.js?v=20260208i"></script>
 </body>
 </html>

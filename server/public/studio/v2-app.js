@@ -702,7 +702,7 @@ function loadSfxStatus() {
     .then(function(res) { return res.json(); })
     .then(function(data) {
         var files = data.sfx || [];
-        var types = ['hook', 'transition', 'riser'];
+        var types = ['hook', 'transition', 'riser', 'bgmusic'];
         for (var i = 0; i < types.length; i++) {
             var t = types[i];
             var found = files.find(function(f) { return f.startsWith(t + '.'); });

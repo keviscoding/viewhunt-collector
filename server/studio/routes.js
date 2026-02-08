@@ -409,7 +409,7 @@ router.post('/upload-sfx', requireAuth, sfxUpload.single('sfx'), async (req, res
         if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
         // Extract SFX name from filename (e.g. "hook.mp3" → "hook")
         var name = path.basename(req.file.originalname, path.extname(req.file.originalname));
-        var validNames = ['hook', 'transition', 'riser'];
+        var validNames = ['hook', 'transition', 'riser', 'bgmusic'];
         if (validNames.indexOf(name) === -1) {
             return res.status(400).json({ error: 'File must be named hook, transition, or riser (e.g. hook.mp3)' });
         }
