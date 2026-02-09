@@ -335,13 +335,12 @@ class VideoEditor {
     /**
      * Sequential assembly: normalize each clip one at a time, then concat.
      * 
-     * EVERY body segment uses the loop strategy to guarantee exact duration:
-     *   1. Encode from ss to end of clip (or requested duration, whichever is shorter)
-     *   2. If more time needed, jump back to midpoint and replay
-     *   3. Repeat until the full requested duration is filled
+     * EVERY body segment uses the boomerang strategy to guarantee exact duration:
+     *   1. Encode the clip forward from ss to end
+     *   2. If more time needed, play the clip in REVERSE (smooth boomerang)
+     *   3. If still more needed, play forward again, then reverse, etc.
      * 
-     * This ensures we NEVER run out of clip content — each segment is
-     * exactly as long as the voiceover needs it to be.
+     * This creates a seamless back-and-forth effect instead of jarring jumps.
      */
     async sequentialAssemble(editList, jobDir, voiceDuration) {
         var tsFiles = [];
@@ -374,15 +373,15 @@ class VideoEditor {
                 continue;
             }
 
-            // BODY segments: always use loop-fill strategy to guarantee exact duration
+            // BODY segments: boomerang strategy (forward → reverse → forward → ...)
             var remaining = clip.duration;
-            var loopIdx = 0;
-            var midpoint = clipLen * 0.5;
+            var partIdx = 0;
             var partFiles = [];
+            var playForward = true; // alternate direction
 
-            // First pass: play from ss toward end of clip
+            // First pass: play forward from ss
             var firstDur = Math.min(remaining, availableFromSs);
-            var partPath = path.join(jobDir, 'seg-' + i + '-p' + loopIdx + '.ts');
+            var partPath = path.join(jobDir, 'seg-' + i + '-p' + partIdx + '.ts');
             await this.encodeSegment(clip.src, clip.ss, firstDur, hasAudio, partPath);
             var pSize = 0;
             try { pSize = fs.statSync(partPath).size; } catch(e) {}
@@ -393,25 +392,34 @@ class VideoEditor {
                     remaining -= partActual;
                 }
             }
-            loopIdx++;
+            partIdx++;
+            playForward = false; // next pass is reverse
 
-            // Loop: jump back to midpoint (~2.5s), play to end (~2.5s chunk), repeat
-            while (remaining > 0.3) {
-                var loopAvail = clipLen - midpoint;
-                var loopDur = Math.min(remaining, loopAvail);
-                partPath = path.join(jobDir, 'seg-' + i + '-p' + loopIdx + '.ts');
-                await this.encodeSegment(clip.src, midpoint, loopDur, hasAudio, partPath);
+            // Boomerang: alternate reverse/forward until duration is filled
+            while (remaining > 0.3 && partIdx < 20) {
+                var bounceDur = Math.min(remaining, clipLen);
+                partPath = path.join(jobDir, 'seg-' + i + '-p' + partIdx + '.ts');
+
+                if (!playForward) {
+                    // REVERSE pass: encode the clip then reverse it
+                    await this.encodeReversed(clip.src, bounceDur, hasAudio, partPath, jobDir, i, partIdx);
+                } else {
+                    // FORWARD pass: play from start
+                    await this.encodeSegment(clip.src, 0, bounceDur, hasAudio, partPath);
+                }
+
                 pSize = 0;
                 try { pSize = fs.statSync(partPath).size; } catch(e) {}
                 if (pSize >= 100) {
-                    var loopActual = await this.getMediaDuration(partPath);
-                    if (loopActual > 0) {
+                    var bounceActual = await this.getMediaDuration(partPath);
+                    if (bounceActual > 0) {
                         partFiles.push(partPath);
-                        remaining -= loopActual;
+                        remaining -= bounceActual;
                     } else break;
                 } else break;
-                loopIdx++;
-                if (loopIdx > 20) break; // safety
+
+                playForward = !playForward;
+                partIdx++;
             }
 
             if (partFiles.length > 0) {
@@ -430,7 +438,7 @@ class VideoEditor {
                 }
                 tsFiles.push(loopedPath);
 
-                var loopTag = (partFiles.length > 1) ? ' 🔄loop(' + partFiles.length + ' parts)' : '';
+                var loopTag = (partFiles.length > 1) ? ' 🔄boomerang(' + partFiles.length + ' parts)' : '';
                 var tag = hasAudio ? '🔊' : '🔇';
                 var info2 = clip.sentence ? ' "' + clip.sentence + '"' : '';
                 console.log('  ✓ Seg ' + i + '/' + (editList.length - 1) + ' (body, ' + clip.duration.toFixed(1) + 's) ' + tag + loopTag + info2);
@@ -471,16 +479,21 @@ class VideoEditor {
                 if (lastBodyClip) {
                     var fillClipLen = await this.getMediaDuration(lastBodyClip.src);
                     var fillHasAudio = await this.hasAudioStream(lastBodyClip.src);
-                    // Play from last 3 seconds of the clip, looping as needed
-                    var fillStart = Math.max(fillClipLen - 3, 0);
                     var fillRemaining = gap + 1.0; // +1s buffer
                     var fillIdx = 0;
                     var fillParts = [];
+                    var fillForward = false; // start with reverse since we just played forward
 
                     while (fillRemaining > 0.3 && fillIdx < 20) {
-                        var fillDur = Math.min(fillRemaining, fillClipLen - fillStart);
+                        var fillDur = Math.min(fillRemaining, fillClipLen);
                         var fillPath = path.join(jobDir, 'fill-' + fillIdx + '.ts');
-                        await this.encodeSegment(lastBodyClip.src, fillStart, fillDur, fillHasAudio, fillPath);
+
+                        if (!fillForward) {
+                            await this.encodeReversed(lastBodyClip.src, fillDur, fillHasAudio, fillPath, jobDir, 999, fillIdx);
+                        } else {
+                            await this.encodeSegment(lastBodyClip.src, 0, fillDur, fillHasAudio, fillPath);
+                        }
+
                         var fSize = 0;
                         try { fSize = fs.statSync(fillPath).size; } catch(e) {}
                         if (fSize >= 100) {
@@ -490,6 +503,7 @@ class VideoEditor {
                                 fillRemaining -= fillActual;
                             } else break;
                         } else break;
+                        fillForward = !fillForward;
                         fillIdx++;
                     }
 
@@ -557,6 +571,65 @@ class VideoEditor {
             ];
         }
         await this.ffmpeg(args);
+    }
+
+    /**
+     * Encode a reversed version of the clip to .ts format.
+     * Used for the boomerang effect: forward → reverse → forward → ...
+     * 
+     * FFmpeg's reverse filter requires the whole clip in memory, so we:
+     *   1. Encode the clip forward to a temp mp4 (trimmed to requested duration)
+     *   2. Reverse it with -vf reverse -af areverse
+     *   3. Output as .ts
+     * 
+     * On 256MB this is fine since clips are only 5s / 1080p.
+     */
+    async encodeReversed(src, duration, hasAudio, outputPath, jobDir, segIdx, partIdx) {
+        // Step 1: encode forward to temp mp4
+        var tempFwd = path.join(jobDir, 'rev-fwd-' + segIdx + '-' + partIdx + '.mp4');
+        var fwdArgs;
+        if (hasAudio) {
+            fwdArgs = [
+                '-t', String(duration),
+                '-i', src,
+                '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                '-af', 'volume=0.45',
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '30',
+                '-pix_fmt', 'yuv420p',
+                '-c:a', 'aac', '-b:a', '64k', '-ar', '44100', '-ac', '2',
+                '-y', tempFwd
+            ];
+        } else {
+            fwdArgs = [
+                '-t', String(duration),
+                '-i', src,
+                '-f', 'lavfi', '-t', String(duration), '-i', 'anullsrc=r=44100:cl=stereo',
+                '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '30',
+                '-pix_fmt', 'yuv420p',
+                '-map', '0:v', '-map', '1:a',
+                '-c:a', 'aac', '-b:a', '64k', '-shortest',
+                '-y', tempFwd
+            ];
+        }
+        await this.ffmpeg(fwdArgs);
+
+        // Step 2: reverse it to .ts
+        // Use reverse for video, areverse for audio
+        var revArgs = [
+            '-i', tempFwd,
+            '-vf', 'reverse',
+            '-af', 'areverse',
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '30',
+            '-pix_fmt', 'yuv420p',
+            '-c:a', 'aac', '-b:a', '64k', '-ar', '44100', '-ac', '2',
+            '-f', 'mpegts',
+            '-y', outputPath
+        ];
+        await this.ffmpeg(revArgs);
+
+        // Clean up temp
+        try { fs.unlinkSync(tempFwd); } catch(e) {}
     }
 
     async hasAudioStream(filePath) {

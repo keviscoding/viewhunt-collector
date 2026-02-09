@@ -438,15 +438,35 @@ function renderAssemblyResult(container, result, retryFnName) {
     var hooks = (result && result.hookClips != null) ? result.hookClips : '?';
     var segs = (result && result.bodySegments != null) ? result.bodySegments : '?';
     var url = (result && result.videoUrl) ? result.videoUrl : '';
+
+    // Add a cache-bust param so the browser doesn't serve a stale/partial response
+    var bustUrl = url + (url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
+
     container.innerHTML = '<div class="assembly-progress">' +
         '<div style="margin-bottom:1rem">✅ Final video (' + dur + 's) — ' +
         hooks + ' hook clips, ' + segs + ' body segments</div>' +
-        '<video src="' + url + '" controls autoplay muted loop ' +
+        '<video id="assembly-video" src="' + bustUrl + '" controls autoplay muted loop ' +
         'style="width:100%;max-width:360px;border-radius:12px;margin-bottom:0.75rem"></video>' +
-        '<div><button class="btn btn-green btn-sm" onclick="downloadFile(\'' +
+        '<div><button class="btn btn-green btn-sm" onclick="downloadFinalVideo(\'' +
         url + '\', \'final-video.mp4\')">📥 Download</button> ' +
         '<button class="btn btn-secondary btn-sm" onclick="' + retryFnName +
         '()">↻ Re-assemble</button></div></div>';
+
+    // Retry loading the video if it fails (file may not be ready yet)
+    var vid = document.getElementById('assembly-video');
+    if (vid) {
+        var retryCount = 0;
+        vid.onerror = function() {
+            retryCount++;
+            if (retryCount <= 5) {
+                console.log('Video load failed, retrying in 2s... (' + retryCount + '/5)');
+                setTimeout(function() {
+                    vid.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
+                    vid.load();
+                }, 2000);
+            }
+        };
+    }
 }
 
 async function assembleAutoVideo() {
@@ -679,6 +699,40 @@ async function downloadFile(url, filename) {
     a.click();
     a.remove();
     URL.revokeObjectURL(a.href);
+}
+
+// Download final video with retry — waits for the file to be ready on the server
+async function downloadFinalVideo(url, filename) {
+    var maxRetries = 5;
+    for (var attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            var bustUrl = url + (url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
+            var res = await fetch(bustUrl);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            var blob = await res.blob();
+            // If the blob is tiny, the file probably isn't ready yet
+            if (blob.size < 10000 && attempt < maxRetries) {
+                console.log('Download too small (' + blob.size + 'B), retrying in 3s... (' + (attempt + 1) + '/' + maxRetries + ')');
+                await sleep(3000);
+                continue;
+            }
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(a.href);
+            return;
+        } catch (err) {
+            if (attempt < maxRetries) {
+                console.log('Download failed, retrying in 3s... (' + (attempt + 1) + '/' + maxRetries + ')');
+                await sleep(3000);
+            } else {
+                alert('Download failed after ' + maxRetries + ' retries. Try opening the link directly:\n' + url);
+            }
+        }
+    }
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
