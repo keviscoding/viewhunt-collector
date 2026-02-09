@@ -8,9 +8,10 @@
  *   3. Concat all .ts files with -c copy (near-zero memory)
  *   4. Mix voiceover + SFX onto the concat result
  * 
- * Timing: Hybrid approach —
- *   Primary: Gemini analyzes the voiceover audio to find real timestamps
- *   for each scriptLine → scene switches land exactly on the narration.
+ * Timing: Whisper word-level timestamps drive scene boundaries.
+ *   Each body clip's duration = time from current concat position
+ *   until the next scene's voiceover start. This ensures the clip
+ *   keeps looping until the voiceover finishes that scene's line.
  *   Fallback: Proportional timing based on scriptLine character length.
  */
 const { execFile } = require('child_process');
@@ -114,8 +115,8 @@ class VideoEditor {
      * Build edit list — hybrid approach:
      *   1. Hook clips from Gemini (rapid-fire teaser)
      *   2. Body segments from Claude's scriptLine mapping
-     *   3. Timing from Gemini voiceover analysis (real timestamps)
-     *      OR proportional fallback if analysis unavailable
+     *   3. Timing from Whisper word-level timestamps (real voiceover boundaries)
+     *      OR proportional fallback if timestamps unavailable
      * 
      * Scene 1 (hook line) is already excluded from edl.body by the analyzer.
      */
@@ -169,21 +170,27 @@ class VideoEditor {
     }
 
     /**
-     * Body segments with word-level timestamps from Whisper/Gemini.
+     * Body segments with word-level timestamps from Whisper.
      * 
-     * Uses edl.wordTimestamps (per-scene words) to find exact boundaries:
-     *   - Scene starts at the first word of its script line
-     *   - Scene runs until the next scene's first word starts
-     *   - Last scene runs until the voiceover ends
+     * KEY INSIGHT: The video is a sequential concat. Hook clips play first
+     * (total ~hookDur seconds), then body clips play back-to-back.
+     * The voiceover plays over the top from t=0.
      * 
-     * If wordTimestamps unavailable, falls back to scene-level timestamps.
-     * Timestamps are ABSOLUTE (seconds from start of voiceover = start of video).
+     * So the DURATION of each body clip in the concat must be calculated
+     * relative to the concat timeline, NOT the voiceover timeline.
+     * 
+     * - First body clip starts at hookDur in the concat
+     * - Its duration must cover from hookDur until the next scene's voiceover start
+     * - This means the first body clip plays during the hook line's remaining audio
+     *   AND its own scene's audio
+     * 
+     * startAt = absolute voiceover time (for SFX/caption/title placement)
+     * duration = how long this clip plays in the sequential concat
      */
     buildBodyFromTimestamps(edl, clipPaths, hookDur, voiceDuration) {
         var clips = [];
 
         // Build scene boundaries from word timestamps if available
-        // This gives us the most precise scene start/end times
         var sceneBounds = {}; // sceneNum → { start, end }
 
         if (edl.wordTimestamps && edl.wordTimestamps.length > 0) {
@@ -201,28 +208,36 @@ class VideoEditor {
 
         var hasBounds = Object.keys(sceneBounds).length > 0;
 
+        // Track where we are in the concat timeline
+        var concatCursor = hookDur;
+
         for (var k = 0; k < edl.body.length; k++) {
             var seg = edl.body[k];
             var bodySrc = clipPaths[seg.scene];
             if (!bodySrc) continue;
 
-            var startAt, segDur;
+            var voiceoverStartAt, segDur;
 
             if (hasBounds && sceneBounds[seg.scene]) {
-                // Use word-level boundaries: scene starts at first word
-                startAt = sceneBounds[seg.scene].start;
+                // voiceoverStartAt = when the voiceover says this scene's first word
+                voiceoverStartAt = sceneBounds[seg.scene].start;
 
-                // Scene runs until the NEXT scene's first word starts
-                // (not until this scene's last word ends — we want seamless transitions)
-                var nextSceneStart = voiceDuration;
+                // Find when the NEXT scene's voiceover starts
+                var nextSceneVoStart = voiceDuration;
                 for (var n = k + 1; n < edl.body.length; n++) {
                     var nextScene = edl.body[n].scene;
                     if (sceneBounds[nextScene]) {
-                        nextSceneStart = sceneBounds[nextScene].start;
+                        nextSceneVoStart = sceneBounds[nextScene].start;
                         break;
                     }
                 }
-                segDur = nextSceneStart - startAt;
+
+                // Duration in the concat = from current concat position
+                // until the next scene's voiceover start time.
+                // This ensures the clip keeps playing (looping) until the
+                // voiceover finishes saying this scene's line and starts the next.
+                segDur = nextSceneVoStart - concatCursor;
+
             } else if (edl.timestamps) {
                 // Fallback to scene-level timestamps
                 var ts = edl.timestamps;
@@ -234,7 +249,7 @@ class VideoEditor {
                     }
                 }
                 if (tsEntry) {
-                    startAt = tsEntry.startSec;
+                    voiceoverStartAt = tsEntry.startSec;
                     var nextStart = voiceDuration;
                     for (var n2 = tIdx + 1; n2 < ts.length; n2++) {
                         if (typeof ts[n2].startSec === 'number') {
@@ -242,43 +257,38 @@ class VideoEditor {
                             break;
                         }
                     }
-                    segDur = nextStart - startAt;
+                    segDur = nextStart - concatCursor;
                 } else {
-                    var prevClip = clips.length > 0 ? clips[clips.length - 1] : null;
-                    startAt = prevClip ? prevClip.startAt + prevClip.duration : hookDur;
+                    voiceoverStartAt = concatCursor;
                     segDur = 5;
                 }
             } else {
-                var prevClip2 = clips.length > 0 ? clips[clips.length - 1] : null;
-                startAt = prevClip2 ? prevClip2.startAt + prevClip2.duration : hookDur;
+                voiceoverStartAt = concatCursor;
                 segDur = 5;
             }
 
             // Min 1s, NO max cap — looping handles long segments
             segDur = Math.max(1, segDur);
 
-            // Guard: first body clip can't start before hook clips end
-            if (clips.length === 0 && startAt < hookDur) {
-                segDur = segDur - (hookDur - startAt);
-                startAt = hookDur;
-                segDur = Math.max(1, segDur);
-            }
-
             var scriptLine = seg.scriptLine || '';
             var hasTimeMarker = TIME_MARKER_RE.test(scriptLine);
 
             clips.push({
                 src: bodySrc, ss: 0, duration: segDur,
-                type: 'body', startAt: startAt,
+                type: 'body', startAt: voiceoverStartAt,
                 hasTimeMarker: hasTimeMarker,
                 sceneNum: seg.scene,
                 sentence: scriptLine.substring(0, 60)
             });
 
-            console.log('    S' + seg.scene + ': ' + startAt.toFixed(1) + 's → ' +
-                (startAt + segDur).toFixed(1) + 's (' + segDur.toFixed(1) + 's) "' +
+            console.log('    S' + seg.scene + ': concat@' + concatCursor.toFixed(1) + 's, vo@' +
+                voiceoverStartAt.toFixed(1) + 's, dur=' + segDur.toFixed(1) + 's "' +
                 scriptLine.substring(0, 40) + '"');
+
+            concatCursor += segDur;
         }
+
+        console.log('    Total concat: ' + concatCursor.toFixed(1) + 's (voiceover: ' + voiceDuration.toFixed(1) + 's)');
 
         return clips;
     }
@@ -562,7 +572,7 @@ class VideoEditor {
     /**
      * Mix final audio: voiceover + clip audio + SFX + background music.
      * Also burns in text overlays:
-     *   - Word-by-word captions at the bottom (from Gemini word timestamps)
+     *   - Word-by-word captions at the bottom (from Whisper word timestamps)
      *   - Time marker titles at the top (Day 1, Hour 1, etc.) with 3s fade-out
      * 
      * Two-pass approach for memory efficiency on 256MB:
@@ -678,7 +688,7 @@ class VideoEditor {
      * Build an ASS subtitle file for text overlays.
      * 
      * Two caption strategies:
-     *   PRIMARY: Use real word timestamps from Gemini transcription (edl.transcription).
+     *   PRIMARY: Use real word timestamps from Whisper transcription (edl.transcription).
      *            Includes ALL words (hook + body). Shifted slightly early for sync.
      *   FALLBACK: Proportional distribution within each segment's time window.
      * 
@@ -699,7 +709,7 @@ class VideoEditor {
                        (edl && edl.wordTimestamps) ? edl.wordTimestamps : null;
 
         if (allWords && allWords.length > 0) {
-            // PRIMARY: Real word timestamps from Gemini transcription
+            // PRIMARY: Real word timestamps from Whisper transcription
             for (var w = 0; w < allWords.length; w++) {
                 var word = allWords[w];
                 if (!word.word || typeof word.startSec !== 'number') continue;
@@ -717,7 +727,7 @@ class VideoEditor {
                     text: cleanWord
                 });
             }
-            console.log('  📝 Captions: ' + captionEvents.length + ' words (Gemini transcription, lead -' + CAPTION_LEAD + 's)');
+            console.log('  📝 Captions: ' + captionEvents.length + ' words (Whisper transcription, lead -' + CAPTION_LEAD + 's)');
         } else {
             // FALLBACK: Proportional distribution from edit list
             for (var i = 0; i < editList.length; i++) {
@@ -803,7 +813,7 @@ class VideoEditor {
             '\n' +
             '[V4+ Styles]\n' +
             'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n' +
-            'Style: Caption,Arial,72,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,320,1\n' +
+            'Style: Caption,Arial,72,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,360,1\n' +
             'Style: TimeTitle,Arial,64,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,8,40,40,180,1\n' +
             '\n' +
             '[Events]\n' +

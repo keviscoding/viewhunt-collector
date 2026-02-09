@@ -5,7 +5,6 @@
  *   3. OpenAI Whisper transcribes voiceover word-by-word (~50ms accuracy)
  *      → We match words back to script lines for exact scene start times
  *      → Word timestamps drive captions directly
- *   4. Falls back to Gemini transcription if OPENAI_API_KEY not set
  * 
  * Skips scene 1 (hook line) from body since it's already covered by hook clips.
  */
@@ -108,12 +107,11 @@ class GeminiAnalyzer {
         var wordTimestamps = null;
 
         if (voiceoverPath) {
-            // Try Whisper first (most accurate), fall back to Gemini
+            // Whisper only — no Gemini fallback
             if (this.openai) {
                 transcription = await this.transcribeWithWhisper(voiceoverPath);
-            }
-            if (!transcription) {
-                transcription = await this.transcribeWithGemini(voiceoverPath);
+            } else {
+                console.warn('⚠️ OPENAI_API_KEY not set — no word-level transcription available');
             }
         }
 
@@ -178,7 +176,7 @@ class GeminiAnalyzer {
             }
 
             if (!valid) {
-                console.warn('⚠️ Whisper timestamps invalid, falling back to Gemini');
+                console.warn('⚠️ Whisper timestamps invalid, using proportional fallback');
                 return null;
             }
 
@@ -189,93 +187,7 @@ class GeminiAnalyzer {
             return words;
 
         } catch (error) {
-            console.warn('⚠️ Whisper transcription failed: ' + error.message + ' — trying Gemini');
-            return null;
-        }
-    }
-
-    /**
-     * Fallback: Transcribe voiceover using Gemini 2.5 Flash.
-     * Less accurate than Whisper but works without OpenAI key.
-     */
-    async transcribeWithGemini(voiceoverPath) {
-        console.log('🎧 Gemini: Transcribing voiceover word-by-word (fallback)...');
-
-        try {
-            var audioBuffer = fs.readFileSync(voiceoverPath);
-            var audioBase64 = audioBuffer.toString('base64');
-
-            var prompt = 'Listen to this audio and give me word-level timestamps for EVERY word spoken.\n\n' +
-                'Return ONLY valid JSON — an array of objects, one per word:\n' +
-                '[\n' +
-                '  { "word": "what", "startSec": 0.0, "endSec": 0.2 },\n' +
-                '  { "word": "happens", "startSec": 0.2, "endSec": 0.5 },\n' +
-                '  { "word": "if", "startSec": 0.5, "endSec": 0.6 }\n' +
-                ']\n\n' +
-                'RULES:\n' +
-                '- Include EVERY single word spoken in the audio, in order\n' +
-                '- startSec = when the word starts being spoken (seconds from beginning)\n' +
-                '- endSec = when the word finishes being spoken\n' +
-                '- Be as precise as possible (to 0.1s)\n' +
-                '- Times must be in ascending order\n' +
-                '- Do NOT skip any words\n' +
-                '- The word field should be lowercase';
-
-            var response = await this.ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: [
-                    {
-                        parts: [
-                            {
-                                inlineData: {
-                                    mimeType: 'audio/wav',
-                                    data: audioBase64
-                                }
-                            },
-                            { text: prompt }
-                        ]
-                    }
-                ],
-                config: { responseMimeType: 'application/json' }
-            });
-
-            var text = response.text || (response.candidates && response.candidates[0] &&
-                response.candidates[0].content && response.candidates[0].content.parts &&
-                response.candidates[0].content.parts[0] && response.candidates[0].content.parts[0].text);
-            if (!text) throw new Error('Empty response');
-
-            var jsonText = text;
-            var jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-            if (jsonMatch) jsonText = jsonMatch[1];
-
-            var words = JSON.parse(jsonText.trim());
-            if (!Array.isArray(words) || words.length === 0) {
-                throw new Error('Invalid word array');
-            }
-
-            var valid = true;
-            for (var k = 0; k < words.length; k++) {
-                if (typeof words[k].startSec !== 'number' || words[k].startSec < 0) {
-                    valid = false; break;
-                }
-                if (k > 0 && words[k].startSec < words[k - 1].startSec - 0.1) {
-                    valid = false; break;
-                }
-            }
-
-            if (!valid) {
-                console.warn('⚠️ Gemini timestamps invalid, using proportional fallback');
-                return null;
-            }
-
-            console.log('✅ Gemini: ' + words.length + ' words (' +
-                words[0].word + ' @ ' + words[0].startSec.toFixed(1) + 's → ' +
-                words[words.length - 1].word + ' @ ' + words[words.length - 1].startSec.toFixed(1) + 's)');
-
-            return words;
-
-        } catch (error) {
-            console.warn('⚠️ Gemini transcription failed: ' + error.message + ' — using proportional timing');
+            console.warn('⚠️ Whisper transcription failed: ' + error.message);
             return null;
         }
     }
