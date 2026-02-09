@@ -169,55 +169,88 @@ class VideoEditor {
     }
 
     /**
-     * Body segments with real timestamps from Gemini voiceover analysis.
+     * Body segments with word-level timestamps from Whisper/Gemini.
      * 
-     * Word timestamps from transcription are ABSOLUTE — they represent
-     * seconds from the start of the voiceover audio, which plays from
-     * the start of the video (time 0). So we do NOT add hookDur.
+     * Uses edl.wordTimestamps (per-scene words) to find exact boundaries:
+     *   - Scene starts at the first word of its script line
+     *   - Scene runs until the next scene's first word starts
+     *   - Last scene runs until the voiceover ends
      * 
-     * Each scene starts when the voiceover starts saying that line.
-     * Each scene ends when the voiceover starts saying the NEXT line.
-     * The clip loops if it runs out before the voiceover finishes that line.
-     * The clip gets cut short if the voiceover finishes before the clip ends.
-     * 
-     * This is STRICT per-line timing — no smoothing, no spreading.
+     * If wordTimestamps unavailable, falls back to scene-level timestamps.
+     * Timestamps are ABSOLUTE (seconds from start of voiceover = start of video).
      */
     buildBodyFromTimestamps(edl, clipPaths, hookDur, voiceDuration) {
         var clips = [];
-        var ts = edl.timestamps;
+
+        // Build scene boundaries from word timestamps if available
+        // This gives us the most precise scene start/end times
+        var sceneBounds = {}; // sceneNum → { start, end }
+
+        if (edl.wordTimestamps && edl.wordTimestamps.length > 0) {
+            for (var w = 0; w < edl.wordTimestamps.length; w++) {
+                var wt = edl.wordTimestamps[w];
+                var sn = wt.scene;
+                if (!sceneBounds[sn]) {
+                    sceneBounds[sn] = { start: wt.startSec, end: wt.endSec };
+                } else {
+                    if (wt.startSec < sceneBounds[sn].start) sceneBounds[sn].start = wt.startSec;
+                    if (wt.endSec > sceneBounds[sn].end) sceneBounds[sn].end = wt.endSec;
+                }
+            }
+        }
+
+        var hasBounds = Object.keys(sceneBounds).length > 0;
 
         for (var k = 0; k < edl.body.length; k++) {
             var seg = edl.body[k];
             var bodySrc = clipPaths[seg.scene];
             if (!bodySrc) continue;
 
-            // Find matching timestamp for this segment
-            var tsEntry = null;
-            var tIdx = -1;
-            for (var t = 0; t < ts.length; t++) {
-                if (ts[t].scene === seg.scene || ts[t].index === k + 1) {
-                    tsEntry = ts[t]; tIdx = t; break;
-                }
-            }
-
             var startAt, segDur;
-            if (tsEntry) {
-                // Timestamps are absolute (from start of voiceover = start of video)
-                startAt = tsEntry.startSec;
 
-                // Duration = time until next scene's first word (or end of voiceover)
-                var nextStart = voiceDuration;
-                for (var n = tIdx + 1; n < ts.length; n++) {
-                    if (typeof ts[n].startSec === 'number') {
-                        nextStart = ts[n].startSec;
+            if (hasBounds && sceneBounds[seg.scene]) {
+                // Use word-level boundaries: scene starts at first word
+                startAt = sceneBounds[seg.scene].start;
+
+                // Scene runs until the NEXT scene's first word starts
+                // (not until this scene's last word ends — we want seamless transitions)
+                var nextSceneStart = voiceDuration;
+                for (var n = k + 1; n < edl.body.length; n++) {
+                    var nextScene = edl.body[n].scene;
+                    if (sceneBounds[nextScene]) {
+                        nextSceneStart = sceneBounds[nextScene].start;
                         break;
                     }
                 }
-                segDur = nextStart - startAt;
+                segDur = nextSceneStart - startAt;
+            } else if (edl.timestamps) {
+                // Fallback to scene-level timestamps
+                var ts = edl.timestamps;
+                var tsEntry = null;
+                var tIdx = -1;
+                for (var t = 0; t < ts.length; t++) {
+                    if (ts[t].scene === seg.scene || ts[t].index === k + 1) {
+                        tsEntry = ts[t]; tIdx = t; break;
+                    }
+                }
+                if (tsEntry) {
+                    startAt = tsEntry.startSec;
+                    var nextStart = voiceDuration;
+                    for (var n2 = tIdx + 1; n2 < ts.length; n2++) {
+                        if (typeof ts[n2].startSec === 'number') {
+                            nextStart = ts[n2].startSec;
+                            break;
+                        }
+                    }
+                    segDur = nextStart - startAt;
+                } else {
+                    var prevClip = clips.length > 0 ? clips[clips.length - 1] : null;
+                    startAt = prevClip ? prevClip.startAt + prevClip.duration : hookDur;
+                    segDur = 5;
+                }
             } else {
-                // No timestamp match — place after previous clip
-                var prevClip = clips.length > 0 ? clips[clips.length - 1] : null;
-                startAt = prevClip ? prevClip.startAt + prevClip.duration : hookDur;
+                var prevClip2 = clips.length > 0 ? clips[clips.length - 1] : null;
+                startAt = prevClip2 ? prevClip2.startAt + prevClip2.duration : hookDur;
                 segDur = 5;
             }
 
@@ -241,6 +274,10 @@ class VideoEditor {
                 sceneNum: seg.scene,
                 sentence: scriptLine.substring(0, 60)
             });
+
+            console.log('    S' + seg.scene + ': ' + startAt.toFixed(1) + 's → ' +
+                (startAt + segDur).toFixed(1) + 's (' + segDur.toFixed(1) + 's) "' +
+                scriptLine.substring(0, 40) + '"');
         }
 
         return clips;
