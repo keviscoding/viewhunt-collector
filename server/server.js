@@ -3450,6 +3450,68 @@ app.post('/api/subscription/reactivate', authenticateToken, async (req, res) => 
     }
 });
 
+// Create checkout session for Studio plans (Starter/Creator/Studio)
+app.post('/api/subscription/create-plan-checkout', authenticateToken, async (req, res) => {
+    try {
+        if (!stripe) return res.status(500).json({ error: 'Payment system not configured' });
+
+        const { plan } = req.body;
+        const validPlans = {
+            starter: process.env.STRIPE_PRICE_STARTER,
+            creator: process.env.STRIPE_PRICE_CREATOR,
+            studio: process.env.STRIPE_PRICE_STUDIO
+        };
+
+        if (!plan || !validPlans[plan]) {
+            return res.status(400).json({ error: 'Invalid plan. Choose starter, creator, or studio.' });
+        }
+
+        var priceId = validPlans[plan];
+        if (!priceId) return res.status(500).json({ error: 'Plan pricing not configured in Stripe' });
+
+        const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        // Get or create Stripe customer
+        var customerId = user.subscription?.stripeCustomerId;
+        if (!customerId) {
+            const customer = await stripe.customers.create({
+                email: user.email,
+                name: user.display_name,
+                metadata: { userId: user._id.toString() }
+            });
+            customerId = customer.id;
+            await db.collection('users').updateOne(
+                { _id: user._id },
+                { $set: { 'subscription.stripeCustomerId': customerId } }
+            );
+        }
+
+        const session = await stripe.checkout.sessions.create({
+            customer: customerId,
+            payment_method_types: ['card'],
+            line_items: [{ price: priceId, quantity: 1 }],
+            mode: 'subscription',
+            success_url: (process.env.APP_URL || 'https://viewhunt.com') + '/subscription-success?session_id={CHECKOUT_SESSION_ID}',
+            cancel_url: (process.env.APP_URL || 'https://viewhunt.com') + '/pricing',
+            metadata: { userId: user._id.toString(), plan: plan },
+            allow_promotion_codes: true,
+            billing_address_collection: 'auto'
+        });
+
+        // Update user's plan in DB
+        await db.collection('users').updateOne(
+            { _id: user._id },
+            { $set: { 'subscription.plan': plan, updated_at: new Date() } }
+        );
+
+        res.json({ success: true, url: session.url, sessionId: session.id });
+    } catch (error) {
+        console.error('Plan checkout error:', error);
+        res.status(500).json({ error: 'Failed to create checkout session' });
+    }
+});
+
 // Fix subscription for paid user (admin only)
 app.post('/api/subscription/fix-user', authenticateToken, async (req, res) => {
     try {
@@ -3573,10 +3635,31 @@ app.post('/api/subscription/webhook', async (req, res) => {
         return res.status(400).send(`Webhook Error: ${err.message}`);
     }
     
+    const studioCredits = require('./studio/credits');
+    
     // Handle the event
     switch (event.type) {
+        case 'checkout.session.completed': {
+            const session = event.data.object;
+            const meta = session.metadata || {};
+            
+            // Handle credit top-up purchase
+            if (meta.type === 'credit_topup' && meta.userId) {
+                const topUpAmount = parseInt(meta.credits) || 100;
+                await studioCredits.addTopUpCredits(meta.userId, topUpAmount, session.id);
+                console.log('💳 Webhook: top-up ' + topUpAmount + ' credits for user ' + meta.userId);
+            }
+            
+            // Handle new subscription — grant monthly credits
+            if (meta.plan && meta.userId && session.mode === 'subscription') {
+                await studioCredits.grantMonthlyCredits(meta.userId, meta.plan);
+                console.log('💳 Webhook: granted monthly credits for ' + meta.plan + ' plan to user ' + meta.userId);
+            }
+            break;
+        }
+        
         case 'customer.subscription.updated':
-        case 'customer.subscription.deleted':
+        case 'customer.subscription.deleted': {
             const subscription = event.data.object;
             
             // Update user subscription status
@@ -3590,8 +3673,27 @@ app.post('/api/subscription/webhook', async (req, res) => {
                 }
             );
             break;
+        }
+        
+        case 'invoice.paid': {
+            // Renewal payment succeeded — grant monthly credits
+            const invoice = event.data.object;
+            if (invoice.billing_reason === 'subscription_cycle') {
+                const user = await db.collection('users').findOne({
+                    'subscription.stripeCustomerId': invoice.customer
+                });
+                if (user && user.subscription?.plan) {
+                    var plan = user.subscription.plan;
+                    // Map old 'pro' plan to 'starter' for credit purposes
+                    if (plan === 'pro') plan = 'starter';
+                    await studioCredits.grantMonthlyCredits(String(user._id), plan);
+                    console.log('💳 Webhook: renewal credits for ' + plan + ' → user ' + user._id);
+                }
+            }
+            break;
+        }
             
-        case 'invoice.payment_failed':
+        case 'invoice.payment_failed': {
             const invoice = event.data.object;
             
             // Update user subscription status to past_due
@@ -3604,6 +3706,7 @@ app.post('/api/subscription/webhook', async (req, res) => {
                 }
             );
             break;
+        }
             
         default:
             console.log(`Unhandled event type ${event.type}`);

@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
 const SkeletonGenerator = require('./formats/skeleton-anatomy/generator');
 const SkeletonGeneratorV2 = require('./formats/skeleton-anatomy-v2/generator');
 const GeminiAnalyzer = require('./editor/gemini-analyzer');
@@ -10,6 +11,7 @@ const GeminiTTS = require('./editor/gemini-tts');
 const VideoEditor = require('./editor/video-editor');
 const assemblyQueue = require('./editor/job-queue');
 const { saveSfx, listSfx, loadAllSfx } = require('./editor/sfx-store');
+const credits = require('./credits');
 
 // Configure multer for scene image uploads
 const uploadDir = path.join(__dirname, '../public/studio/uploads');
@@ -44,7 +46,7 @@ function getGenerator(format, version = 'v1') {
     return generators[key];
 }
 
-// Middleware to check authentication
+// Middleware to check authentication — decodes JWT to get userId
 const requireAuth = (req, res, next) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
     
@@ -52,9 +54,13 @@ const requireAuth = (req, res, next) => {
         return res.status(401).json({ error: 'Authentication required' });
     }
     
-    // TODO: Verify JWT token with your existing auth system
-    // For now, just pass through
-    next();
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded; // { userId, email, display_name }
+        next();
+    } catch (err) {
+        return res.status(403).json({ error: 'Invalid or expired token' });
+    }
 };
 
 // Generate Script
@@ -179,6 +185,13 @@ router.post('/generate/full', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Format and script are required' });
         }
         
+        // Credit check: at least enough for script generation
+        const userId = String(req.user.userId);
+        const check = await credits.checkCredits(userId, 'script_generation', 1);
+        if (!check.allowed) {
+            return res.status(402).json({ error: 'Not enough credits', ...check });
+        }
+        
         const generator = getGenerator(format, 'v2');
         if (!generator) {
             return res.status(400).json({ error: 'Invalid format or V2 not available' });
@@ -213,6 +226,19 @@ router.post('/generate/stream', requireAuth, async (req, res) => {
         
         if (!format || !script) {
             return res.status(400).json({ error: 'Format and script are required' });
+        }
+        
+        // Estimate credit cost for auto mode (script + ~12 scenes images + ~12 scenes videos + assembly)
+        // Rough estimate: 5 + 12*3 + 12*8 + 10 = 147 credits
+        const userId = String(req.user.userId);
+        const estimatedScenes = 12;
+        var totalCost = credits.COSTS.script_generation;
+        totalCost += credits.COSTS.image_generation * estimatedScenes;
+        if (generateVideos !== false) totalCost += credits.COSTS.video_generation * estimatedScenes;
+        const check = await credits.checkCredits(userId, 'script_generation', 1);
+        // Check if they have at least enough for the script generation to start
+        if (!check.allowed) {
+            return res.status(402).json({ error: 'Not enough credits', ...check });
         }
         
         const generator = getGenerator(format, 'v2');
@@ -272,11 +298,21 @@ router.post('/generate/scenes', requireAuth, async (req, res) => {
         const { format, script, skeletonStyle, gradientColors } = req.body;
         if (!format || !script) return res.status(400).json({ error: 'Format and script are required' });
         
+        // Credit check: script generation = 5 credits
+        const userId = String(req.user.userId);
+        const check = await credits.checkCredits(userId, 'script_generation', 1);
+        if (!check.allowed) {
+            return res.status(402).json({ error: 'Not enough credits', ...check });
+        }
+        
         const generator = getGenerator(format, 'v2');
         if (!generator) return res.status(400).json({ error: 'Invalid format' });
         
         console.log(`Director mode: generating scene prompts for ${format}`);
         const scenes = await generator.generateScenePrompts(script, skeletonStyle || 'realistic translucent glass with ivory skeleton', gradientColors || 'smooth blue to teal gradient background');
+        
+        // Deduct credits on success
+        await credits.deductCredits(userId, 'script_generation', 1, 'Scene prompts for ' + format);
         
         res.json({ success: true, scenes });
     } catch (error) {
@@ -290,6 +326,13 @@ router.post('/generate/scene-images', requireAuth, async (req, res) => {
     try {
         const { format, imagePrompt, sceneNumber, count } = req.body;
         if (!format || !imagePrompt) return res.status(400).json({ error: 'Format and imagePrompt are required' });
+        
+        // Credit check: image_generation = 3 credits per scene
+        const userId = String(req.user.userId);
+        const check = await credits.checkCredits(userId, 'image_generation', 1);
+        if (!check.allowed) {
+            return res.status(402).json({ error: 'Not enough credits', ...check });
+        }
         
         const generator = getGenerator(format, 'v2');
         if (!generator) return res.status(400).json({ error: 'Invalid format' });
@@ -307,6 +350,9 @@ router.post('/generate/scene-images', requireAuth, async (req, res) => {
         const results = await Promise.all(imagePromises);
         const images = results.map((r, i) => typeof r === 'string' ? { url: r, index: i } : { error: r.error, index: i });
         
+        // Deduct credits on success (1 scene worth of image generation)
+        await credits.deductCredits(userId, 'image_generation', 1, 'Images for scene ' + sceneNumber);
+        
         res.json({ success: true, sceneNumber, images });
     } catch (error) {
         console.error('Scene image generation error:', error);
@@ -319,6 +365,13 @@ router.post('/generate/scene-video', requireAuth, async (req, res) => {
     try {
         let { format, imageUrl, videoPrompt, sceneNumber } = req.body;
         if (!format || !imageUrl || !videoPrompt) return res.status(400).json({ error: 'format, imageUrl, and videoPrompt are required' });
+        
+        // Credit check: video_generation = 8 credits per scene
+        const userId = String(req.user.userId);
+        const check = await credits.checkCredits(userId, 'video_generation', 1);
+        if (!check.allowed) {
+            return res.status(402).json({ error: 'Not enough credits', ...check });
+        }
         
         const generator = getGenerator(format, 'v2');
         if (!generator) return res.status(400).json({ error: 'Invalid format' });
@@ -336,6 +389,9 @@ router.post('/generate/scene-video', requireAuth, async (req, res) => {
         console.log(`  Video Prompt: ${videoPrompt.substring(0, 100)}...`);
         
         const videoUrl = await generator.generateVideo(imageUrl, videoPrompt, sceneNumber);
+        
+        // Deduct credits on success
+        await credits.deductCredits(userId, 'video_generation', 1, 'Video for scene ' + sceneNumber);
         
         console.log(`Director mode: video for scene ${sceneNumber} complete: ${videoUrl.substring(0, 80)}...`);
         res.json({ success: true, sceneNumber, videoUrl });
@@ -362,7 +418,7 @@ router.post('/upload-scene-image', requireAuth, upload.single('image'), (req, re
 // === VIDEO ASSEMBLY ENDPOINTS (Queue-based) ===
 
 // Submit assembly job — returns immediately with jobId
-router.post('/assemble', requireAuth, (req, res) => {
+router.post('/assemble', requireAuth, async (req, res) => {
     try {
         const { script, scenes, voiceName } = req.body;
         
@@ -375,11 +431,21 @@ router.post('/assemble', requireAuth, (req, res) => {
             return res.status(400).json({ error: 'No scenes have generated videos' });
         }
         
+        // Credit check: assembly = 10 credits
+        const userId = String(req.user.userId);
+        const check = await credits.checkCredits(userId, 'assembly', 1);
+        if (!check.allowed) {
+            return res.status(402).json({ error: 'Not enough credits', ...check });
+        }
+        
+        // Deduct assembly credits upfront (refund on failure)
+        await credits.deductCredits(userId, 'assembly', 1, 'Video assembly');
+        
         console.log(`\n🎬 Assembly job submitted: ${scenesWithVideo.length} scenes, ${script.length} chars\n`);
         
         const jobId = assemblyQueue.submit(script, scenesWithVideo, voiceName);
         
-        res.json({ success: true, jobId });
+        res.json({ success: true, jobId, userId });
         
     } catch (error) {
         console.error('Assembly submit error:', error);
@@ -443,6 +509,106 @@ router.get('/sfx/:filename', requireAuth, async (req, res) => {
         if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
         res.sendFile(filePath);
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// === CREDIT SYSTEM ENDPOINTS ===
+
+// Get credit balance
+router.get('/credits/balance', requireAuth, async (req, res) => {
+    try {
+        const bal = await credits.getBalance(String(req.user.userId));
+        res.json({ success: true, ...bal, totalAvailable: (bal.balance || 0) + (bal.topUpBalance || 0) });
+    } catch (err) {
+        console.error('Credit balance error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get transaction history
+router.get('/credits/transactions', requireAuth, async (req, res) => {
+    try {
+        const txns = await credits.getTransactions(String(req.user.userId), 50);
+        res.json({ success: true, transactions: txns });
+    } catch (err) {
+        console.error('Credit transactions error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Check if user has enough credits for an action
+router.post('/credits/check', requireAuth, async (req, res) => {
+    try {
+        const { action, quantity } = req.body;
+        const check = await credits.checkCredits(String(req.user.userId), action, quantity || 1);
+        res.json({ success: true, ...check });
+    } catch (err) {
+        console.error('Credit check error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Buy top-up credits — creates Stripe checkout session
+router.post('/credits/buy', requireAuth, async (req, res) => {
+    try {
+        const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+        if (!stripe) return res.status(500).json({ error: 'Payment system not configured' });
+
+        const { MongoClient, ObjectId } = require('mongodb');
+        const MONGODB_URI = process.env.MONGODB_URI || process.env.V2_MONGO_URI || process.env.MONGO_URI;
+        const client = new MongoClient(MONGODB_URI);
+        await client.connect();
+        const db = client.db('viewhuntv2');
+        const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        await client.close();
+
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        // Get or use existing Stripe customer
+        var customerId = user.subscription?.stripeCustomerId;
+        if (!customerId) {
+            const customer = await stripe.customers.create({
+                email: user.email,
+                name: user.display_name,
+                metadata: { userId: user._id.toString() }
+            });
+            customerId = customer.id;
+            const client2 = new MongoClient(MONGODB_URI);
+            await client2.connect();
+            await client2.db('viewhuntv2').collection('users').updateOne(
+                { _id: user._id },
+                { $set: { 'subscription.stripeCustomerId': customerId } }
+            );
+            await client2.close();
+        }
+
+        // Determine price based on user's plan
+        var plan = user.subscription?.plan || 'none';
+        var priceId;
+        if (plan === 'studio') priceId = process.env.STRIPE_PRICE_CREDITS_8;
+        else if (plan === 'creator') priceId = process.env.STRIPE_PRICE_CREDITS_10;
+        else priceId = process.env.STRIPE_PRICE_CREDITS_12;
+
+        if (!priceId) return res.status(500).json({ error: 'Top-up pricing not configured' });
+
+        const session = await stripe.checkout.sessions.create({
+            customer: customerId,
+            payment_method_types: ['card'],
+            line_items: [{ price: priceId, quantity: 1 }],
+            mode: 'payment',
+            success_url: (process.env.APP_URL || 'https://viewhunt.com') + '/studio/v2.html?topup=success',
+            cancel_url: (process.env.APP_URL || 'https://viewhunt.com') + '/studio/v2.html?topup=cancelled',
+            metadata: {
+                userId: user._id.toString(),
+                type: 'credit_topup',
+                credits: String(credits.TOPUP_CREDITS)
+            }
+        });
+
+        res.json({ success: true, url: session.url });
+    } catch (err) {
+        console.error('Credit purchase error:', err);
         res.status(500).json({ error: err.message });
     }
 });

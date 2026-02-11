@@ -10,9 +10,21 @@ document.addEventListener('DOMContentLoaded', () => {
     initModeToggle();
     initGenerateButton();
     checkAuth();
+    loadCreditBalance();
 });
 
 // ==================== INIT ====================
+
+// Helper: check for credit errors (402) in API responses
+async function handleCreditError(res) {
+    if (res.status === 402) {
+        var data = await res.json();
+        var msg = 'Not enough credits. You need ' + (data.cost || '?') + ' but have ' + (data.totalAvailable || 0) + '.';
+        alert(msg + '\n\nBuy more credits to continue.');
+        loadCreditBalance();
+        throw new Error(msg);
+    }
+}
 
 function initGradients() {
     document.querySelectorAll('.gradient-swatch').forEach(el => {
@@ -80,6 +92,7 @@ async function handleDirectorGeneration(script) {
             body: JSON.stringify({ format: 'skeleton-anatomy', script, gradientColors: selectedGradient })
         });
         
+        await handleCreditError(res);
         if (!res.ok) throw new Error(`Server error ${res.status}: ${await res.text()}`);
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Failed to generate scenes');
@@ -205,6 +218,7 @@ async function generateSceneImages(sceneIndex, count) {
             body: JSON.stringify({ format: 'skeleton-anatomy', imagePrompt: scene.imagePrompt, sceneNumber: scene.sceneNumber || sceneIndex + 1, count: num })
         });
         
+        await handleCreditError(res);
         if (!res.ok) throw new Error(`Server error ${res.status}: ${await res.text()}`);
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
@@ -309,6 +323,7 @@ async function generateSceneVideo(idx) {
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
             body: JSON.stringify({ format: 'skeleton-anatomy', imageUrl, videoPrompt, sceneNumber: scene.sceneNumber || idx + 1 })
         });
+        await handleCreditError(res);
         if (!res.ok) throw new Error(`Server error ${res.status}: ${await res.text()}`);
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
@@ -438,6 +453,9 @@ function renderAssemblyResult(container, result, retryFnName) {
     var hooks = (result && result.hookClips != null) ? result.hookClips : '?';
     var segs = (result && result.bodySegments != null) ? result.bodySegments : '?';
     var url = (result && result.videoUrl) ? result.videoUrl : '';
+
+    // Refresh credit balance after assembly
+    loadCreditBalance();
 
     // Add a cache-bust param so the browser doesn't serve a stale/partial response
     var bustUrl = url + (url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
@@ -824,3 +842,106 @@ function playSfx(type) {
     sfxAudioEl.onended = function() { btn.textContent = '▶'; sfxAudioEl = null; };
     sfxAudioEl.onerror = function() { btn.textContent = '▶'; sfxAudioEl = null; };
 }
+
+// ==================== CREDIT SYSTEM ====================
+
+var _creditBalance = null;
+
+async function loadCreditBalance() {
+    var token = getAuthToken();
+    if (!token) return;
+    try {
+        var res = await fetch('/api/studio/credits/balance', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) {
+            // No credit account yet — show 0
+            updateCreditDisplay(0);
+            return;
+        }
+        var data = await res.json();
+        _creditBalance = data;
+        var total = (data.balance || 0) + (data.topUpBalance || 0);
+        updateCreditDisplay(total);
+    } catch (err) {
+        console.warn('Could not load credits:', err);
+        updateCreditDisplay(0);
+    }
+}
+
+function updateCreditDisplay(total) {
+    var el = document.getElementById('credit-count');
+    if (el) el.textContent = total;
+    var buyBtn = document.getElementById('buy-credits-btn');
+    if (buyBtn) buyBtn.style.display = (total < 50) ? 'inline-flex' : 'none';
+}
+
+async function showCreditDetails() {
+    var modal = document.getElementById('credit-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+
+    var content = document.getElementById('credit-detail-content');
+    if (!_creditBalance) {
+        content.innerHTML = '<p style="color:var(--text-dim)">No credit account yet. Subscribe to a plan to get started.</p>';
+        return;
+    }
+
+    var b = _creditBalance;
+    var total = (b.balance || 0) + (b.topUpBalance || 0);
+    var planName = b.plan ? b.plan.charAt(0).toUpperCase() + b.plan.slice(1) : 'None';
+    var resetStr = b.resetDate ? new Date(b.resetDate).toLocaleDateString() : '—';
+
+    content.innerHTML =
+        '<div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">' +
+            '<span>Plan</span><span style="color:var(--text);font-weight:600">' + planName + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">' +
+            '<span>Monthly Credits</span><span style="color:var(--accent);font-weight:600">' + (b.balance || 0) + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">' +
+            '<span>Top-Up Credits</span><span style="color:var(--green);font-weight:600">' + (b.topUpBalance || 0) + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">' +
+            '<span>Total Available</span><span style="color:var(--text);font-weight:700;font-size:1.1rem">' + total + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">' +
+            '<span>Total Used</span><span style="color:var(--text-dim)">' + (b.totalUsed || 0) + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;padding:0.5rem 0">' +
+            '<span>Resets On</span><span style="color:var(--text-dim)">' + resetStr + '</span></div>' +
+        '<div style="margin-top:0.75rem;padding:0.6rem;background:var(--surface-2);border-radius:8px;font-size:0.78rem;color:var(--text-dim);line-height:1.6">' +
+            '💡 Scenes: 5 cr · Images: 3 cr/scene · Videos: 8 cr/scene · Assembly: 10 cr</div>';
+}
+
+function closeCreditModal() {
+    var modal = document.getElementById('credit-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function buyCredits() {
+    var token = getAuthToken();
+    if (!token) return alert('Please log in first');
+    try {
+        var res = await fetch('/api/studio/credits/buy', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        var data = await res.json();
+        if (data.url) {
+            window.location.href = data.url;
+        } else {
+            alert(data.error || 'Could not start purchase');
+        }
+    } catch (err) {
+        alert('Purchase failed: ' + err.message);
+    }
+}
+
+// Check for top-up success on page load
+(function() {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('topup') === 'success') {
+        setTimeout(function() {
+            loadCreditBalance();
+            alert('Credits added successfully!');
+            window.history.replaceState({}, '', window.location.pathname);
+        }, 500);
+    }
+})();
