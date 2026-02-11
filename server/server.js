@@ -32,8 +32,8 @@ app.use(cors());
 // Stripe webhook needs raw body (before express.json)
 app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
 
-app.use(express.json({ limit: '50mb' })); // Increase payload limit for large datasets
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Serve static files for landing page
 app.use(express.static(path.join(__dirname, 'public')));
@@ -3750,10 +3750,56 @@ app.post('/api/subscription/webhook', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`ViewHunt server running on port ${PORT}`);
     console.log(`Database: MongoDB Atlas - viewhuntv2`);
+    
+    // Clean up orphaned temp files every 30 minutes
+    setInterval(() => {
+        const tempDir = path.join(__dirname, 'public/studio/generated/temp');
+        try {
+            if (!fs.existsSync(tempDir)) return;
+            const now = Date.now();
+            const maxAge = 60 * 60 * 1000; // 1 hour
+            const entries = fs.readdirSync(tempDir);
+            let cleaned = 0;
+            for (const entry of entries) {
+                const entryPath = path.join(tempDir, entry);
+                try {
+                    const stat = fs.statSync(entryPath);
+                    if (now - stat.mtimeMs > maxAge) {
+                        if (stat.isDirectory()) {
+                            fs.rmSync(entryPath, { recursive: true, force: true });
+                        } else {
+                            fs.unlinkSync(entryPath);
+                        }
+                        cleaned++;
+                    }
+                } catch (e) { /* skip */ }
+            }
+            if (cleaned > 0) console.log('🧹 Cleaned ' + cleaned + ' old temp files/dirs');
+        } catch (e) { /* ignore */ }
+    }, 30 * 60 * 1000);
+    
+    // Memory monitoring — log every 5 minutes, warn if high
+    setInterval(() => {
+        const mem = process.memoryUsage();
+        const rss = (mem.rss / 1024 / 1024).toFixed(1);
+        const heap = (mem.heapUsed / 1024 / 1024).toFixed(1);
+        if (mem.rss > 200 * 1024 * 1024) {
+            console.warn('⚠️  HIGH MEMORY: RSS=' + rss + 'MB, Heap=' + heap + 'MB');
+        } else {
+            console.log('📊 Memory: RSS=' + rss + 'MB, Heap=' + heap + 'MB');
+        }
+    }, 5 * 60 * 1000);
 });
 
-// Graceful shutdown
-process.on('SIGINT', () => {
+// Graceful shutdown — close DB pool
+const { closePool } = require('./studio/db');
+process.on('SIGINT', async () => {
     console.log('\nShutting down server...');
+    await closePool();
+    process.exit(0);
+});
+process.on('SIGTERM', async () => {
+    console.log('\nSIGTERM received, shutting down...');
+    await closePool();
     process.exit(0);
 });

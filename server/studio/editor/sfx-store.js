@@ -4,73 +4,53 @@
  * 
  * Stores each SFX as a document with base64-encoded audio data.
  * On load, writes to temp disk for FFmpeg to use.
+ * 
+ * Uses shared connection pool (db.js).
  */
-const { MongoClient } = require('mongodb');
+const { getDb } = require('../../studio/db');
 const fs = require('fs');
 const path = require('path');
 
-var MONGODB_URI = process.env.MONGODB_URI || process.env.V2_MONGO_URI || process.env.MONGO_URI;
 var COLLECTION = 'sfx_files';
-var DB_NAME = 'viewhuntv2';
 var LOCAL_DIR = path.join(__dirname, 'assets', 'sfx');
 
 /**
  * Save an SFX file to MongoDB
- * @param {string} name - SFX name (hook, transition, riser)
- * @param {Buffer} fileBuffer - The audio file data
- * @param {string} originalName - Original filename for extension
  */
 async function saveSfx(name, fileBuffer, originalName) {
-    if (!MONGODB_URI) throw new Error('No MongoDB URI configured');
-
     var ext = path.extname(originalName) || '.mp3';
-    var client = new MongoClient(MONGODB_URI);
-    try {
-        await client.connect();
-        var db = client.db(DB_NAME);
-        await db.collection(COLLECTION).updateOne(
-            { name: name },
-            {
-                $set: {
-                    name: name,
-                    ext: ext,
-                    data: fileBuffer.toString('base64'),
-                    size: fileBuffer.length,
-                    uploadedAt: new Date()
-                }
-            },
-            { upsert: true }
-        );
-        console.log('✅ SFX "' + name + '" saved to MongoDB (' + (fileBuffer.length / 1024).toFixed(0) + 'KB)');
+    var db = await getDb();
+    await db.collection(COLLECTION).updateOne(
+        { name: name },
+        {
+            $set: {
+                name: name,
+                ext: ext,
+                data: fileBuffer.toString('base64'),
+                size: fileBuffer.length,
+                uploadedAt: new Date()
+            }
+        },
+        { upsert: true }
+    );
+    console.log('✅ SFX "' + name + '" saved to MongoDB (' + (fileBuffer.length / 1024).toFixed(0) + 'KB)');
 
-        // Also write locally so it's immediately available
-        if (!fs.existsSync(LOCAL_DIR)) fs.mkdirSync(LOCAL_DIR, { recursive: true });
-        fs.writeFileSync(path.join(LOCAL_DIR, name + ext), fileBuffer);
-
-        return true;
-    } finally {
-        await client.close();
-    }
+    // Also write locally so it's immediately available
+    if (!fs.existsSync(LOCAL_DIR)) fs.mkdirSync(LOCAL_DIR, { recursive: true });
+    fs.writeFileSync(path.join(LOCAL_DIR, name + ext), fileBuffer);
+    return true;
 }
 
 /**
  * Load all SFX from MongoDB to local disk.
- * Call this on startup or before assembly.
  * Returns object with paths: { hook: '/path/hook.mp3', transition: null, ... }
  */
 async function loadAllSfx() {
-    if (!MONGODB_URI) {
-        console.warn('No MongoDB URI — SFX not available');
-        return { hook: null, transition: null, riser: null, bgmusic: null };
-    }
-
     if (!fs.existsSync(LOCAL_DIR)) fs.mkdirSync(LOCAL_DIR, { recursive: true });
-
     var result = { hook: null, transition: null, riser: null, bgmusic: null };
-    var client = new MongoClient(MONGODB_URI);
+
     try {
-        await client.connect();
-        var db = client.db(DB_NAME);
+        var db = await getDb();
         var docs = await db.collection(COLLECTION).find({}).toArray();
 
         for (var i = 0; i < docs.length; i++) {
@@ -90,8 +70,6 @@ async function loadAllSfx() {
         }
     } catch (err) {
         console.warn('SFX load from MongoDB failed:', err.message);
-    } finally {
-        await client.close();
     }
 
     return result;
@@ -101,11 +79,8 @@ async function loadAllSfx() {
  * List SFX in MongoDB (for the GUI)
  */
 async function listSfx() {
-    if (!MONGODB_URI) return [];
-    var client = new MongoClient(MONGODB_URI);
     try {
-        await client.connect();
-        var db = client.db(DB_NAME);
+        var db = await getDb();
         var docs = await db.collection(COLLECTION).find({}, {
             projection: { name: 1, ext: 1, size: 1, uploadedAt: 1 }
         }).toArray();
@@ -115,8 +90,6 @@ async function listSfx() {
     } catch (err) {
         console.warn('SFX list failed:', err.message);
         return [];
-    } finally {
-        await client.close();
     }
 }
 

@@ -3,23 +3,23 @@
  * 
  * Credit costs per action:
  *   - Script generation (Claude): 5 credits
- *   - Image generation (per scene): 3 credits
- *   - Video generation (per scene, Kling): 8 credits
- *   - Final assembly (TTS + Whisper + FFmpeg): 10 credits
- *   - Full video (~12 scenes): ~111 credits
+ *   - Image generation (per scene): 2 credits
+ *   - Video generation (per scene): 5 credits
+ *   - Final assembly (TTS + Whisper + FFmpeg): 5 credits
  * 
  * Plans:
- *   - Starter ($29/mo): 200 credits/mo
- *   - Creator ($59/mo): 500 credits/mo
- *   - Studio ($119/mo): 1200 credits/mo
+ *   - Starter ($29/mo): 300 credits/mo
+ *   - Creator ($59/mo): 600 credits/mo
+ *   - Studio ($119/mo): 1,200 credits/mo
  * 
  * Credits reset monthly on billing date. No rollover.
- * Users can buy top-up packs at any time.
+ * Top-up credits persist (never expire).
+ * 
+ * Uses shared connection pool (db.js) instead of per-call connections.
+ * Deductions use findOneAndUpdate for atomic check-and-deduct.
  */
-const { MongoClient, ObjectId } = require('mongodb');
+const { getDb } = require('./db');
 
-const MONGODB_URI = process.env.MONGODB_URI || process.env.V2_MONGO_URI || process.env.MONGO_URI;
-const DB_NAME = 'viewhuntv2';
 const COLLECTION = 'studio_credits';
 const TRANSACTIONS = 'credit_transactions';
 
@@ -45,31 +45,25 @@ const TOPUP_PACKS = {
     large:  { credits: 1200, envVar: 'STRIPE_PRICE_CREDITS_LA' }
 };
 
+
 /**
  * Get a user's current credit balance.
- * Creates a record if none exists.
  */
 async function getBalance(userId) {
-    var client = new MongoClient(MONGODB_URI);
-    try {
-        await client.connect();
-        var db = client.db(DB_NAME);
-        var doc = await db.collection(COLLECTION).findOne({ userId: String(userId) });
+    var db = await getDb();
+    var doc = await db.collection(COLLECTION).findOne({ userId: String(userId) });
 
-        if (!doc) {
-            return { balance: 0, plan: null, resetDate: null };
-        }
-
-        return {
-            balance: doc.balance || 0,
-            plan: doc.plan || null,
-            resetDate: doc.resetDate || null,
-            totalUsed: doc.totalUsed || 0,
-            topUpBalance: doc.topUpBalance || 0
-        };
-    } finally {
-        await client.close();
+    if (!doc) {
+        return { balance: 0, plan: null, resetDate: null };
     }
+
+    return {
+        balance: doc.balance || 0,
+        plan: doc.plan || null,
+        resetDate: doc.resetDate || null,
+        totalUsed: doc.totalUsed || 0,
+        topUpBalance: doc.topUpBalance || 0
+    };
 }
 
 /**
@@ -94,76 +88,84 @@ async function checkCredits(userId, action, quantity) {
 }
 
 /**
- * Deduct credits for an action.
+ * Deduct credits for an action — ATOMIC.
+ * Uses findOneAndUpdate with a $where-style filter to prevent overdraw.
  * Deducts from monthly balance first, then top-up balance.
- * Returns { success, newBalance, cost } or throws if insufficient.
  */
 async function deductCredits(userId, action, quantity, description) {
     quantity = quantity || 1;
     var cost = (COSTS[action] || 0) * quantity;
     if (cost === 0) return { success: true, newBalance: 0, cost: 0 };
 
-    var client = new MongoClient(MONGODB_URI);
-    try {
-        await client.connect();
-        var db = client.db(DB_NAME);
+    var db = await getDb();
 
-        var doc = await db.collection(COLLECTION).findOne({ userId: String(userId) });
-        if (!doc) throw new Error('No credit account found');
+    // Read current balances to calculate split
+    var doc = await db.collection(COLLECTION).findOne({ userId: String(userId) });
+    if (!doc) throw new Error('No credit account found');
 
-        var monthly = doc.balance || 0;
-        var topUp = doc.topUpBalance || 0;
-        var total = monthly + topUp;
+    var monthly = doc.balance || 0;
+    var topUp = doc.topUpBalance || 0;
 
-        if (total < cost) {
-            throw new Error('Insufficient credits: need ' + cost + ', have ' + total);
-        }
+    // Calculate how to split the deduction
+    var fromMonthly = Math.min(monthly, cost);
+    var fromTopUp = cost - fromMonthly;
 
-        // Deduct from monthly first, then top-up
-        var fromMonthly = Math.min(monthly, cost);
-        var fromTopUp = cost - fromMonthly;
-
-        var update = {
+    // Atomic update: only succeeds if balances haven't changed (prevents race condition)
+    // The filter ensures the document still has enough credits at the moment of update
+    var result = await db.collection(COLLECTION).findOneAndUpdate(
+        {
+            userId: String(userId),
+            $expr: {
+                $gte: [
+                    { $add: [{ $ifNull: ['$balance', 0] }, { $ifNull: ['$topUpBalance', 0] }] },
+                    cost
+                ]
+            }
+        },
+        {
             $inc: {
                 balance: -fromMonthly,
                 topUpBalance: -fromTopUp,
                 totalUsed: cost
             }
-        };
+        },
+        { returnDocument: 'after' }
+    );
 
-        await db.collection(COLLECTION).updateOne(
-            { userId: String(userId) },
-            update
-        );
-
-        // Log transaction
-        await db.collection(TRANSACTIONS).insertOne({
-            userId: String(userId),
-            type: 'deduct',
-            action: action,
-            quantity: quantity,
-            cost: cost,
-            fromMonthly: fromMonthly,
-            fromTopUp: fromTopUp,
-            description: description || (action + ' x' + quantity),
-            balanceAfter: monthly - fromMonthly,
-            topUpAfter: topUp - fromTopUp,
-            createdAt: new Date()
-        });
-
-        var newTotal = (monthly - fromMonthly) + (topUp - fromTopUp);
-        console.log('💳 Credits: -' + cost + ' (' + action + ' x' + quantity + ') → ' + newTotal + ' remaining');
-
-        return {
-            success: true,
-            newBalance: monthly - fromMonthly,
-            newTopUp: topUp - fromTopUp,
-            totalRemaining: newTotal,
-            cost: cost
-        };
-    } finally {
-        await client.close();
+    if (!result) {
+        // Re-read to get actual balance for error message
+        var fresh = await db.collection(COLLECTION).findOne({ userId: String(userId) });
+        var actual = (fresh ? (fresh.balance || 0) + (fresh.topUpBalance || 0) : 0);
+        throw new Error('Insufficient credits: need ' + cost + ', have ' + actual);
     }
+
+    var updated = result;
+
+    // Log transaction (non-blocking, don't fail the deduction if logging fails)
+    db.collection(TRANSACTIONS).insertOne({
+        userId: String(userId),
+        type: 'deduct',
+        action: action,
+        quantity: quantity,
+        cost: cost,
+        fromMonthly: fromMonthly,
+        fromTopUp: fromTopUp,
+        description: description || (action + ' x' + quantity),
+        balanceAfter: updated.balance,
+        topUpAfter: updated.topUpBalance,
+        createdAt: new Date()
+    }).catch(function(err) { console.error('Transaction log failed:', err.message); });
+
+    var newTotal = (updated.balance || 0) + (updated.topUpBalance || 0);
+    console.log('💳 Credits: -' + cost + ' (' + action + ' x' + quantity + ') → ' + newTotal + ' remaining');
+
+    return {
+        success: true,
+        newBalance: updated.balance || 0,
+        newTopUp: updated.topUpBalance || 0,
+        totalRemaining: newTotal,
+        cost: cost
+    };
 }
 
 /**
@@ -175,33 +177,28 @@ async function refundCredits(userId, action, quantity, reason) {
     var amount = (COSTS[action] || 0) * quantity;
     if (amount === 0) return;
 
-    var client = new MongoClient(MONGODB_URI);
-    try {
-        await client.connect();
-        var db = client.db(DB_NAME);
+    var db = await getDb();
 
-        await db.collection(COLLECTION).updateOne(
-            { userId: String(userId) },
-            {
-                $inc: { balance: amount, totalUsed: -amount }
-            }
-        );
+    await db.collection(COLLECTION).updateOne(
+        { userId: String(userId) },
+        {
+            $inc: { balance: amount, totalUsed: -amount }
+        }
+    );
 
-        await db.collection(TRANSACTIONS).insertOne({
-            userId: String(userId),
-            type: 'refund',
-            action: action,
-            quantity: quantity,
-            amount: amount,
-            reason: reason || 'Generation failed',
-            createdAt: new Date()
-        });
+    await db.collection(TRANSACTIONS).insertOne({
+        userId: String(userId),
+        type: 'refund',
+        action: action,
+        quantity: quantity,
+        amount: amount,
+        reason: reason || 'Generation failed',
+        createdAt: new Date()
+    });
 
-        console.log('💳 Credits: +' + amount + ' refund (' + reason + ')');
-    } finally {
-        await client.close();
-    }
+    console.log('💳 Credits: +' + amount + ' refund (' + reason + ')');
 }
+
 
 /**
  * Grant monthly credits when a subscription starts or renews.
@@ -214,49 +211,43 @@ async function grantMonthlyCredits(userId, plan) {
         return;
     }
 
-    var client = new MongoClient(MONGODB_URI);
-    try {
-        await client.connect();
-        var db = client.db(DB_NAME);
+    var db = await getDb();
 
-        var now = new Date();
-        var resetDate = new Date(now);
-        resetDate.setMonth(resetDate.getMonth() + 1);
+    var now = new Date();
+    var resetDate = new Date(now);
+    resetDate.setMonth(resetDate.getMonth() + 1);
 
-        // Reset monthly balance (don't touch top-up balance)
-        await db.collection(COLLECTION).updateOne(
-            { userId: String(userId) },
-            {
-                $set: {
-                    balance: amount,
-                    plan: plan,
-                    resetDate: resetDate,
-                    lastGrantedAt: now
-                },
-                $setOnInsert: {
-                    userId: String(userId),
-                    topUpBalance: 0,
-                    totalUsed: 0,
-                    createdAt: now
-                }
+    // Reset monthly balance (don't touch top-up balance)
+    await db.collection(COLLECTION).updateOne(
+        { userId: String(userId) },
+        {
+            $set: {
+                balance: amount,
+                plan: plan,
+                resetDate: resetDate,
+                lastGrantedAt: now
             },
-            { upsert: true }
-        );
+            $setOnInsert: {
+                userId: String(userId),
+                topUpBalance: 0,
+                totalUsed: 0,
+                createdAt: now
+            }
+        },
+        { upsert: true }
+    );
 
-        await db.collection(TRANSACTIONS).insertOne({
-            userId: String(userId),
-            type: 'grant',
-            action: 'monthly_reset',
-            amount: amount,
-            plan: plan,
-            description: plan + ' plan: ' + amount + ' credits',
-            createdAt: now
-        });
+    await db.collection(TRANSACTIONS).insertOne({
+        userId: String(userId),
+        type: 'grant',
+        action: 'monthly_reset',
+        amount: amount,
+        plan: plan,
+        description: plan + ' plan: ' + amount + ' credits',
+        createdAt: now
+    });
 
-        console.log('💳 Credits: granted ' + amount + ' monthly credits (' + plan + ') to user ' + userId);
-    } finally {
-        await client.close();
-    }
+    console.log('💳 Credits: granted ' + amount + ' monthly credits (' + plan + ') to user ' + userId);
 }
 
 /**
@@ -264,40 +255,34 @@ async function grantMonthlyCredits(userId, plan) {
  * These don't expire on monthly reset.
  */
 async function addTopUpCredits(userId, amount, stripeSessionId) {
-    var client = new MongoClient(MONGODB_URI);
-    try {
-        await client.connect();
-        var db = client.db(DB_NAME);
+    var db = await getDb();
 
-        await db.collection(COLLECTION).updateOne(
-            { userId: String(userId) },
-            {
-                $inc: { topUpBalance: amount },
-                $setOnInsert: {
-                    userId: String(userId),
-                    balance: 0,
-                    plan: null,
-                    totalUsed: 0,
-                    createdAt: new Date()
-                }
-            },
-            { upsert: true }
-        );
+    await db.collection(COLLECTION).updateOne(
+        { userId: String(userId) },
+        {
+            $inc: { topUpBalance: amount },
+            $setOnInsert: {
+                userId: String(userId),
+                balance: 0,
+                plan: null,
+                totalUsed: 0,
+                createdAt: new Date()
+            }
+        },
+        { upsert: true }
+    );
 
-        await db.collection(TRANSACTIONS).insertOne({
-            userId: String(userId),
-            type: 'topup',
-            action: 'credit_purchase',
-            amount: amount,
-            stripeSessionId: stripeSessionId,
-            description: 'Purchased ' + amount + ' credits',
-            createdAt: new Date()
-        });
+    await db.collection(TRANSACTIONS).insertOne({
+        userId: String(userId),
+        type: 'topup',
+        action: 'credit_purchase',
+        amount: amount,
+        stripeSessionId: stripeSessionId,
+        description: 'Purchased ' + amount + ' credits',
+        createdAt: new Date()
+    });
 
-        console.log('💳 Credits: +' + amount + ' top-up credits for user ' + userId);
-    } finally {
-        await client.close();
-    }
+    console.log('💳 Credits: +' + amount + ' top-up credits for user ' + userId);
 }
 
 /**
@@ -305,51 +290,39 @@ async function addTopUpCredits(userId, amount, stripeSessionId) {
  */
 async function getTransactions(userId, limit) {
     limit = limit || 50;
-    var client = new MongoClient(MONGODB_URI);
-    try {
-        await client.connect();
-        var db = client.db(DB_NAME);
-        return await db.collection(TRANSACTIONS)
-            .find({ userId: String(userId) })
-            .sort({ createdAt: -1 })
-            .limit(limit)
-            .toArray();
-    } finally {
-        await client.close();
-    }
+    var db = await getDb();
+    return await db.collection(TRANSACTIONS)
+        .find({ userId: String(userId) })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .toArray();
 }
 
 /**
  * Admin: manually set credits for a user.
  */
 async function adminSetCredits(userId, balance, plan) {
-    var client = new MongoClient(MONGODB_URI);
-    try {
-        await client.connect();
-        var db = client.db(DB_NAME);
+    var db = await getDb();
 
-        await db.collection(COLLECTION).updateOne(
-            { userId: String(userId) },
-            {
-                $set: {
-                    balance: balance,
-                    plan: plan || 'admin',
-                    lastGrantedAt: new Date()
-                },
-                $setOnInsert: {
-                    userId: String(userId),
-                    topUpBalance: 0,
-                    totalUsed: 0,
-                    createdAt: new Date()
-                }
+    await db.collection(COLLECTION).updateOne(
+        { userId: String(userId) },
+        {
+            $set: {
+                balance: balance,
+                plan: plan || 'admin',
+                lastGrantedAt: new Date()
             },
-            { upsert: true }
-        );
+            $setOnInsert: {
+                userId: String(userId),
+                topUpBalance: 0,
+                totalUsed: 0,
+                createdAt: new Date()
+            }
+        },
+        { upsert: true }
+    );
 
-        console.log('💳 Admin: set ' + balance + ' credits for user ' + userId);
-    } finally {
-        await client.close();
-    }
+    console.log('💳 Admin: set ' + balance + ' credits for user ' + userId);
 }
 
 module.exports = {

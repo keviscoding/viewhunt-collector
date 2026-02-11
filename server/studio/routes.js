@@ -4,6 +4,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
+const { ObjectId } = require('mongodb');
+const { getDb } = require('./db');
 const SkeletonGenerator = require('./formats/skeleton-anatomy/generator');
 const SkeletonGeneratorV2 = require('./formats/skeleton-anatomy-v2/generator');
 const GeminiAnalyzer = require('./editor/gemini-analyzer');
@@ -12,6 +14,29 @@ const VideoEditor = require('./editor/video-editor');
 const assemblyQueue = require('./editor/job-queue');
 const { saveSfx, listSfx, loadAllSfx } = require('./editor/sfx-store');
 const credits = require('./credits');
+const rateLimit = require('express-rate-limit');
+
+// Rate limiters for studio endpoints
+const studioGenerateLimiter = rateLimit({
+    windowMs: 60 * 1000,  // 1 minute
+    max: 10,               // 10 generation requests per minute
+    message: { error: 'Too many requests. Please wait a moment.' }
+});
+
+const studioAssemblyLimiter = rateLimit({
+    windowMs: 60 * 1000,  // 1 minute
+    max: 3,                // 3 assembly jobs per minute
+    message: { error: 'Too many video assembly requests. Please wait.' }
+});
+
+const studioGeneralLimiter = rateLimit({
+    windowMs: 60 * 1000,  // 1 minute
+    max: 60,               // 60 general requests per minute
+    message: { error: 'Rate limit exceeded. Please slow down.' }
+});
+
+// Apply general limiter to all studio routes
+router.use(studioGeneralLimiter);
 
 // Configure multer for scene image uploads
 const uploadDir = path.join(__dirname, '../public/studio/uploads');
@@ -73,7 +98,7 @@ const requireAuth = (req, res, next) => {
 };
 
 // Generate Script
-router.post('/generate/script', requireAuth, async (req, res) => {
+router.post('/generate/script', requireAuth, studioGenerateLimiter, async (req, res) => {
     try {
         const { format, topic, style } = req.body;
         
@@ -105,7 +130,7 @@ router.post('/generate/script', requireAuth, async (req, res) => {
 });
 
 // Generate Images
-router.post('/generate/images', requireAuth, async (req, res) => {
+router.post('/generate/images', requireAuth, studioGenerateLimiter, async (req, res) => {
     try {
         const { format, script, style } = req.body;
         
@@ -331,7 +356,7 @@ router.post('/generate/scenes', requireAuth, async (req, res) => {
 });
 
 // Step 2: Generate images for a single scene (supports multiple variants)
-router.post('/generate/scene-images', requireAuth, async (req, res) => {
+router.post('/generate/scene-images', requireAuth, studioGenerateLimiter, async (req, res) => {
     try {
         const { format, imagePrompt, sceneNumber, count } = req.body;
         if (!format || !imagePrompt) return res.status(400).json({ error: 'Format and imagePrompt are required' });
@@ -370,7 +395,7 @@ router.post('/generate/scene-images', requireAuth, async (req, res) => {
 });
 
 // Step 3: Generate video for a single scene with selected image
-router.post('/generate/scene-video', requireAuth, async (req, res) => {
+router.post('/generate/scene-video', requireAuth, studioGenerateLimiter, async (req, res) => {
     try {
         let { format, imageUrl, videoPrompt, sceneNumber } = req.body;
         if (!format || !imageUrl || !videoPrompt) return res.status(400).json({ error: 'format, imageUrl, and videoPrompt are required' });
@@ -427,7 +452,7 @@ router.post('/upload-scene-image', requireAuth, upload.single('image'), (req, re
 // === VIDEO ASSEMBLY ENDPOINTS (Queue-based) ===
 
 // Submit assembly job — returns immediately with jobId
-router.post('/assemble', requireAuth, async (req, res) => {
+router.post('/assemble', requireAuth, studioAssemblyLimiter, async (req, res) => {
     try {
         const { script, scenes, voiceName } = req.body;
         
@@ -458,7 +483,8 @@ router.post('/assemble', requireAuth, async (req, res) => {
         
     } catch (error) {
         console.error('Assembly submit error:', error);
-        res.status(500).json({ error: error.message });
+        var status = error.message.includes('Queue is full') ? 429 : 500;
+        res.status(status).json({ error: error.message });
     }
 });
 
@@ -571,13 +597,8 @@ router.post('/credits/buy', requireAuth, async (req, res) => {
         var priceId = process.env[packInfo.envVar];
         if (!priceId) return res.status(500).json({ error: 'Top-up pricing not configured' });
 
-        const { MongoClient, ObjectId } = require('mongodb');
-        const MONGODB_URI = process.env.MONGODB_URI || process.env.V2_MONGO_URI || process.env.MONGO_URI;
-        const client = new MongoClient(MONGODB_URI);
-        await client.connect();
-        const db = client.db('viewhuntv2');
+        const db = await getDb();
         const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
-        await client.close();
 
         if (!user) return res.status(404).json({ error: 'User not found' });
 
@@ -590,13 +611,10 @@ router.post('/credits/buy', requireAuth, async (req, res) => {
                 metadata: { userId: user._id.toString() }
             });
             customerId = customer.id;
-            const client2 = new MongoClient(MONGODB_URI);
-            await client2.connect();
-            await client2.db('viewhuntv2').collection('users').updateOne(
+            await db.collection('users').updateOne(
                 { _id: user._id },
                 { $set: { 'subscription.stripeCustomerId': customerId } }
             );
-            await client2.close();
         }
 
         const session = await stripe.checkout.sessions.create({
@@ -626,15 +644,10 @@ router.post('/credits/verify-purchase', requireAuth, async (req, res) => {
         const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
         if (!stripe) return res.json({ credited: false, reason: 'Stripe not configured' });
 
-        const { MongoClient, ObjectId } = require('mongodb');
-        const MONGODB_URI = process.env.MONGODB_URI || process.env.V2_MONGO_URI || process.env.MONGO_URI;
-        const client = new MongoClient(MONGODB_URI);
-        await client.connect();
-        const db = client.db('viewhuntv2');
+        const db = await getDb();
         const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
         
         if (!user || !user.subscription?.stripeCustomerId) {
-            await client.close();
             return res.json({ credited: false, reason: 'No Stripe customer' });
         }
 
@@ -667,7 +680,6 @@ router.post('/credits/verify-purchase', requireAuth, async (req, res) => {
             }
         }
 
-        await client.close();
         res.json({ credited: credited });
     } catch (err) {
         console.error('Verify purchase error:', err);

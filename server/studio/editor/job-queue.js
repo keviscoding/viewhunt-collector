@@ -29,6 +29,11 @@ class JobQueue {
      * Submit a new assembly job. Returns immediately with a jobId.
      */
     submit(script, scenes, voiceName) {
+        // Prevent queue flooding — max 10 pending jobs
+        if (this.queue.length >= 10) {
+            throw new Error('Queue is full. Please wait for current jobs to finish.');
+        }
+
         const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
         this.jobs.set(jobId, {
@@ -145,11 +150,15 @@ class JobQueue {
     }
 
     cleanupOldJobs() {
-        const maxAge = 30 * 60 * 1000; // 30 minutes
+        const maxAge = 10 * 60 * 1000; // 10 minutes
         const now = Date.now();
         for (const [id, job] of this.jobs) {
             if (now - job.createdAt > maxAge && job.status !== STATES.QUEUED) {
                 this.jobs.delete(id);
+            } else if (job.status === STATES.COMPLETE || job.status === STATES.FAILED) {
+                // Free heavy data from finished jobs (keep status/result only)
+                job.script = null;
+                job.scenes = null;
             }
         }
     }
