@@ -112,24 +112,24 @@ function getAuthToken(){
 (function(){
     // === PLANS ===
     var plans=[
-        {id:'starter',name:'Starter',price:'$29',credits:'300',videos:'~3 full videos/month',pop:false,features:[
+        {id:'starter',name:'Starter',price:'$29',credits:'300',pop:false,features:[
             'ViewHunt Niche Database (unlimited)',
-            '300 Studio credits per month',
+            '300 video credits per month',
             'All video formats & styles',
             'Custom SFX & background music',
             'Word-by-word captions'
         ]},
-        {id:'creator',name:'Creator',price:'$59',credits:'600',videos:'~6 full videos/month',pop:true,features:[
+        {id:'creator',name:'Creator',price:'$59',credits:'600',pop:true,features:[
             'ViewHunt Niche Database (unlimited)',
-            '600 Studio credits per month',
+            '600 video credits per month',
             'All video formats & styles',
             'Custom SFX & background music',
             'Word-by-word captions',
             'Priority generation queue'
         ]},
-        {id:'studio',name:'Studio',price:'$119',credits:'1,200',videos:'~12 full videos/month',pop:false,features:[
+        {id:'studio',name:'Studio',price:'$119',credits:'1,200',pop:false,features:[
             'ViewHunt Niche Database (unlimited)',
-            '1,200 Studio credits per month',
+            '1,200 video credits per month',
             'All video formats & styles',
             'Custom SFX & background music',
             'Word-by-word captions',
@@ -145,7 +145,6 @@ function getAuthToken(){
         h+='<div class="plan-name">'+p.name+'</div>';
         h+='<div class="plan-price">'+p.price+' <span>/month</span></div>';
         h+='<div class="plan-credits">💎 '+p.credits+' credits/month</div>';
-        h+='<div class="plan-videos">'+p.videos+'</div>';
         h+='<ul class="plan-features">';
         p.features.forEach(function(f){h+='<li>'+f+'</li>'});
         h+='</ul>';
