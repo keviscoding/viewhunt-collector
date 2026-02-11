@@ -756,7 +756,12 @@ function getAuthToken() {
 }
 
 function checkAuth() {
-    if (!getAuthToken()) console.warn('No auth token — log in at /app first');
+    if (!getAuthToken()) {
+        // No auth — redirect to app login
+        window.location.href = '/app';
+        return;
+    }
+    // Verify token is valid by checking credit balance (will 401 if invalid)
 }
 
 async function downloadFile(url, filename) {

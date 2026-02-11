@@ -657,6 +657,14 @@ class ViewHuntApp {
             
             loading.style.display = 'none';
 
+            // Handle free tier limit reached
+            if (data.freeTierLimitReached) {
+                emptyState.style.display = 'block';
+                emptyState.querySelector('h2').textContent = 'Daily Limit Reached';
+                emptyState.querySelector('p').innerHTML = 'Free tier allows 10 niche discoveries per day.<br><br><a href="/pricing" style="color:#7c6aef;font-weight:600;text-decoration:none">Upgrade for unlimited access →</a>';
+                return;
+            }
+
             if (this.currentBatch.length === 0) {
                 emptyState.style.display = 'block';
                 emptyState.querySelector('h2').textContent = 'No Channels Match Your Filters';
@@ -1223,6 +1231,12 @@ class ViewHuntApp {
     }
 
     switchView(view) {
+        // Studio tab is handled by openStudio() — don't switch view
+        if (view === 'studio') {
+            this.openStudio();
+            return;
+        }
+        
         // Check subscription access for restricted views (but allow admin, beta, and invite users)
         if ((view === 'approved' || view === 'trending') && !this.hasSubscriptionAccess()) {
             this.showSubscriptionGate();
@@ -1498,11 +1512,11 @@ class ViewHuntApp {
         }
     }
 
-    // Helper function to check if user has access (admin, beta, or invite users)
+    // Helper function to check if user has access (admin, beta, invite, free, or paid users)
     hasSubscriptionAccess() {
         if (!this.subscriptionStatus) return false;
         
-        // Student account always has access
+        // Student account has niche access
         if (this.user && this.user.email === 'students@viewhunt.com') {
             return true;
         }
@@ -1510,7 +1524,59 @@ class ViewHuntApp {
         return this.subscriptionStatus.hasAccess || 
                this.subscriptionStatus.type === 'admin' || 
                this.subscriptionStatus.type === 'beta' || 
-               this.subscriptionStatus.type === 'invite';
+               this.subscriptionStatus.type === 'invite' ||
+               this.subscriptionStatus.type === 'free';
+    }
+    
+    // Check if user has a paid plan (for studio access)
+    hasPaidAccess() {
+        if (!this.subscriptionStatus) return false;
+        if (this.subscriptionStatus.type === 'admin') return true;
+        if (this.subscriptionStatus.type === 'stripe' && this.subscriptionStatus.hasAccess) return true;
+        // Beta and invite users get studio access too
+        if (this.subscriptionStatus.type === 'beta' || this.subscriptionStatus.type === 'invite') return true;
+        return false;
+    }
+    
+    // Open Content Studio — paid users go to studio, free users see upgrade prompt
+    openStudio() {
+        if (this.hasPaidAccess()) {
+            window.location.href = '/studio/v2.html';
+        } else {
+            // Show upgrade modal
+            this.showStudioUpgradeModal();
+        }
+    }
+    
+    showStudioUpgradeModal() {
+        // Remove existing modal if any
+        var old = document.getElementById('studio-upgrade-modal');
+        if (old) old.remove();
+        
+        var overlay = document.createElement('div');
+        overlay.id = 'studio-upgrade-modal';
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(4px)';
+        overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+        
+        overlay.innerHTML = '<div style="background:#18181f;border:1px solid #2a2a36;border-radius:16px;padding:2rem;max-width:440px;width:100%;text-align:center">' +
+            '<div style="font-size:3rem;margin-bottom:1rem">🎬</div>' +
+            '<h2 style="font-size:1.3rem;font-weight:700;margin-bottom:0.5rem;color:#e8e8ed">Content Studio</h2>' +
+            '<p style="color:#8b8b9e;font-size:0.9rem;line-height:1.6;margin-bottom:1.25rem">Turn scripts into fully produced YouTube Shorts with AI-generated visuals, voiceover, captions, and SFX.</p>' +
+            '<div style="background:#1f1f28;border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:left">' +
+                '<div style="font-size:0.82rem;color:#8b8b9e;line-height:1.8">' +
+                    '<div>✅ Skeleton Anatomy format</div>' +
+                    '<div>✅ AI image & video generation</div>' +
+                    '<div>✅ Voiceover + word-by-word captions</div>' +
+                    '<div>✅ Custom SFX & background music</div>' +
+                    '<div>✅ One-click video assembly</div>' +
+                    '<div style="color:#5c5c6e;margin-top:0.5rem">🔜 More formats coming soon</div>' +
+                '</div>' +
+            '</div>' +
+            '<a href="/pricing" style="display:block;padding:0.75rem;background:#7c6aef;color:white;border-radius:10px;font-weight:700;font-size:0.95rem;text-decoration:none;margin-bottom:0.75rem">View Plans — Starting at $29/mo</a>' +
+            '<button onclick="this.closest(\'#studio-upgrade-modal\').remove()" style="background:none;border:none;color:#5c5c6e;font-size:0.85rem;cursor:pointer;font-family:inherit">Maybe later</button>' +
+        '</div>';
+        
+        document.body.appendChild(overlay);
     }
 
     updateSubscriptionUI() {
@@ -1702,41 +1768,41 @@ class ViewHuntApp {
     }
 
     async handleRegister() {
-        const inviteCode = document.getElementById('register-invite-code').value;
+        const inviteCode = document.getElementById('register-invite-code').value.trim();
         const displayName = document.getElementById('register-display-name').value;
         const email = document.getElementById('register-email').value;
         const password = document.getElementById('register-password').value;
         const submitBtn = document.querySelector('#register-form button[type="submit"]');
 
-        if (!inviteCode || !displayName || !email || !password) {
-            this.showToast('Please fill in all fields including invite code ❌');
+        if (!displayName || !email || !password) {
+            this.showToast('Please fill in all fields ❌');
             return;
         }
 
-        // Validate invite code first (skip if endpoint not available - backend will validate)
-        try {
-            const validateResponse = await fetch(`${this.apiBase}/auth/validate-invite`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ invite_code: inviteCode })
-            });
+        // Validate invite code if provided
+        if (inviteCode) {
+            try {
+                const validateResponse = await fetch(`${this.apiBase}/auth/validate-invite`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ invite_code: inviteCode })
+                });
 
-            if (validateResponse.ok) {
-                const validateData = await validateResponse.json();
-                
-                if (!validateData.valid) {
-                    this.showToast(validateData.error || 'Invalid invite code ❌');
-                    return;
+                if (validateResponse.ok) {
+                    const validateData = await validateResponse.json();
+                    
+                    if (!validateData.valid) {
+                        this.showToast(validateData.error || 'Invalid invite code ❌');
+                        return;
+                    }
+                    
+                    this.showToast(`✅ Valid invite code: ${validateData.description}`);
                 }
-                
-                this.showToast(`✅ Valid invite code: ${validateData.description}`);
+            } catch (error) {
+                console.log('Skipping frontend validation, backend will validate during registration');
             }
-            // If 404 or other error, continue anyway - backend will validate during registration
-        } catch (error) {
-            console.log('Skipping frontend validation, backend will validate during registration');
-            // Continue anyway - backend will validate
         }
 
         if (!displayName || !email || !password) {
@@ -1759,7 +1825,7 @@ class ViewHuntApp {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    invite_code: inviteCode,
+                    invite_code: inviteCode || undefined,
                     display_name: displayName,
                     email,
                     password
@@ -1958,6 +2024,11 @@ class ViewHuntApp {
                 statusText.textContent = 'Beta Access';
             } else if (type === 'invite') {
                 statusText.textContent = 'Invite Access';
+            } else if (type === 'free') {
+                statusIndicator.style.color = '#fbbf24'; // Amber for free
+                statusText.textContent = 'Free Tier (10 niches/day)';
+                subscriptionActions.style.display = 'block';
+                subscriptionActions.innerHTML = '<button class="user-menu-item" onclick="window.location.href=\'/pricing\'">Upgrade Plan</button>';
             } else if (type === 'stripe') {
                 statusText.textContent = 'Pro Subscription';
                 subscriptionActions.style.display = 'block';

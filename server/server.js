@@ -388,9 +388,9 @@ const requireSubscription = async (req, res, next) => {
             return next();
         }
         
-        // Student account always has access (for viewing approved channels)
+        // Student account gets niche access only (NOT studio)
         if (user.email === 'students@viewhunt.com') {
-            console.log('Student account access granted');
+            console.log('Student account access granted (niches only)');
             return next();
         }
         
@@ -435,9 +435,9 @@ const requireSubscription = async (req, res, next) => {
             return next();
         }
         
-        // New V2 users (after cutoff) need subscription
+        // New V2 users (after cutoff) — free tier gets limited access, paid gets full
         if (!fullUser.migrated_from_v1 && userCreatedAt >= BETA_CUTOFF_DATE) {
-            console.log('New V2 user, checking subscription requirement:', user.email);
+            console.log('New V2 user, checking subscription:', user.email);
             
             // If Stripe is not configured, allow access for development
             if (!stripe) {
@@ -445,41 +445,28 @@ const requireSubscription = async (req, res, next) => {
                 return next();
             }
             
-            // Check if user has subscription data
-            if (!fullUser.subscription || !fullUser.subscription.stripeSubscriptionId) {
-                console.log('New V2 user has no subscription data');
-                return res.status(403).json({ 
-                    error: 'Active subscription required',
-                    redirect: '/pricing',
-                    userType: 'new_v2_user'
-                });
+            // Check if user has active paid subscription
+            if (fullUser.subscription && fullUser.subscription.stripeSubscriptionId) {
+                try {
+                    const subscription = await stripe.subscriptions.retrieve(fullUser.subscription.stripeSubscriptionId);
+                    
+                    if (subscription.status === 'active') {
+                        console.log('New V2 user subscription verified as active');
+                        req.subscription = subscription;
+                        req.userPlan = fullUser.subscription.plan || 'starter';
+                        return next();
+                    }
+                    
+                    console.log('New V2 user subscription not active:', subscription.status);
+                } catch (stripeError) {
+                    console.error('Stripe subscription check failed for new V2 user:', stripeError);
+                }
             }
             
-            // Verify subscription with Stripe for new V2 users
-            try {
-                const subscription = await stripe.subscriptions.retrieve(fullUser.subscription.stripeSubscriptionId);
-                
-                if (subscription.status !== 'active') {
-                    console.log('New V2 user subscription not active:', subscription.status);
-                    return res.status(403).json({ 
-                        error: 'Active subscription required',
-                        redirect: '/pricing',
-                        userType: 'new_v2_user'
-                    });
-                }
-                
-                console.log('New V2 user subscription verified as active');
-                req.subscription = subscription;
-                return next();
-                
-            } catch (stripeError) {
-                console.error('Stripe subscription check failed for new V2 user:', stripeError);
-                return res.status(403).json({ 
-                    error: 'Subscription verification failed',
-                    redirect: '/pricing',
-                    userType: 'new_v2_user'
-                });
-            }
+            // No active subscription — free tier (limited niche access)
+            console.log('Free tier user, granting limited access:', user.email);
+            req.userPlan = 'free';
+            return next();
         }
         
         // V1 migrated users need active subscription
@@ -786,40 +773,35 @@ const migrateV1UserToV2 = async (v1User) => {
 
 // Authentication Routes
 
-// Register new user - INVITE ONLY
+// Register new user - Free tier (no invite code) or Invite tier (with code)
 app.post('/api/auth/register', authLimiter, async (req, res) => {
     try {
         const { email, password, display_name, invite_code } = req.body;
 
-        // Check if invite code is provided and valid
-        if (!invite_code) {
-            return res.status(403).json({ 
-                error: 'Registration requires a valid invite code. Contact support for access.' 
+        // If invite code is provided, validate it
+        let inviteCodeDoc = null;
+        if (invite_code) {
+            inviteCodeDoc = await db.collection('invite_codes').findOne({ 
+                code: invite_code,
+                active: true,
+                $or: [
+                    { expires_at: { $exists: false } },
+                    { expires_at: null },
+                    { expires_at: { $gt: new Date() } }
+                ]
             });
-        }
 
-        // Validate invite code
-        const inviteCodeDoc = await db.collection('invite_codes').findOne({ 
-            code: invite_code,
-            active: true,
-            $or: [
-                { expires_at: { $exists: false } },
-                { expires_at: null },
-                { expires_at: { $gt: new Date() } }
-            ]
-        });
+            if (!inviteCodeDoc) {
+                return res.status(403).json({ 
+                    error: 'Invalid or expired invite code.' 
+                });
+            }
 
-        if (!inviteCodeDoc) {
-            return res.status(403).json({ 
-                error: 'Invalid or expired invite code.' 
-            });
-        }
-
-        // Check if invite code has usage limit
-        if (inviteCodeDoc.max_uses && inviteCodeDoc.used_count >= inviteCodeDoc.max_uses) {
-            return res.status(403).json({ 
-                error: 'This invite code has reached its usage limit.' 
-            });
+            if (inviteCodeDoc.max_uses && inviteCodeDoc.used_count >= inviteCodeDoc.max_uses) {
+                return res.status(403).json({ 
+                    error: 'This invite code has reached its usage limit.' 
+                });
+            }
         }
 
         const { email: reqEmail, password: reqPassword, display_name: reqDisplayName } = req.body;
@@ -862,14 +844,15 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         const saltRounds = 12;
         const hashedPassword = await bcrypt.hash(reqPassword, saltRounds);
 
-        // Create user with invite code tracking
+        // Create user — free tier or invite tier
         const newUser = {
             email: reqEmail.toLowerCase(),
             password: hashedPassword,
             display_name: reqDisplayName,
             created_at: new Date(),
             updated_at: new Date(),
-            invited_by_code: invite_code,
+            plan: invite_code ? 'invite' : 'free',
+            invited_by_code: invite_code || null,
             stats: {
                 channels_approved: 0,
                 channels_rejected: 0,
@@ -879,20 +862,22 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
 
         const result = await db.collection('users').insertOne(newUser);
 
-        // Update invite code usage
-        await db.collection('invite_codes').updateOne(
-            { code: invite_code },
-            { 
-                $inc: { used_count: 1 },
-                $push: { 
-                    used_by: {
-                        user_id: result.insertedId,
-                        email: reqEmail.toLowerCase(),
-                        used_at: new Date()
+        // Update invite code usage if applicable
+        if (invite_code && inviteCodeDoc) {
+            await db.collection('invite_codes').updateOne(
+                { code: invite_code },
+                { 
+                    $inc: { used_count: 1 },
+                    $push: { 
+                        used_by: {
+                            user_id: result.insertedId,
+                            email: reqEmail.toLowerCase(),
+                            used_at: new Date()
+                        }
                     }
                 }
-            }
-        );
+            );
+        }
 
         // Generate JWT token
         const token = jwt.sign(
@@ -906,7 +891,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         );
 
         res.status(201).json({
-            message: 'User registered successfully with invite code',
+            message: invite_code ? 'User registered successfully with invite code' : 'User registered successfully (free tier)',
             token,
             user: {
                 id: result.insertedId,
@@ -1222,6 +1207,7 @@ async function processGoogleUser(googleUser) {
                 created_at: new Date(),
                 updated_at: new Date(),
                 migrated_from_v1: false, // New V2 user
+                plan: 'free',
                 stats: {
                     channels_approved: 0,
                     channels_rejected: 0,
@@ -1317,6 +1303,7 @@ app.post('/api/auth/google', async (req, res) => {
                 created_at: new Date(),
                 updated_at: new Date(),
                 migrated_from_v1: false, // New V2 user
+                plan: 'free',
                 stats: {
                     channels_approved: 0,
                     channels_rejected: 0,
@@ -1448,7 +1435,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
                 subscriptionStatus.reason = 'Subscription required';
             }
         }
-        // New V2 users need subscription
+        // New V2 users — check for paid subscription, otherwise free tier
         else {
             if (user.subscription && user.subscription.stripeSubscriptionId && stripe) {
                 try {
@@ -1457,6 +1444,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
                         hasAccess: subscription.status === 'active',
                         type: 'stripe',
                         status: subscription.status,
+                        plan: user.subscription.plan || 'starter',
                         reason: subscription.status === 'active' ? 'Active subscription' : `Subscription ${subscription.status}`,
                         stripeSubscriptionId: subscription.id,
                         currentPeriodEnd: new Date(subscription.current_period_end * 1000),
@@ -1467,7 +1455,15 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
                     subscriptionStatus.reason = 'Subscription verification failed';
                 }
             } else {
-                subscriptionStatus.reason = 'Subscription required for new users';
+                // Free tier — limited niche access, no studio
+                subscriptionStatus = {
+                    hasAccess: true,
+                    type: 'free',
+                    status: 'active',
+                    plan: 'free',
+                    reason: 'Free tier — limited access',
+                    nicheLimit: 10
+                };
             }
         }
 
@@ -2245,6 +2241,24 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
     try {
         const userId = new ObjectId(req.user.userId);
         
+        // Free tier: limit to 10 channels per day
+        if (req.userPlan === 'free') {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const viewsToday = await db.collection('free_tier_views').countDocuments({
+                user_id: userId,
+                date: { $gte: today }
+            });
+            if (viewsToday >= 10) {
+                return res.json({
+                    channels: [],
+                    pagination: { page: 1, limit: 0, total: 0, totalPages: 0 },
+                    freeTierLimitReached: true,
+                    message: 'Free tier limit reached (10 channels/day). Upgrade for unlimited access.'
+                });
+            }
+        }
+        
         // Pagination parameters
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
@@ -2463,6 +2477,17 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
             });
         }
         
+        // Track free tier views
+        if (req.userPlan === 'free' && channels.length > 0) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            await db.collection('free_tier_views').insertOne({
+                user_id: userId,
+                date: new Date(),
+                count: channels.length
+            });
+        }
+        
         res.json({
             channels,
             pagination: {
@@ -2472,7 +2497,8 @@ app.get('/api/channels/pending', authenticateToken, requireSubscription, async (
                 hasNext: page < totalPages,
                 hasPrev: page > 1,
                 limit
-            }
+            },
+            userPlan: req.userPlan || null
         });
         
     } catch (error) {
