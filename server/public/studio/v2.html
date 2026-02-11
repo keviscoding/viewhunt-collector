@@ -144,6 +144,7 @@
         .progress-chip.done { background: var(--green-dim); color: var(--green); border-color: transparent; }
         .progress-chip.error { background: var(--red-dim); color: var(--red); border-color: transparent; }
         @keyframes chipPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+        @keyframes slideDown { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .progress-msg { font-size: 0.85rem; color: var(--text-muted); }
 
         /* Director Scene Cards */
@@ -346,7 +347,7 @@
                 </div>
 
                 <button id="generate-btn" class="btn btn-primary btn-lg">
-                    <span class="btn-text">Generate Video</span>
+                    <span class="btn-text">Generate Video · ~94 💎</span>
                 </button>
 
                 <!-- SFX Management -->
@@ -467,18 +468,18 @@
                 </div>
                 <div id="credit-detail-content" style="font-size:0.85rem;color:var(--text-muted);line-height:1.8;">Loading...</div>
                 <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:0.5rem;">
-                    <button class="btn btn-lg" onclick="buyCredits('small')" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);font-size:0.82rem;padding:0.5rem;">200 credits — <s style="color:var(--text-dim)">$15</s> $9.99</button>
-                    <button class="btn btn-lg" onclick="buyCredits('medium')" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);font-size:0.82rem;padding:0.5rem;">500 credits — <s style="color:var(--text-dim)">$35</s> $24.99</button>
-                    <button class="btn btn-green btn-lg" onclick="buyCredits('large')" style="font-size:0.82rem;padding:0.5rem;">🔥 1,200 credits — <s style="color:rgba(0,0,0,0.4)">$80</s> $54.99</button>
+                    <button class="btn btn-lg" onclick="buyCredits('small')" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);font-size:0.82rem;padding:0.5rem;">200 credits — <s style="color:var(--text-dim)">$30</s> $19.99</button>
+                    <button class="btn btn-lg" onclick="buyCredits('medium')" style="background:var(--surface-2);color:var(--text);border:1px solid var(--border);font-size:0.82rem;padding:0.5rem;">500 credits — <s style="color:var(--text-dim)">$70</s> $49.99</button>
+                    <button class="btn btn-green btn-lg" onclick="buyCredits('large')" style="font-size:0.82rem;padding:0.5rem;">🔥 1,200 credits — <s style="color:rgba(0,0,0,0.4)">$140</s> $99.99</button>
                 </div>
             </div>
         </div>
 
         <footer class="app-footer">
-            ViewHunt Studio · Claude Opus 4.5 · Kie.ai Kling 2.6
+            ViewHunt Studio · AI-Powered Video Generation
         </footer>
     </div>
 
-    <script src="/studio/v2-app.js?v=20260211a"></script>
+    <script src="/studio/v2-app.js?v=20260211b"></script>
 </body>
 </html>

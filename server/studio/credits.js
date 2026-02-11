@@ -34,8 +34,8 @@ const COSTS = {
 // Plan credit allocations (monthly)
 const PLAN_CREDITS = {
     starter: 300,
-    creator: 750,
-    studio: 1800
+    creator: 600,
+    studio: 1200
 };
 
 // Top-up packs { credits, stripeEnvVar }

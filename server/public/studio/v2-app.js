@@ -15,15 +15,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ==================== INIT ====================
 
-// Helper: check for credit errors (402) in API responses
+// Helper: check for credit errors (402) in API responses — shows graceful inline banner
 async function handleCreditError(res) {
     if (res.status === 402) {
         var data = await res.json();
-        var msg = 'Not enough credits. You need ' + (data.cost || '?') + ' but have ' + (data.totalAvailable || 0) + '.';
-        alert(msg + '\n\nBuy more credits to continue.');
+        showCreditBanner(data.cost || 0, data.totalAvailable || 0);
         loadCreditBalance();
-        throw new Error(msg);
+        throw new Error('__credit_error__');
     }
+}
+
+// Show a graceful credit shortage banner instead of ugly alert
+function showCreditBanner(needed, have) {
+    // Remove any existing banner
+    var old = document.getElementById('credit-banner');
+    if (old) old.remove();
+
+    var banner = document.createElement('div');
+    banner.id = 'credit-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:1000;padding:1rem 1.25rem;background:linear-gradient(135deg,#1a1025,#2d1a3e);border-bottom:1px solid rgba(124,106,239,0.3);display:flex;align-items:center;justify-content:center;gap:1rem;flex-wrap:wrap;animation:slideDown 0.3s ease';
+    banner.innerHTML =
+        '<div style="display:flex;align-items:center;gap:0.5rem">' +
+            '<span style="font-size:1.2rem">💎</span>' +
+            '<span style="font-size:0.9rem;color:#e8e8ed">You need <b style="color:#7c6aef">' + needed + '</b> credits but have <b style="color:#f87171">' + have + '</b></span>' +
+        '</div>' +
+        '<div style="display:flex;gap:0.5rem">' +
+            '<button onclick="showCreditDetails();document.getElementById(\'credit-banner\').remove()" style="padding:0.4rem 0.8rem;border-radius:6px;border:none;background:#7c6aef;color:white;font-weight:600;font-size:0.82rem;cursor:pointer;font-family:inherit">Buy Credits</button>' +
+            '<button onclick="this.parentNode.parentNode.remove()" style="padding:0.4rem 0.6rem;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:#8b8b9e;font-size:0.82rem;cursor:pointer;font-family:inherit">Dismiss</button>' +
+        '</div>';
+    document.body.prepend(banner);
+
+    // Auto-dismiss after 8 seconds
+    setTimeout(function() { var b = document.getElementById('credit-banner'); if (b) b.remove(); }, 8000);
 }
 
 function initGradients() {
@@ -52,11 +75,29 @@ function initModeToggle() {
         const videosGroup = document.getElementById('generateVideos')?.closest('.form-group');
         if (videosGroup) videosGroup.style.display = directorMode ? 'none' : 'block';
         
-        document.querySelector('#generate-btn .btn-text').textContent = directorMode ? 'Generate Scenes + Images' : 'Generate Video';
+        updateGenerateButtonCost();
     };
     
     track.addEventListener('click', toggle);
     track.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+}
+
+function updateGenerateButtonCost() {
+    var btn = document.querySelector('#generate-btn .btn-text');
+    if (!btn) return;
+    if (directorMode) {
+        // Director: script (5) + images (~12 scenes × 2) = ~29 credits
+        btn.textContent = 'Generate Scenes + Images · ~29 💎';
+    } else {
+        var withVideos = document.getElementById('generateVideos')?.checked;
+        if (withVideos) {
+            // Auto with videos: script (5) + images (12×2) + videos (12×5) + assembly (5) = ~94
+            btn.textContent = 'Generate Video · ~94 💎';
+        } else {
+            // Auto images only: script (5) + images (12×2) = ~29
+            btn.textContent = 'Generate Images Only · ~29 💎';
+        }
+    }
 }
 
 function initGenerateButton() {
@@ -71,6 +112,13 @@ function initGenerateButton() {
             await handleAutoGeneration(script, document.getElementById('generateVideos').checked);
         }
     });
+    
+    // Update cost when video checkbox changes
+    var videosCb = document.getElementById('generateVideos');
+    if (videosCb) videosCb.addEventListener('change', updateGenerateButtonCost);
+    
+    // Set initial button cost
+    updateGenerateButtonCost();
 }
 
 // ==================== DIRECTOR MODE ====================
@@ -83,7 +131,7 @@ async function handleDirectorGeneration(script) {
     hide('config-section', 'results-section', 'progress-section');
     
     const container = document.getElementById('director-scenes');
-    container.innerHTML = '<div class="director-loading">🤖 Claude is analyzing your script and reference frames...</div>';
+    container.innerHTML = '<div class="director-loading">🤖 Analyzing your script and reference frames...</div>';
     
     try {
         const res = await fetch('/api/studio/generate/scenes', {
@@ -107,8 +155,8 @@ async function handleDirectorGeneration(script) {
         bar.className = 'action-bar';
         bar.id = 'director-action-bar';
         bar.innerHTML = `
-            <button class="btn btn-green" onclick="generateAllSelectedVideos()">🎥 Generate All Selected Videos</button>
-            <button class="btn btn-primary" onclick="assembleVideo()" id="director-assemble-btn" style="display:none">🎬 Assemble Final Video</button>
+            <button class="btn btn-green" onclick="generateAllSelectedVideos()">🎥 Generate All Videos</button>
+            <button class="btn btn-primary" onclick="assembleVideo()" id="director-assemble-btn" style="display:none">🎬 Assemble · 5 💎</button>
             <button class="btn btn-primary" onclick="downloadAllDirectorVideos()" id="director-download-btn" style="display:none">📥 Download All Videos</button>
             <button class="btn btn-secondary" onclick="resetToConfig()">← Start Over</button>
         `;
@@ -121,7 +169,11 @@ async function handleDirectorGeneration(script) {
         
     } catch (error) {
         console.error('Director generation error:', error);
-        container.innerHTML = `<div class="director-error">❌ ${error.message}<br><button class="btn btn-secondary btn-sm" onclick="resetToConfig()" style="margin-top:1rem">Try Again</button></div>`;
+        if (error.message !== '__credit_error__') {
+            container.innerHTML = `<div class="director-error">❌ ${error.message}<br><button class="btn btn-secondary btn-sm" onclick="resetToConfig()" style="margin-top:1rem">Try Again</button></div>`;
+        } else {
+            container.innerHTML = '<div class="director-error"><button class="btn btn-secondary btn-sm" onclick="resetToConfig()" style="margin-top:1rem">← Back</button></div>';
+        }
     } finally {
         generationInProgress = false;
     }
@@ -156,9 +208,9 @@ function createDirectorCard(scene, index) {
         </div>
         
         <div class="scene-controls">
-            <button class="btn btn-secondary btn-sm" onclick="generateSceneImages(${index}, 4)">↻ More Images</button>
+            <button class="btn btn-secondary btn-sm" onclick="generateSceneImages(${index}, 4)">↻ More Images · 2 💎</button>
             <button class="btn-upload" id="upload-btn-${index}" onclick="triggerUpload(${index})" title="Upload your own image">+ Upload</button>
-            <button class="btn btn-green btn-sm" onclick="generateSceneVideo(${index})" id="video-btn-${index}" disabled>🎥 Generate Video</button>
+            <button class="btn btn-green btn-sm" onclick="generateSceneVideo(${index})" id="video-btn-${index}" disabled>🎥 Generate Video · 5 💎</button>
         </div>
         <input type="file" id="upload-input-${index}" accept="image/*" style="display:none" onchange="handleUpload(${index}, this)">
         
@@ -349,8 +401,8 @@ async function generateAllSelectedVideos() {
     const withImages = currentScenes.filter(s => s._selectedImage);
     if (withImages.length === 0) return alert('Select an image for at least one scene first');
     
-    const cost = (withImages.length * 0.35).toFixed(2);
-    if (!confirm(`Generate videos for ${withImages.length} scenes?\nEstimated cost: ~$${cost} (Kie.ai Kling 2.6)`)) return;
+    var vidCost = withImages.length * 5;
+    if (!confirm('Generate videos for ' + withImages.length + ' scenes?\nThis will use ~' + vidCost + ' credits.')) return;
     
     for (let i = 0; i < currentScenes.length; i++) {
         if (currentScenes[i]._selectedImage) generateSceneVideo(i);
