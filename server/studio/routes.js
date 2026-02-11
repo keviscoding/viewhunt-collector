@@ -675,6 +675,29 @@ router.post('/credits/verify-purchase', requireAuth, async (req, res) => {
     }
 });
 
+// Admin: manually grant credits (admin only)
+router.post('/credits/admin-grant', requireAuth, async (req, res) => {
+    try {
+        if (req.user.email !== process.env.ADMIN_EMAIL) {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+        const { amount, plan } = req.body;
+        if (!amount || amount < 1) return res.status(400).json({ error: 'Amount required' });
+        
+        var userId = String(req.user.userId);
+        if (plan) {
+            await credits.adminSetCredits(userId, amount, plan);
+        } else {
+            await credits.addTopUpCredits(userId, amount, 'admin-grant-' + Date.now());
+        }
+        var bal = await credits.getBalance(userId);
+        res.json({ success: true, ...bal, totalAvailable: (bal.balance || 0) + (bal.topUpBalance || 0) });
+    } catch (err) {
+        console.error('Admin grant error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Health check
 router.get('/health', (req, res) => {
     res.json({ 

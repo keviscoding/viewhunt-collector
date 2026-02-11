@@ -189,12 +189,17 @@ app.get('/subscription-success', async (req, res) => {
             if (user) {
                 console.log('Updating subscription for user:', user.email);
                 
+                // Use plan from session metadata if available, fallback to 'starter'
+                var planFromMeta = (session.metadata && session.metadata.plan) ? session.metadata.plan : 'starter';
+                // Map old 'pro' to 'starter' for credit purposes
+                if (planFromMeta === 'pro') planFromMeta = 'starter';
+                
                 await db.collection('users').updateOne(
                     { _id: user._id },
                     {
                         $set: {
                             'subscription.status': 'active',
-                            'subscription.plan': 'pro',
+                            'subscription.plan': planFromMeta,
                             'subscription.stripeSubscriptionId': subscription.id,
                             'subscription.stripeCustomerId': customer.id,
                             'subscription.startDate': new Date(subscription.current_period_start * 1000),

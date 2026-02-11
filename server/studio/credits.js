@@ -40,9 +40,9 @@ const PLAN_CREDITS = {
 
 // Top-up packs { credits, stripeEnvVar }
 const TOPUP_PACKS = {
-    small:  { credits: 200,  envVar: 'STRIPE_PRICE_CREDITS_SMALL' },
-    medium: { credits: 500,  envVar: 'STRIPE_PRICE_CREDITS_MEDIUM' },
-    large:  { credits: 1200, envVar: 'STRIPE_PRICE_CREDITS_LARGE' }
+    small:  { credits: 200,  envVar: 'STRIPE_PRICE_CREDITS_SM' },
+    medium: { credits: 500,  envVar: 'STRIPE_PRICE_CREDITS_ME' },
+    large:  { credits: 1200, envVar: 'STRIPE_PRICE_CREDITS_LA' }
 };
 
 /**
