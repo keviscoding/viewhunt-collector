@@ -26,20 +26,24 @@ const TRANSACTIONS = 'credit_transactions';
 // Credit costs per action
 const COSTS = {
     script_generation: 5,
-    image_generation: 3,   // per scene
-    video_generation: 8,   // per scene
-    assembly: 10
+    image_generation: 2,   // per scene
+    video_generation: 5,   // per scene
+    assembly: 5
 };
 
 // Plan credit allocations (monthly)
 const PLAN_CREDITS = {
-    starter: 200,
-    creator: 500,
-    studio: 1200
+    starter: 300,
+    creator: 750,
+    studio: 1800
 };
 
-// Top-up pricing (credits per pack)
-const TOPUP_CREDITS = 100;
+// Top-up packs { credits, stripeEnvVar }
+const TOPUP_PACKS = {
+    small:  { credits: 200,  envVar: 'STRIPE_PRICE_CREDITS_SMALL' },
+    medium: { credits: 500,  envVar: 'STRIPE_PRICE_CREDITS_MEDIUM' },
+    large:  { credits: 1200, envVar: 'STRIPE_PRICE_CREDITS_LARGE' }
+};
 
 /**
  * Get a user's current credit balance.
@@ -351,7 +355,7 @@ async function adminSetCredits(userId, balance, plan) {
 module.exports = {
     COSTS,
     PLAN_CREDITS,
-    TOPUP_CREDITS,
+    TOPUP_PACKS,
     getBalance,
     checkCredits,
     deductCredits,

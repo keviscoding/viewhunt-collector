@@ -555,6 +555,13 @@ router.post('/credits/buy', requireAuth, async (req, res) => {
         const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
         if (!stripe) return res.status(500).json({ error: 'Payment system not configured' });
 
+        const { pack } = req.body; // 'small', 'medium', or 'large'
+        const packInfo = credits.TOPUP_PACKS[pack || 'small'];
+        if (!packInfo) return res.status(400).json({ error: 'Invalid pack. Choose small, medium, or large.' });
+
+        var priceId = process.env[packInfo.envVar];
+        if (!priceId) return res.status(500).json({ error: 'Top-up pricing not configured' });
+
         const { MongoClient, ObjectId } = require('mongodb');
         const MONGODB_URI = process.env.MONGODB_URI || process.env.V2_MONGO_URI || process.env.MONGO_URI;
         const client = new MongoClient(MONGODB_URI);
@@ -583,15 +590,6 @@ router.post('/credits/buy', requireAuth, async (req, res) => {
             await client2.close();
         }
 
-        // Determine price based on user's plan
-        var plan = user.subscription?.plan || 'none';
-        var priceId;
-        if (plan === 'studio') priceId = process.env.STRIPE_PRICE_CREDITS_8;
-        else if (plan === 'creator') priceId = process.env.STRIPE_PRICE_CREDITS_10;
-        else priceId = process.env.STRIPE_PRICE_CREDITS_12;
-
-        if (!priceId) return res.status(500).json({ error: 'Top-up pricing not configured' });
-
         const session = await stripe.checkout.sessions.create({
             customer: customerId,
             payment_method_types: ['card'],
@@ -602,7 +600,7 @@ router.post('/credits/buy', requireAuth, async (req, res) => {
             metadata: {
                 userId: user._id.toString(),
                 type: 'credit_topup',
-                credits: String(credits.TOPUP_CREDITS)
+                credits: String(packInfo.credits)
             }
         });
 

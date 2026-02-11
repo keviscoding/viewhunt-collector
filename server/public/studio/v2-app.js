@@ -906,7 +906,7 @@ async function showCreditDetails() {
         '<div style="display:flex;justify-content:space-between;padding:0.5rem 0">' +
             '<span>Resets On</span><span style="color:var(--text-dim)">' + resetStr + '</span></div>' +
         '<div style="margin-top:0.75rem;padding:0.6rem;background:var(--surface-2);border-radius:8px;font-size:0.78rem;color:var(--text-dim);line-height:1.6">' +
-            '💡 Scenes: 5 cr · Images: 3 cr/scene · Videos: 8 cr/scene · Assembly: 10 cr</div>';
+            '💡 Scenes: 5 cr · Images: 2 cr/scene · Videos: 5 cr/scene · Assembly: 5 cr</div>';
 }
 
 function closeCreditModal() {
@@ -914,14 +914,14 @@ function closeCreditModal() {
     if (modal) modal.style.display = 'none';
 }
 
-async function buyCredits() {
+async function buyCredits(pack) {
     var token = getAuthToken();
     if (!token) return alert('Please log in first');
     try {
         var res = await fetch('/api/studio/credits/buy', {
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
+            body: JSON.stringify({ pack: pack || 'small' })
         });
         var data = await res.json();
         if (data.url) {
