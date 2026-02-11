@@ -34,14 +34,14 @@ body {
     color: var(--text-primary);
     position: relative;
     overflow-x: hidden;
-    transition: all 0.3s ease;
+    transition: background 0.3s ease, color 0.3s ease;
     
-    /* Mobile memory optimization */
+    /* Mobile memory optimization — use will-change instead of transform to avoid breaking position:fixed */
     -webkit-overflow-scrolling: touch;
-    transform: translateZ(0); /* Force hardware acceleration */
+    will-change: scroll-position;
     
     /* Ensure space for bottom navigation */
-    padding-bottom: 120px; /* Space for fixed bottom nav */
+    padding-bottom: 80px;
 }
 
 /* Bottom Navigation - Fixed at viewport bottom */
@@ -85,22 +85,17 @@ body {
 /* Mobile-specific optimizations */
 @media (max-width: 768px) {
     body {
-        will-change: auto;
-        backface-visibility: hidden;
-        -webkit-backface-visibility: hidden;
         padding-bottom: 80px;
     }
     
     /* Optimize channel cards for mobile memory */
     .channel-card {
         will-change: auto !important;
-        transform: translateZ(0);
-        -webkit-transform: translateZ(0);
     }
     
     /* Reduce animation complexity on mobile */
     .channel-card:hover {
-        transform: translateY(-2px) translateZ(0) !important;
+        transform: translateY(-2px) !important;
     }
 }
 
@@ -836,9 +831,9 @@ body {
     }
 
     .nav-btn-studio {
-        width: 56px;
-        height: 56px;
-        margin-top: -18px;
+        width: 60px;
+        height: 60px;
+        margin-top: -20px;
     }
 
     .nav-studio-icon {
@@ -885,23 +880,25 @@ body {
 /* Studio center button — raised + gradient like Higgsfield */
 .nav-btn-studio {
     flex: 0 0 auto;
-    width: 50px;
-    height: 50px;
-    margin-top: -22px;
-    border-radius: 16px;
+    width: 56px;
+    height: 56px;
+    margin-top: -26px;
+    border-radius: 18px;
     background: linear-gradient(135deg, #667eea, #764ba2);
     color: white;
-    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
+    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.45);
     padding: 0;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 1px;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .nav-btn-studio:hover {
     transform: scale(1.08);
-    box-shadow: 0 6px 24px rgba(102, 126, 234, 0.5);
+    box-shadow: 0 6px 28px rgba(102, 126, 234, 0.55);
 }
 
 .nav-btn-studio:active {
@@ -909,8 +906,16 @@ body {
 }
 
 .nav-studio-icon {
-    font-size: 1.35rem;
+    font-size: 1.4rem;
     line-height: 1;
+}
+
+.nav-btn-studio .nav-studio-label {
+    font-size: 0.55rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: white;
+    margin-top: 1px;
 }
 
 .nav-btn.locked {
