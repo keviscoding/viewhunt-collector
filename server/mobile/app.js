@@ -1710,14 +1710,18 @@ class ViewHuntApp {
 
             if (response.ok) {
                 this.token = data.token;
+                this.authToken = data.token;
                 this.user = data.user;
                 localStorage.setItem('viewhunt_token', this.token);
-                
-                this.updateUIForLoggedInUser();
+
                 this.closeAuth();
                 this.showToast(`Welcome back, ${this.user.display_name}! 🎉`);
-                
-                // Reload channels to show approve/reject buttons
+
+                // Re-run the full post-auth initialization so everything loads properly
+                await this.checkAuthStatus();
+                await this.checkSubscriptionStatus();
+                this.updateSubscriptionUI();
+                await this.loadStats();
                 await this.loadChannels();
             } else {
                 this.showToast(data.error || 'Login failed ❌');
@@ -1729,7 +1733,7 @@ class ViewHuntApp {
             submitBtn.disabled = false;
             submitBtn.textContent = 'Sign In';
         }
-    }
+        }
 
     async handleRegister() {
         const inviteCode = document.getElementById('register-invite-code').value.trim();
@@ -1800,14 +1804,18 @@ class ViewHuntApp {
 
             if (response.ok) {
                 this.token = data.token;
+                this.authToken = data.token;
                 this.user = data.user;
                 localStorage.setItem('viewhunt_token', this.token);
                 
-                this.updateUIForLoggedInUser();
                 this.closeAuth();
                 this.showToast(`Welcome to ViewHunt, ${this.user.display_name}! 🎉`);
                 
-                // Reload channels to show approve/reject buttons
+                // Re-run the full post-auth initialization so everything loads properly
+                await this.checkAuthStatus();
+                await this.checkSubscriptionStatus();
+                this.updateSubscriptionUI();
+                await this.loadStats();
                 await this.loadChannels();
             } else {
                 this.showToast(data.error || 'Registration failed ❌');
@@ -2010,34 +2018,34 @@ class ViewHuntApp {
     }
 
     handleOAuthCallback() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const token = urlParams.get('token');
-        const success = urlParams.get('success');
-        const error = urlParams.get('error');
-        
-        if (token) {
-            // Store the token and clean up URL
-            localStorage.setItem('viewhunt_token', token);
-            this.token = token;
-            this.authToken = token;
-            
-            // Clean up URL
-            window.history.replaceState({}, document.title, window.location.pathname);
-            
-            if (success === 'google_login') {
-                this.showToast('Welcome! Signed in with Google 🎉');
-            }
-        } else if (error) {
-            // Clean up URL
-            window.history.replaceState({}, document.title, window.location.pathname);
-            
-            if (error === 'oauth_failed') {
-                this.showToast('Google sign-in failed. Please try again. ❌');
-            } else {
-                this.showToast('Sign-in error: ' + decodeURIComponent(error) + ' ❌');
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('token');
+            const success = urlParams.get('success');
+            const error = urlParams.get('error');
+
+            if (token) {
+                // Store the token and clean up URL
+                localStorage.setItem('viewhunt_token', token);
+                this.token = token;
+                this.authToken = token;
+
+                // Clean up URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+
+                if (success === 'google_login') {
+                    this.showToast('Welcome! Signed in with Google 🎉');
+                }
+            } else if (error) {
+                // Clean up URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+
+                if (error === 'oauth_failed') {
+                    this.showToast('Google sign-in failed. Please try again. ❌');
+                } else {
+                    this.showToast('Sign-in error: ' + decodeURIComponent(error) + ' ❌');
+                }
             }
         }
-    }
 
     async signInWithGoogle() {
         // Redirect to Google OAuth using the correct base URL
