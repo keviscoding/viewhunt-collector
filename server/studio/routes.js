@@ -620,6 +620,61 @@ router.post('/credits/buy', requireAuth, async (req, res) => {
     }
 });
 
+// Verify and fulfill a credit purchase if webhook missed it
+router.post('/credits/verify-purchase', requireAuth, async (req, res) => {
+    try {
+        const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+        if (!stripe) return res.json({ credited: false, reason: 'Stripe not configured' });
+
+        const { MongoClient, ObjectId } = require('mongodb');
+        const MONGODB_URI = process.env.MONGODB_URI || process.env.V2_MONGO_URI || process.env.MONGO_URI;
+        const client = new MongoClient(MONGODB_URI);
+        await client.connect();
+        const db = client.db('viewhuntv2');
+        const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        
+        if (!user || !user.subscription?.stripeCustomerId) {
+            await client.close();
+            return res.json({ credited: false, reason: 'No Stripe customer' });
+        }
+
+        // Find recent completed checkout sessions for this customer
+        const sessions = await stripe.checkout.sessions.list({
+            customer: user.subscription.stripeCustomerId,
+            limit: 5
+        });
+
+        var credited = false;
+        for (var i = 0; i < sessions.data.length; i++) {
+            var session = sessions.data[i];
+            var meta = session.metadata || {};
+            
+            // Only process credit top-ups that completed
+            if (meta.type !== 'credit_topup' || session.payment_status !== 'paid') continue;
+            
+            // Check if this session was already processed
+            var existing = await db.collection('credit_transactions').findOne({
+                stripeSessionId: session.id
+            });
+            
+            if (!existing) {
+                // Grant the credits
+                var amount = parseInt(meta.credits) || 100;
+                await credits.addTopUpCredits(meta.userId || String(user._id), amount, session.id);
+                console.log('💳 Verify-purchase: granted ' + amount + ' credits for session ' + session.id);
+                credited = true;
+                break; // Only process the most recent unfulfilled one
+            }
+        }
+
+        await client.close();
+        res.json({ credited: credited });
+    } catch (err) {
+        console.error('Verify purchase error:', err);
+        res.json({ credited: false, reason: err.message });
+    }
+});
+
 // Health check
 router.get('/health', (req, res) => {
     res.json({ 

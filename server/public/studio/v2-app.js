@@ -995,10 +995,62 @@ async function buyCredits(pack) {
 (function() {
     var params = new URLSearchParams(window.location.search);
     if (params.get('topup') === 'success') {
-        setTimeout(function() {
-            loadCreditBalance();
-            alert('Credits added successfully!');
-            window.history.replaceState({}, '', window.location.pathname);
-        }, 500);
+        // Clean URL immediately
+        window.history.replaceState({}, '', window.location.pathname);
+        
+        // Poll for credit balance update (webhook may take a few seconds)
+        var attempts = 0;
+        var previousBalance = _creditBalance ? ((_creditBalance.balance || 0) + (_creditBalance.topUpBalance || 0)) : 0;
+        
+        function checkCreditsUpdated() {
+            attempts++;
+            loadCreditBalance().then(function() {
+                var newTotal = _creditBalance ? ((_creditBalance.balance || 0) + (_creditBalance.topUpBalance || 0)) : 0;
+                if (newTotal > previousBalance) {
+                    showCreditBanner(0, 0); // Remove any existing banner
+                    var old = document.getElementById('credit-banner');
+                    if (old) old.remove();
+                    // Show success banner
+                    var banner = document.createElement('div');
+                    banner.id = 'credit-banner';
+                    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:1000;padding:1rem 1.25rem;background:linear-gradient(135deg,#0a2e1a,#1a3e2d);border-bottom:1px solid rgba(52,211,153,0.3);display:flex;align-items:center;justify-content:center;gap:0.75rem;animation:slideDown 0.3s ease';
+                    banner.innerHTML = '<span style="font-size:1.2rem">✅</span><span style="color:#e8e8ed;font-size:0.9rem">Credits added! You now have <b style="color:#34d399">' + newTotal + '</b> credits.</span><button onclick="this.parentNode.remove()" style="padding:0.3rem 0.6rem;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:#8b8b9e;font-size:0.82rem;cursor:pointer;font-family:inherit;margin-left:0.5rem">OK</button>';
+                    document.body.prepend(banner);
+                    setTimeout(function() { var b = document.getElementById('credit-banner'); if (b) b.remove(); }, 6000);
+                } else if (attempts < 10) {
+                    // Webhook may not have processed yet — retry
+                    setTimeout(checkCreditsUpdated, 2000);
+                } else {
+                    // After 20 seconds, try to verify the session server-side
+                    fetch('/api/studio/credits/verify-purchase', {
+                        method: 'POST',
+                        headers: { 'Authorization': 'Bearer ' + getAuthToken(), 'Content-Type': 'application/json' }
+                    }).then(function(r) { return r.json(); }).then(function(d) {
+                        if (d.credited) {
+                            loadCreditBalance();
+                            var banner = document.createElement('div');
+                            banner.id = 'credit-banner';
+                            banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:1000;padding:1rem 1.25rem;background:linear-gradient(135deg,#0a2e1a,#1a3e2d);border-bottom:1px solid rgba(52,211,153,0.3);display:flex;align-items:center;justify-content:center;gap:0.75rem;animation:slideDown 0.3s ease';
+                            banner.innerHTML = '<span style="font-size:1.2rem">✅</span><span style="color:#e8e8ed;font-size:0.9rem">Credits added! Balance updated.</span><button onclick="this.parentNode.remove()" style="padding:0.3rem 0.6rem;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:#8b8b9e;font-size:0.82rem;cursor:pointer;font-family:inherit;margin-left:0.5rem">OK</button>';
+                            document.body.prepend(banner);
+                            setTimeout(function() { var b = document.getElementById('credit-banner'); if (b) b.remove(); }, 6000);
+                        } else {
+                            showCreditBanner(0, 0);
+                            var old2 = document.getElementById('credit-banner');
+                            if (old2) old2.remove();
+                            var banner2 = document.createElement('div');
+                            banner2.id = 'credit-banner';
+                            banner2.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:1000;padding:1rem 1.25rem;background:linear-gradient(135deg,#2d1a1a,#3e1a1a);border-bottom:1px solid rgba(248,113,113,0.3);display:flex;align-items:center;justify-content:center;gap:0.75rem;animation:slideDown 0.3s ease';
+                            banner2.innerHTML = '<span style="font-size:1.2rem">⚠️</span><span style="color:#e8e8ed;font-size:0.9rem">Payment received but credits are still processing. They should appear within a few minutes.</span><button onclick="this.parentNode.remove()" style="padding:0.3rem 0.6rem;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:#8b8b9e;font-size:0.82rem;cursor:pointer;font-family:inherit;margin-left:0.5rem">OK</button>';
+                            document.body.prepend(banner2);
+                        }
+                    }).catch(function() {
+                        loadCreditBalance();
+                    });
+                }
+            });
+        }
+        
+        setTimeout(checkCreditsUpdated, 1500);
     }
 })();

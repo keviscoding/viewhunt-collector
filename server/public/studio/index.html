@@ -3,161 +3,202 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Content Studio - ViewHunt</title>
+    <title>Content Studio — ViewHunt</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/studio/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+        :root{
+            --bg:#0e0e12;--surface:#18181f;--surface-2:#1f1f28;--surface-3:#262631;
+            --border:#2a2a36;--border-hover:#3a3a4a;
+            --text:#e8e8ed;--text-muted:#8b8b9e;--text-dim:#5c5c6e;
+            --accent:#7c6aef;--accent-hover:#6b58e0;--accent-glow:rgba(124,106,239,0.15);
+            --green:#34d399;--green-dim:rgba(52,211,153,0.12);
+            --amber:#fbbf24;--red:#f87171;
+        }
+        body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+        .app{max-width:900px;margin:0 auto;padding:2rem 1.25rem 4rem}
+        .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:2.5rem}
+        .header-left{display:flex;align-items:center;gap:0.75rem}
+        .back-btn{color:var(--text-muted);text-decoration:none;font-size:0.85rem;padding:0.4rem 0.75rem;border-radius:6px;border:1px solid var(--border);transition:all 0.15s}
+        .back-btn:hover{color:var(--text);border-color:var(--border-hover);background:var(--surface)}
+        .logo{font-size:1.1rem;font-weight:700;letter-spacing:-0.02em}
+        .logo span{color:var(--accent)}
+        .hero{text-align:center;margin-bottom:2.5rem}
+        .hero h1{font-size:1.6rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.5rem}
+        .hero p{color:var(--text-muted);font-size:0.95rem;max-width:520px;margin:0 auto;line-height:1.6}
+        .formats{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.25rem;margin-bottom:2rem}
+        .format-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;transition:all 0.2s;cursor:pointer;position:relative}
+        .format-card:hover{border-color:var(--accent);transform:translateY(-3px);box-shadow:0 8px 30px rgba(124,106,239,0.1)}
+        .format-card.locked{opacity:0.7}
+        .format-card.locked:hover{border-color:var(--border-hover);transform:none;box-shadow:none}
+        .format-thumb{width:100%;aspect-ratio:16/9;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:3rem;position:relative;overflow:hidden}
+        .format-thumb img{width:100%;height:100%;object-fit:cover}
+        .format-badge{position:absolute;top:10px;right:10px;padding:0.2rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em}
+        .badge-live{background:var(--green);color:#0e0e12}
+        .badge-soon{background:var(--surface-3);color:var(--text-dim);border:1px solid var(--border)}
+        .format-info{padding:1.25rem}
+        .format-name{font-size:1.05rem;font-weight:700;margin-bottom:0.25rem}
+        .format-desc{font-size:0.82rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.75rem}
+        .format-tags{display:flex;gap:0.4rem;flex-wrap:wrap}
+        .tag{font-size:0.7rem;padding:0.2rem 0.5rem;border-radius:4px;background:var(--surface-2);color:var(--text-dim);border:1px solid var(--border)}
+        .upgrade-banner{background:linear-gradient(135deg,var(--surface),var(--surface-2));border:1px solid var(--accent);border-radius:16px;padding:2rem;text-align:center;margin-bottom:2rem;display:none}
+        .upgrade-banner h2{font-size:1.2rem;font-weight:700;margin-bottom:0.5rem}
+        .upgrade-banner p{color:var(--text-muted);font-size:0.9rem;margin-bottom:1rem;line-height:1.5}
+        .btn{display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.65rem 1.25rem;border-radius:8px;font-weight:600;font-size:0.9rem;cursor:pointer;border:none;transition:all 0.15s;font-family:inherit;text-decoration:none}
+        .btn-primary{background:var(--accent);color:white}
+        .btn-primary:hover{background:var(--accent-hover);transform:translateY(-1px);box-shadow:0 4px 16px var(--accent-glow)}
+        .btn-secondary{background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border)}
+        .btn-secondary:hover{color:var(--text);border-color:var(--border-hover)}
+        .footer{text-align:center;padding-top:2rem;font-size:0.75rem;color:var(--text-dim)}
+        @media(max-width:640px){.app{padding:1rem 0.75rem 3rem}.formats{grid-template-columns:1fr}}
+    </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <div class="header-content">
-                <a href="/app" class="back-link">← Back to ViewHunt</a>
-                <h1>🎬 Content Studio</h1>
-                <p class="subtitle">Generate viral format videos in minutes</p>
-            </div>
-        </header>
+<div class="app">
+    <header class="header">
+        <div class="header-left">
+            <a href="/app" class="back-btn">← Back</a>
+            <div class="logo">View<span>Hunt</span> Studio</div>
+        </div>
+    </header>
 
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Format Selection -->
-            <section id="format-selection" class="section">
-                <h2>Choose a Viral Format</h2>
-                <div class="formats-grid">
-                    <div class="format-card" data-format="skeleton-anatomy">
-                        <div class="format-icon">🦴</div>
-                        <h3>Skeleton Anatomy</h3>
-                        <p>Shocking health facts with dramatic skeleton visuals</p>
-                        <div class="format-stats">
-                            <span class="stat">📊 Avg 2M+ views</span>
-                            <span class="stat">⚡ 5-10 min generation</span>
-                        </div>
-                        <a href="/studio/v2" class="btn-primary" style="display: inline-block; text-decoration: none; text-align: center;">Use V2 Generator (Full Video)</a>
-                    </div>
-
-                    <!-- Placeholder for future formats -->
-                    <div class="format-card coming-soon">
-                        <div class="format-icon">🔜</div>
-                        <h3>More Formats Coming</h3>
-                        <p>We're constantly adding new viral formats</p>
-                        <div class="format-stats">
-                            <span class="stat">🚀 Stay tuned</span>
-                        </div>
-                        <button class="btn-secondary" disabled>Coming Soon</button>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Generator Interface (Hidden initially) -->
-            <section id="generator-interface" class="section hidden">
-                <div class="generator-header">
-                    <button id="back-to-formats" class="back-link">← Back to Formats</button>
-                    <h2 id="format-title">Skeleton Anatomy Generator</h2>
-                </div>
-
-                <div class="generator-content">
-                    <!-- Input Form -->
-                    <div class="input-panel">
-                        <h3>Enter Your Topic</h3>
-                        <form id="generation-form">
-                            <div class="form-group">
-                                <label for="topic">What health topic do you want to cover?</label>
-                                <input 
-                                    type="text" 
-                                    id="topic" 
-                                    name="topic" 
-                                    placeholder="e.g., wearing headphones too long, drinking too much coffee"
-                                    required
-                                >
-                                <p class="help-text">💡 Tip: Use everyday habits or common behaviors for best results</p>
-                            </div>
-
-                            <div class="form-group">
-                                <label for="style">Visual Style (Optional)</label>
-                                <select id="style" name="style">
-                                    <option value="dramatic">Dramatic (Default)</option>
-                                    <option value="medical">Medical/Clinical</option>
-                                    <option value="horror">Horror/Dark</option>
-                                </select>
-                            </div>
-
-                            <button type="submit" class="btn-generate" id="generate-btn">
-                                <span class="btn-text">Generate Video Assets</span>
-                                <span class="btn-loader hidden">⏳ Generating...</span>
-                            </button>
-                        </form>
-                    </div>
-
-                    <!-- Output Panel -->
-                    <div class="output-panel hidden" id="output-panel">
-                        <h3>✅ Generation Complete!</h3>
-                        
-                        <div class="output-section">
-                            <h4>📝 Script</h4>
-                            <div class="script-box" id="script-output"></div>
-                            <button class="btn-copy" data-copy="script">Copy Script</button>
-                        </div>
-
-                        <div class="output-section">
-                            <h4>🎨 Visual Assets</h4>
-                            <div class="images-grid" id="images-output"></div>
-                            <button class="btn-download" id="download-images">Download All Images</button>
-                        </div>
-
-                        <div class="output-section">
-                            <h4>🎤 Voiceover</h4>
-                            <audio controls id="audio-player" class="audio-player"></audio>
-                            <button class="btn-download" id="download-audio">Download Audio</button>
-                        </div>
-
-                        <div class="output-section assembly-guide">
-                            <h4>🎬 Assembly Instructions</h4>
-                            <ol>
-                                <li>Import all images into your video editor (CapCut, Premiere, etc.)</li>
-                                <li>Set each image duration to match the script timing (~10-15 seconds each)</li>
-                                <li>Add the voiceover audio track</li>
-                                <li>Add zoom/pan effects to images for dynamic movement</li>
-                                <li>Export as 9:16 vertical video (1080x1920)</li>
-                            </ol>
-                        </div>
-
-                        <button class="btn-primary" id="generate-another">Generate Another Video</button>
-                    </div>
-
-                    <!-- Progress Indicator -->
-                    <div class="progress-panel hidden" id="progress-panel">
-                        <div class="progress-steps">
-                            <div class="progress-step active" data-step="script">
-                                <div class="step-icon">📝</div>
-                                <div class="step-label">Generating Script</div>
-                            </div>
-                            <div class="progress-step" data-step="images">
-                                <div class="step-icon">🎨</div>
-                                <div class="step-label">Creating Visuals</div>
-                            </div>
-                            <div class="progress-step" data-step="voice">
-                                <div class="step-icon">🎤</div>
-                                <div class="step-label">Recording Voice</div>
-                            </div>
-                            <div class="progress-step" data-step="complete">
-                                <div class="step-icon">✅</div>
-                                <div class="step-label">Complete</div>
-                            </div>
-                        </div>
-                        <p class="progress-message" id="progress-message">Starting generation...</p>
-                    </div>
-                </div>
-            </section>
-        </main>
-
-        <!-- Footer -->
-        <footer class="footer">
-            <p>Powered by ViewHunt • <a href="/app">Discover Channels</a> • <a href="/pricing">Pricing</a></p>
-        </footer>
+    <div class="hero">
+        <h1>🎬 Content Studio</h1>
+        <p>Choose a format and turn your script into a fully produced YouTube Short with AI-generated visuals, voiceover, captions, and effects.</p>
     </div>
 
-    <script src="/studio/app.js"></script>
+    <div class="upgrade-banner" id="upgrade-banner">
+        <h2>🔒 Upgrade to Access Content Studio</h2>
+        <p>Content Studio is available on all paid plans. Subscribe to start creating scroll-stopping videos.</p>
+        <a href="/pricing" class="btn btn-primary">View Plans — Starting at $29/mo</a>
+    </div>
+
+    <div class="formats" id="formats-grid"></div>
+
+    <footer class="footer">ViewHunt Studio · AI-Powered Video Generation</footer>
+</div>
+
+<script>
+var formats = [
+    {
+        id: 'skeleton-anatomy',
+        name: 'Skeleton Anatomy',
+        desc: 'Educational "what happens to your body" videos with skeleton/anatomy visuals on gradient backgrounds. Perfect for viral science content.',
+        tags: ['Educational', 'Science', 'Anatomy'],
+        emoji: '💀',
+        live: true,
+        url: '/studio/v2.html'
+    },
+    {
+        id: 'ranking-countdown',
+        name: 'Ranking & Countdown',
+        desc: 'Top 10 / ranking style videos with dynamic visuals and countdown transitions. Great for listicle content.',
+        tags: ['Listicle', 'Rankings', 'Countdown'],
+        emoji: '🏆',
+        live: false
+    },
+    {
+        id: 'story-time',
+        name: 'Story Time',
+        desc: 'Narrative-driven videos with cinematic visuals. Perfect for Reddit stories, true crime, and dramatic content.',
+        tags: ['Narrative', 'Stories', 'Drama'],
+        emoji: '📖',
+        live: false
+    },
+    {
+        id: 'comparison',
+        name: 'VS / Comparison',
+        desc: 'Side-by-side comparison videos. "What if X vs Y?" style content with split-screen visuals.',
+        tags: ['Comparison', 'VS', 'Split-screen'],
+        emoji: '⚔️',
+        live: false
+    },
+    {
+        id: 'motivation',
+        name: 'Motivation & Quotes',
+        desc: 'Inspirational content with cinematic backgrounds, bold text overlays, and powerful voiceover.',
+        tags: ['Motivation', 'Quotes', 'Lifestyle'],
+        emoji: '🔥',
+        live: false
+    },
+    {
+        id: 'animal-facts',
+        name: 'Animal Facts',
+        desc: 'Fascinating animal facts with AI-generated wildlife visuals. "What if you were raised by lions?" style.',
+        tags: ['Animals', 'Facts', 'Nature'],
+        emoji: '🦁',
+        live: false
+    }
+];
+
+function getAuthToken() {
+    return localStorage.getItem('viewhunt_token') || localStorage.getItem('token') || null;
+}
+
+var hasPaidAccess = false;
+
+(async function() {
+    var token = getAuthToken();
+    if (!token) {
+        document.getElementById('upgrade-banner').style.display = 'block';
+        renderFormats();
+        return;
+    }
+
+    try {
+        var res = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!res.ok) throw new Error('Auth failed');
+        var data = await res.json();
+        var sub = data.subscription || {};
+        hasPaidAccess = sub.type === 'admin' || sub.type === 'stripe' || sub.type === 'beta' || sub.type === 'invite';
+        if (sub.type === 'stripe' && !sub.hasAccess) hasPaidAccess = false;
+    } catch (e) {
+        console.warn('Auth check failed:', e);
+    }
+
+    if (!hasPaidAccess) {
+        document.getElementById('upgrade-banner').style.display = 'block';
+    }
+    renderFormats();
+})();
+
+function renderFormats() {
+    var grid = document.getElementById('formats-grid');
+    var html = '';
+    formats.forEach(function(f) {
+        var locked = !f.live || !hasPaidAccess;
+        html += '<div class="format-card' + (locked && f.live ? '' : (f.live ? '' : ' locked')) + '" onclick="openFormat(\'' + f.id + '\',' + f.live + ')">';
+        html += '<div class="format-thumb">' + f.emoji;
+        html += '<span class="format-badge ' + (f.live ? 'badge-live' : 'badge-soon') + '">' + (f.live ? 'Live' : 'Coming Soon') + '</span>';
+        html += '</div>';
+        html += '<div class="format-info">';
+        html += '<div class="format-name">' + f.name + '</div>';
+        html += '<div class="format-desc">' + f.desc + '</div>';
+        html += '<div class="format-tags">';
+        f.tags.forEach(function(t) { html += '<span class="tag">' + t + '</span>'; });
+        html += '</div></div></div>';
+    });
+    grid.innerHTML = html;
+}
+
+function openFormat(id, isLive) {
+    if (!isLive) return; // Coming soon — do nothing
+    
+    if (!hasPaidAccess) {
+        // Show upgrade prompt
+        var banner = document.getElementById('upgrade-banner');
+        banner.style.display = 'block';
+        banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
+    
+    // Find the format and navigate
+    var format = formats.find(function(f) { return f.id === id; });
+    if (format && format.url) {
+        window.location.href = format.url;
+    }
+}
+</script>
 </body>
 </html>

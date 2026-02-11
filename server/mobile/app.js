@@ -1538,47 +1538,11 @@ class ViewHuntApp {
         return false;
     }
     
-    // Open Content Studio — paid users go to studio, free users see upgrade prompt
+    // Open Content Studio — all users go to the format gallery
     openStudio() {
-        if (this.hasPaidAccess()) {
-            window.location.href = '/studio/v2.html';
-        } else {
-            // Show upgrade modal
-            this.showStudioUpgradeModal();
-        }
+        window.location.href = '/studio/';
     }
     
-    showStudioUpgradeModal() {
-        // Remove existing modal if any
-        var old = document.getElementById('studio-upgrade-modal');
-        if (old) old.remove();
-        
-        var overlay = document.createElement('div');
-        overlay.id = 'studio-upgrade-modal';
-        overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:1rem;backdrop-filter:blur(4px)';
-        overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
-        
-        overlay.innerHTML = '<div style="background:#18181f;border:1px solid #2a2a36;border-radius:16px;padding:2rem;max-width:440px;width:100%;text-align:center">' +
-            '<div style="font-size:3rem;margin-bottom:1rem">🎬</div>' +
-            '<h2 style="font-size:1.3rem;font-weight:700;margin-bottom:0.5rem;color:#e8e8ed">Content Studio</h2>' +
-            '<p style="color:#8b8b9e;font-size:0.9rem;line-height:1.6;margin-bottom:1.25rem">Turn scripts into fully produced YouTube Shorts with AI-generated visuals, voiceover, captions, and SFX.</p>' +
-            '<div style="background:#1f1f28;border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:left">' +
-                '<div style="font-size:0.82rem;color:#8b8b9e;line-height:1.8">' +
-                    '<div>✅ Skeleton Anatomy format</div>' +
-                    '<div>✅ AI image & video generation</div>' +
-                    '<div>✅ Voiceover + word-by-word captions</div>' +
-                    '<div>✅ Custom SFX & background music</div>' +
-                    '<div>✅ One-click video assembly</div>' +
-                    '<div style="color:#5c5c6e;margin-top:0.5rem">🔜 More formats coming soon</div>' +
-                '</div>' +
-            '</div>' +
-            '<a href="/pricing" style="display:block;padding:0.75rem;background:#7c6aef;color:white;border-radius:10px;font-weight:700;font-size:0.95rem;text-decoration:none;margin-bottom:0.75rem">View Plans — Starting at $29/mo</a>' +
-            '<button onclick="this.closest(\'#studio-upgrade-modal\').remove()" style="background:none;border:none;color:#5c5c6e;font-size:0.85rem;cursor:pointer;font-family:inherit">Maybe later</button>' +
-        '</div>';
-        
-        document.body.appendChild(overlay);
-    }
-
     updateSubscriptionUI() {
         const tabs = document.querySelectorAll('.nav-btn'); // Changed from .tab-button to .nav-btn
         const subscriptionGate = document.getElementById('subscription-gate');
