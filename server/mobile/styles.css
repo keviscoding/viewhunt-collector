@@ -47,27 +47,29 @@ body {
 /* Bottom Navigation - Fixed at viewport bottom */
 .bottom-nav {
     position: fixed !important;
-    bottom: 1rem !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    transform: none !important;
     z-index: 999999 !important;
     display: flex !important;
     visibility: visible !important;
     opacity: 1 !important;
+    align-items: flex-end;
+    justify-content: space-around;
     
-    /* Restore original styling */
-    width: 90%;
-    max-width: 500px;
+    width: 100%;
+    max-width: 100%;
     background: var(--bg-card);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--border-color);
-    border-radius: 20px; /* Restore rounded corners */
-    padding: 0.75rem;
-    box-shadow: 0 10px 30px var(--shadow-medium);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-top: 1px solid var(--border-color);
+    border-radius: 0;
+    padding: 0.5rem 0.25rem;
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -4px 20px var(--shadow-medium);
+    transition: none;
     
-    /* Prevent interference */
     margin: 0 !important;
     box-sizing: border-box !important;
     pointer-events: auto !important;
@@ -76,18 +78,17 @@ body {
 /* Desktop-specific optimizations */
 @media (min-width: 769px) {
     body {
-        padding-bottom: 140px; /* More space for larger desktop nav */
+        padding-bottom: 100px;
     }
 }
 
 /* Mobile-specific optimizations */
 @media (max-width: 768px) {
     body {
-        /* Reduce memory usage on mobile */
         will-change: auto;
         backface-visibility: hidden;
         -webkit-backface-visibility: hidden;
-        padding-bottom: 100px; /* Less space needed on mobile */
+        padding-bottom: 80px;
     }
     
     /* Optimize channel cards for mobile memory */
@@ -804,34 +805,49 @@ body {
 /* Desktop styles for bottom navigation */
 @media (min-width: 769px) {
     .bottom-nav {
-        bottom: 2rem !important;
+        left: 50% !important;
+        right: auto !important;
+        transform: translateX(-50%) !important;
+        bottom: 1rem !important;
         width: auto;
-        max-width: 600px;
+        max-width: 560px;
         min-width: 400px;
-        padding: 1rem;
-        box-shadow: 0 20px 40px var(--shadow-medium);
+        padding: 0.5rem 0.75rem;
+        padding-bottom: 0.5rem;
+        border-radius: 20px;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 10px 30px var(--shadow-medium);
     }
     
     .nav-btn {
-        padding: 1rem 1.5rem;
-        margin: 0 0.5rem;
-        min-width: 80px;
+        padding: 0.75rem 1.25rem;
+        margin: 0 0.25rem;
+        min-width: 70px;
     }
     
     .nav-icon {
-        font-size: 1.5rem;
-        margin-bottom: 0.5rem;
+        font-size: 1.3rem;
+        margin-bottom: 0.35rem;
     }
     
     .nav-label {
-        font-size: 0.9rem;
+        font-size: 0.8rem;
         font-weight: 500;
+    }
+
+    .nav-btn-studio {
+        width: 56px;
+        height: 56px;
+        margin-top: -18px;
+    }
+
+    .nav-studio-icon {
+        font-size: 1.5rem;
     }
 }
 
 .bottom-nav:hover {
-    box-shadow: 0 15px 35px var(--shadow-medium);
-    transform: translateX(-50%) translateY(-2px);
+    box-shadow: 0 -6px 30px var(--shadow-medium);
 }
 
 .nav-btn {
@@ -839,27 +855,62 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 0.75rem;
+    justify-content: center;
+    padding: 0.4rem 0.25rem;
     border: none;
     background: none;
     cursor: pointer;
     transition: all 0.2s ease;
-    border-radius: 12px;
-    margin: 0 0.25rem;
+    border-radius: 8px;
+    margin: 0;
+    min-width: 0;
 }
 
 .nav-btn.active {
-    background: linear-gradient(135deg, #667eea, #764ba2);
-    color: white;
+    color: #667eea;
 }
 
-.nav-btn:not(.active) {
+.nav-btn.active .nav-icon {
+    transform: scale(1.1);
+}
+
+.nav-btn:not(.active):not(.nav-btn-studio) {
     color: var(--text-secondary);
 }
 
-.nav-btn:not(.active):hover {
-    background: rgba(102, 126, 234, 0.1);
+.nav-btn:not(.active):not(.nav-btn-studio):hover {
     color: #667eea;
+}
+
+/* Studio center button — raised + gradient like Higgsfield */
+.nav-btn-studio {
+    flex: 0 0 auto;
+    width: 50px;
+    height: 50px;
+    margin-top: -22px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.nav-btn-studio:hover {
+    transform: scale(1.08);
+    box-shadow: 0 6px 24px rgba(102, 126, 234, 0.5);
+}
+
+.nav-btn-studio:active {
+    transform: scale(0.95);
+}
+
+.nav-studio-icon {
+    font-size: 1.35rem;
+    line-height: 1;
 }
 
 .nav-btn.locked {
@@ -871,9 +922,9 @@ body {
 .nav-btn.locked::after {
     content: '🔒';
     position: absolute;
-    top: 0.25rem;
-    right: 0.25rem;
-    font-size: 0.7rem;
+    top: 0.15rem;
+    right: 0.15rem;
+    font-size: 0.6rem;
     opacity: 0.8;
 }
 
@@ -883,13 +934,14 @@ body {
 }
 
 .nav-icon {
-    font-size: 1.25rem;
-    margin-bottom: 0.25rem;
+    font-size: 1.15rem;
+    margin-bottom: 0.15rem;
 }
 
 .nav-label {
-    font-size: 0.75rem;
+    font-size: 0.65rem;
     font-weight: 500;
+    white-space: nowrap;
 }
 
 /* Next Batch Card */
@@ -2259,6 +2311,7 @@ vis Admin Styles */
     align-items: center;
     padding: 1.5rem;
     margin: 2rem 0;
+    margin-bottom: 1rem;
     background: rgba(255, 255, 255, 0.95);
     border-radius: 16px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
