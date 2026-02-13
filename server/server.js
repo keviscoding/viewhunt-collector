@@ -55,16 +55,26 @@ app.post('/api/leads/capture', rateLimit({ windowMs: 60000, max: 10 }), async (r
         var { name, email, phone, commitment, situation, source } = req.body;
         if (!name || !email) return res.status(400).json({ error: 'Name and email required' });
 
+        // Generate unique access token
+        var crypto = require('crypto');
+        var accessToken = crypto.randomBytes(24).toString('hex');
+
         // Save to MongoDB
         var lead = {
             name, email, phone: phone || '',
             commitment: commitment || '',
             situation: situation || '',
             source: source || 'free-funnel',
+            accessToken: accessToken,
+            accessClicked: false,
             createdAt: new Date()
         };
         await db.collection('leads').insertOne(lead);
-        console.log('📧 Lead captured: ' + email + ' (' + source + ')');
+        console.log('📧 Lead captured: ' + email + ' (token: ' + accessToken.slice(0, 8) + '...)');
+
+        // Build the access link (this goes in the MailerLite email)
+        var baseUrl = process.env.APP_URL || 'https://viewhunt.com';
+        var accessLink = baseUrl + '/free/access?token=' + accessToken;
 
         // Forward to MailerLite if API key is configured
         if (process.env.MAILERLITE_API_KEY && process.env.MAILERLITE_GROUP_ID) {
@@ -77,13 +87,18 @@ app.post('/api/leads/capture', rateLimit({ windowMs: 60000, max: 10 }), async (r
                     },
                     body: JSON.stringify({
                         email: email,
-                        fields: { name: name, phone: phone || '', last_name: '' },
+                        fields: {
+                            name: name,
+                            phone: phone || '',
+                            last_name: '',
+                            access_link: accessLink
+                        },
                         groups: [process.env.MAILERLITE_GROUP_ID],
                         status: 'active'
                     })
                 });
                 if (mlRes.ok) {
-                    console.log('📧 MailerLite: subscriber added');
+                    console.log('📧 MailerLite: subscriber added with access link');
                 } else {
                     var mlErr = await mlRes.text();
                     console.warn('📧 MailerLite error:', mlErr);
@@ -93,11 +108,35 @@ app.post('/api/leads/capture', rateLimit({ windowMs: 60000, max: 10 }), async (r
             }
         }
 
-        res.json({ success: true });
+        res.json({ success: true, email: email });
     } catch (err) {
         console.error('Lead capture error:', err);
         res.status(500).json({ error: 'Failed to save' });
     }
+});
+
+// Verify access token from email link → redirect to /app
+app.get('/free/access', async (req, res) => {
+    var token = req.query.token;
+    if (!token) return res.redirect('/free');
+
+    try {
+        var lead = await db.collection('leads').findOneAndUpdate(
+            { accessToken: token },
+            { $set: { accessClicked: true, accessClickedAt: new Date() } }
+        );
+
+        if (lead) {
+            console.log('📧 Access link clicked: ' + lead.email);
+            // Redirect to the app — they proved they opened the email
+            return res.redirect('/app');
+        }
+    } catch (err) {
+        console.error('Access token error:', err);
+    }
+
+    // Invalid or expired token — still send them to the funnel
+    res.redirect('/free');
 });
 
 // Landing page route
