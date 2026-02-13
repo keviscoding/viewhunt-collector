@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0a0a0a">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Free Access — ViewHunt Shorts Mastery System</title>
+    <link rel="icon" href="/images/favicon.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0a0a0a;
+            color: #e8e8e8;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* TOP BANNER */
+        .top-banner {
+            background: #c0392b;
+            color: #fff;
+            text-align: center;
+            padding: 14px 20px;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+        .top-banner span { color: #ffd700; }
+
+        /* HERO */
+        .hero {
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 60px 24px 40px;
+            text-align: center;
+        }
+        .hero h1 {
+            font-size: clamp(28px, 5vw, 44px);
+            font-weight: 800;
+            line-height: 1.15;
+            margin-bottom: 20px;
+            color: #fff;
+        }
+        .hero h1 .highlight { color: #e74c3c; }
+        .hero .sub-headline {
+            font-size: clamp(15px, 2.5vw, 18px);
+            color: #bbb;
+            margin-bottom: 36px;
+            font-weight: 400;
+        }
+        .hero .sub-headline em {
+            font-style: normal;
+            color: #fff;
+            font-weight: 600;
+        }
+
+        /* PRICE ANCHOR */
+        .price-anchor {
+            font-size: clamp(18px, 3vw, 24px);
+            font-weight: 700;
+            margin-bottom: 24px;
+            color: #fff;
+            letter-spacing: 1px;
+        }
+        .price-anchor .old-price {
+            text-decoration: line-through;
+            color: #888;
+        }
+        .price-anchor .free { color: #e74c3c; }
+
+        /* CTA BUTTON */
+        .cta-btn {
+            display: inline-block;
+            background: #e74c3c;
+            color: #fff;
+            font-size: clamp(16px, 2.5vw, 20px);
+            font-weight: 800;
+            padding: 18px 48px;
+            border-radius: 6px;
+            text-decoration: none;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            transition: background 0.2s, transform 0.15s;
+            border: none;
+            cursor: pointer;
+            max-width: 90%;
+        }
+        .cta-btn:hover { background: #c0392b; transform: translateY(-2px); }
+
+        /* SECTIONS */
+        .section {
+            max-width: 780px;
+            margin: 0 auto;
+            padding: 60px 24px;
+        }
+        .section-title {
+            font-size: clamp(22px, 4vw, 34px);
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 40px;
+            color: #fff;
+        }
+
+        /* WHAT'S INCLUDED */
+        .included-list {
+            list-style: none;
+            max-width: 640px;
+            margin: 0 auto;
+        }
+        .included-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            margin-bottom: 28px;
+            font-size: clamp(15px, 2.2vw, 17px);
+            line-height: 1.5;
+        }
+        .included-list .check {
+            flex-shrink: 0;
+            width: 22px;
+            height: 22px;
+            background: #3498db;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 3px;
+        }
+        .included-list .check::after {
+            content: '✓';
+            color: #fff;
+            font-size: 14px;
+            font-weight: 700;
+        }
+        .included-list .value {
+            color: #e74c3c;
+            font-weight: 600;
+        }
+
+        /* TOTAL VALUE */
+        .total-value {
+            text-align: center;
+            margin-top: 40px;
+        }
+        .total-value .amount {
+            font-size: clamp(24px, 4vw, 36px);
+            font-weight: 800;
+            color: #e74c3c;
+        }
+        .total-value .amount s {
+            text-decoration: line-through;
+        }
+        .total-value .free-text {
+            font-size: clamp(18px, 3vw, 24px);
+            font-weight: 700;
+            color: #fff;
+            margin-top: 8px;
+        }
+
+        /* QUALIFIER BANNER */
+        .qualifier {
+            background: #141414;
+            border-top: 3px solid #e74c3c;
+            border-bottom: 3px solid #e74c3c;
+            padding: 40px 24px;
+            text-align: center;
+        }
+        .qualifier h2 {
+            font-size: clamp(20px, 3.5vw, 28px);
+            font-weight: 800;
+            color: #fff;
+            margin-bottom: 16px;
+        }
+        .qualifier p {
+            font-size: clamp(15px, 2.2vw, 17px);
+            color: #bbb;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .qualifier p span { color: #e74c3c; font-weight: 600; }
+
+        /* MODULES / COURSE CONTENT */
+        .modules {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0;
+        }
+        .module-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 32px;
+            width: 100%;
+        }
+        .module-row .icon {
+            flex-shrink: 0;
+            color: #e74c3c;
+            font-size: 20px;
+            margin-top: 2px;
+        }
+        .module-row strong {
+            color: #fff;
+            font-weight: 700;
+        }
+        .module-row p {
+            font-size: clamp(14px, 2vw, 16px);
+            color: #ccc;
+            line-height: 1.6;
+        }
+
+        /* INSTRUCTOR SECTION */
+        .instructor {
+            display: flex;
+            gap: 40px;
+            align-items: flex-start;
+            max-width: 780px;
+            margin: 0 auto;
+            padding: 60px 24px;
+        }
+        .instructor-photo {
+            flex-shrink: 0;
+            width: 260px;
+        }
+        .instructor-photo img {
+            width: 100%;
+            border-radius: 10px;
+            display: block;
+        }
+        .instructor-photo .caption {
+            text-align: center;
+            margin-top: 14px;
+        }
+        .instructor-photo .caption .label {
+            font-size: 14px;
+            color: #888;
+            text-decoration: underline;
+        }
+        .instructor-photo .caption .name {
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+            margin-top: 4px;
+        }
+        .instructor-bio h3 {
+            font-size: clamp(22px, 3.5vw, 30px);
+            font-weight: 800;
+            color: #fff;
+            margin-bottom: 20px;
+        }
+        .instructor-bio p {
+            font-size: clamp(14px, 2vw, 16px);
+            color: #bbb;
+            margin-bottom: 16px;
+            line-height: 1.7;
+        }
+
+        /* SOCIAL PROOF IMAGE */
+        .social-proof {
+            max-width: 500px;
+            margin: 30px auto 0;
+            text-align: center;
+        }
+        .social-proof img {
+            width: 100%;
+            border-radius: 10px;
+            border: 1px solid #222;
+        }
+        .social-proof .caption {
+            font-size: 13px;
+            color: #666;
+            margin-top: 8px;
+        }
+
+        /* FINAL CTA */
+        .final-cta {
+            text-align: center;
+            padding: 60px 24px 40px;
+            max-width: 780px;
+            margin: 0 auto;
+        }
+        .final-cta h2 {
+            font-size: clamp(18px, 3vw, 24px);
+            font-weight: 800;
+            color: #fff;
+            margin-bottom: 24px;
+            letter-spacing: 1px;
+        }
+
+        /* FOOTER */
+        .funnel-footer {
+            text-align: center;
+            padding: 40px 24px;
+            border-top: 1px solid #1a1a1a;
+            color: #555;
+            font-size: 13px;
+        }
+        .funnel-footer a { color: #888; text-decoration: underline; }
+
+        /* MOBILE */
+        @media (max-width: 700px) {
+            .instructor {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+            }
+            .instructor-photo { width: 200px; }
+            .hero { padding: 40px 20px 30px; }
+            .section { padding: 40px 20px; }
+            .cta-btn { padding: 16px 32px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- TOP BANNER -->
+    <div class="top-banner">
+        New <span>AI-Powered System</span> for Building Profitable YouTube Shorts Channels From Scratch...
+    </div>
+
+    <!-- HERO -->
+    <section class="hero">
+        <h1>How Complete Beginners Are Using <span class="highlight">AI + Proven Niches</span> To Monetize YouTube Shorts Channels In 30 Days Or Less</h1>
+        <p class="sub-headline">Includes Free Access to <em>ViewHunt</em> (Niche Finder Tool), <em>5-Module Mini Course</em>, &amp; Our <em>Viral Format Library</em></p>
+
+        <div class="price-anchor">
+            NORMALLY <span class="old-price">$497</span> — <span class="free">FREE</span> TODAY
+        </div>
+
+        <a href="/app" class="cta-btn">YES! I WANT FREE ACCESS</a>
+    </section>
+
+    <!-- WHAT'S INCLUDED -->
+    <section class="section">
+        <h2 class="section-title">WHAT'S INCLUDED</h2>
+        <ul class="included-list">
+            <li>
+                <div class="check"></div>
+                <div>ViewHunt Free — Our AI niche finder that scans YouTube's database to find high-demand, low-competition niches blowing up right now <span class="value">(Worth $50/mo)</span></div>
+            </li>
+            <li>
+                <div class="check"></div>
+                <div>The 5-Module Shorts Mastery Mini Course — From picking your niche to scaling your first channel, step by step <span class="value">(Worth $197)</span></div>
+            </li>
+            <li>
+                <div class="check"></div>
+                <div>The 3 Criteria Framework — How to validate any niche for demand, competition &amp; longevity before you post a single video <span class="value">(Worth $97)</span></div>
+            </li>
+            <li>
+                <div class="check"></div>
+                <div>BONUS: Viral Format Library — Proven hook formulas, storytelling frameworks &amp; templates that have generated hundreds of millions of views <span class="value">(Worth $97)</span></div>
+            </li>
+            <li>
+                <div class="check"></div>
+                <div>BONUS: AI Content System — The exact prompts and workflows to script 30 days of content in one sitting <span class="value">(Worth $67)</span></div>
+            </li>
+        </ul>
+
+        <div class="total-value">
+            <div class="amount">TOTAL VALUE: <s>$508.00</s></div>
+            <div class="free-text">GET IT ALL FOR FREE</div>
+        </div>
+
+        <div style="text-align: center; margin-top: 32px;">
+            <a href="/app" class="cta-btn">YES! GIVE ME FREE ACCESS →</a>
+        </div>
+    </section>
+
+    <!-- QUALIFIER -->
+    <div class="qualifier">
+        <h2>NOT SURE IF SHORTS IS RIGHT FOR YOU?</h2>
+        <p>This is for you if you have at least <span>1 hour a day</span> and want to build a real digital asset — not a side hustle that dies in 2 months.</p>
+    </div>
+
+    <!-- COURSE MODULES + INSTRUCTOR -->
+    <section class="instructor">
+        <div class="instructor-photo">
+            <img src="/kevis-photo.jpg" alt="Kevis — Founder of ViewMastery" loading="lazy">
+            <div class="caption">
+                <div class="label">Your Instructor:</div>
+                <div class="name">Kevis</div>
+                <div style="font-size: 13px; color: #888;">Founder of ViewMastery</div>
+            </div>
+        </div>
+        <div class="instructor-bio">
+            <h3>Here's What You'll Learn In This Course...</h3>
+            <div class="modules">
+                <div class="module-row">
+                    <span class="icon">✔</span>
+                    <p><strong>Module 1:</strong> Why YouTube Shorts is the best digital asset to build in 2026 — and why it beats dropshipping, day trading &amp; real estate for beginners</p>
+                </div>
+                <div class="module-row">
+                    <span class="icon">✔</span>
+                    <p><strong>Module 2:</strong> The 3 criteria every winning niche must have — demand asymmetry, competition gaps &amp; evergreen proof (and how to find them with ViewHunt)</p>
+                </div>
+                <div class="module-row">
+                    <span class="icon">✔</span>
+                    <p><strong>Module 3:</strong> How to create your first 30 videos using AI — scripting, voiceover &amp; editing without showing your face or spending a cent</p>
+                </div>
+                <div class="module-row">
+                    <span class="icon">✔</span>
+                    <p><strong>Module 4:</strong> The Barrier Breakthrough Framework — what to do when your videos get stuck at 200 views, 1K views, or 15K views (every plateau has a fix)</p>
+                </div>
+                <div class="module-row">
+                    <span class="icon">✔</span>
+                    <p><strong>Module 5:</strong> How to go from solo creator to channel owner — hiring editors for $5-15/video and removing yourself from production entirely</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ABOUT / CREDIBILITY -->
+    <section class="section" style="border-top: 1px solid #1a1a1a;">
+        <h2 class="section-title">ABOUT YOUR INSTRUCTOR</h2>
+        <div style="max-width: 640px; margin: 0 auto; font-size: clamp(14px, 2vw, 16px); color: #bbb; line-height: 1.8;">
+            <p style="margin-bottom: 16px;">Over the past 6 months, I've personally monetized and scaled 10+ YouTube Shorts channels, generated hundreds of millions of views, and built multiple channels to $10K+ months — including one client hitting €26K/month.</p>
+            <p style="margin-bottom: 16px;">Now I help busy professionals replicate this model: pick the niche, build the team, install the workflow, and create the content pipeline.</p>
+            <p>I'm not teaching theory. I'm giving you the exact system I use on my own channels — for free.</p>
+        </div>
+
+        <!-- Social proof screenshot -->
+        <div class="social-proof">
+            <img src="/social-proof-26k.jpg" alt="Client result — €26K/month" loading="lazy" onerror="this.parentElement.style.display='none'">
+        </div>
+    </section>
+
+    <!-- FINAL CTA -->
+    <section class="final-cta">
+        <h2>CLICK THE BUTTON BELOW TO GET FREE ACCESS</h2>
+        <a href="/app" class="cta-btn">GIVE ME ACCESS →</a>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="funnel-footer">
+        <p>Copyright 2026 ViewMastery. All rights reserved.</p>
+        <p style="margin-top: 8px;"><a href="/terms">Terms</a> | <a href="/privacy">Privacy Policy</a></p>
+        <p style="margin-top: 16px; max-width: 600px; margin-left: auto; margin-right: auto; font-size: 11px; color: #444;">
+            NOT YOUTUBE™: This site is not a part of the YouTube™ website or Google Inc. This site is NOT endorsed by YouTube™ in any way. YOUTUBE™ is a trademark of Google Inc.
+        </p>
+    </footer>
+
+</body>
+</html>
