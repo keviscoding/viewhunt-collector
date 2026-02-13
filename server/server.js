@@ -49,6 +49,57 @@ app.use('/api/studio', studioRoutes);
 const trainingUploadRoutes = require('./studio/upload-training-endpoint');
 app.use('/api/studio', trainingUploadRoutes);
 
+// Lead capture endpoint (free funnel → MailerLite)
+app.post('/api/leads/capture', rateLimit({ windowMs: 60000, max: 10 }), async (req, res) => {
+    try {
+        var { name, email, phone, commitment, situation, source } = req.body;
+        if (!name || !email) return res.status(400).json({ error: 'Name and email required' });
+
+        // Save to MongoDB
+        var lead = {
+            name, email, phone: phone || '',
+            commitment: commitment || '',
+            situation: situation || '',
+            source: source || 'free-funnel',
+            createdAt: new Date()
+        };
+        await db.collection('leads').insertOne(lead);
+        console.log('📧 Lead captured: ' + email + ' (' + source + ')');
+
+        // Forward to MailerLite if API key is configured
+        if (process.env.MAILERLITE_API_KEY && process.env.MAILERLITE_GROUP_ID) {
+            try {
+                const mlRes = await fetch('https://connect.mailerlite.com/api/subscribers', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + process.env.MAILERLITE_API_KEY
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        fields: { name: name, phone: phone || '', last_name: '' },
+                        groups: [process.env.MAILERLITE_GROUP_ID],
+                        status: 'active'
+                    })
+                });
+                if (mlRes.ok) {
+                    console.log('📧 MailerLite: subscriber added');
+                } else {
+                    var mlErr = await mlRes.text();
+                    console.warn('📧 MailerLite error:', mlErr);
+                }
+            } catch (mlError) {
+                console.warn('📧 MailerLite request failed:', mlError.message);
+            }
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Lead capture error:', err);
+        res.status(500).json({ error: 'Failed to save' });
+    }
+});
+
 // Landing page route
 app.get('/', (req, res) => {
     const indexPath = path.join(__dirname, 'public', 'index.html');

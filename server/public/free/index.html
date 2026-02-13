@@ -6,13 +6,14 @@
     <meta name="theme-color" content="#0a0a0a">
     <meta name="robots" content="noindex, nofollow">
     <title>Free Access — ViewHunt Shorts Mastery System</title>
-    <link rel="icon" href="/images/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+    <link rel="icon" type="image/png" href="/images/viewhunt_logo.png">
+    <link rel="apple-touch-icon" href="/images/viewhunt_logo.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             background: #0a0a0a;
@@ -20,8 +21,6 @@
             line-height: 1.6;
             -webkit-font-smoothing: antialiased;
         }
-
-        /* TOP BANNER */
         .top-banner {
             background: #c0392b;
             color: #fff;
@@ -32,8 +31,6 @@
             letter-spacing: 0.3px;
         }
         .top-banner span { color: #ffd700; }
-
-        /* HERO */
         .hero {
             max-width: 820px;
             margin: 0 auto;
@@ -54,13 +51,7 @@
             margin-bottom: 36px;
             font-weight: 400;
         }
-        .hero .sub-headline em {
-            font-style: normal;
-            color: #fff;
-            font-weight: 600;
-        }
-
-        /* PRICE ANCHOR */
+        .hero .sub-headline em { font-style: normal; color: #fff; font-weight: 600; }
         .price-anchor {
             font-size: clamp(18px, 3vw, 24px);
             font-weight: 700;
@@ -68,23 +59,10 @@
             color: #fff;
             letter-spacing: 1px;
         }
-        .price-anchor .old-price {
-            text-decoration: line-through;
-            color: #888;
-        }
+        .price-anchor .old-price { text-decoration: line-through; color: #888; }
         .price-anchor .free { color: #e74c3c; }
-
-        /* COURSE MOCKUP */
-        .course-mockup {
-            margin: 32px auto 36px;
-            max-width: 520px;
-        }
-        .course-mockup img {
-            width: 100%;
-            display: block;
-        }
-
-        /* CTA BUTTON */
+        .course-mockup { margin: 32px auto 36px; max-width: 520px; }
+        .course-mockup img { width: 100%; display: block; }
         .cta-btn {
             display: inline-block;
             background: #e74c3c;
@@ -102,8 +80,6 @@
             max-width: 90%;
         }
         .cta-btn:hover { background: #c0392b; transform: translateY(-2px); }
-
-        /* SECTIONS */
         .section {
             max-width: 780px;
             margin: 0 auto;
@@ -116,13 +92,7 @@
             margin-bottom: 40px;
             color: #fff;
         }
-
-        /* WHAT'S INCLUDED */
-        .included-list {
-            list-style: none;
-            max-width: 640px;
-            margin: 0 auto;
-        }
+        .included-list { list-style: none; max-width: 640px; margin: 0 auto; }
         .included-list li {
             display: flex;
             align-items: flex-start;
@@ -142,38 +112,12 @@
             justify-content: center;
             margin-top: 3px;
         }
-        .included-list .check::after {
-            content: '✓';
-            color: #fff;
-            font-size: 14px;
-            font-weight: 700;
-        }
-        .included-list .value {
-            color: #e74c3c;
-            font-weight: 600;
-        }
-
-        /* TOTAL VALUE */
-        .total-value {
-            text-align: center;
-            margin-top: 40px;
-        }
-        .total-value .amount {
-            font-size: clamp(24px, 4vw, 36px);
-            font-weight: 800;
-            color: #e74c3c;
-        }
-        .total-value .amount s {
-            text-decoration: line-through;
-        }
-        .total-value .free-text {
-            font-size: clamp(18px, 3vw, 24px);
-            font-weight: 700;
-            color: #fff;
-            margin-top: 8px;
-        }
-
-        /* QUALIFIER BANNER */
+        .included-list .check::after { content: '✓'; color: #fff; font-size: 14px; font-weight: 700; }
+        .included-list .value { color: #e74c3c; font-weight: 600; }
+        .total-value { text-align: center; margin-top: 40px; }
+        .total-value .amount { font-size: clamp(24px, 4vw, 36px); font-weight: 800; color: #e74c3c; }
+        .total-value .amount s { text-decoration: line-through; }
+        .total-value .free-text { font-size: clamp(18px, 3vw, 24px); font-weight: 700; color: #fff; margin-top: 8px; }
         .qualifier {
             background: #141414;
             border-top: 3px solid #e74c3c;
@@ -181,148 +125,170 @@
             padding: 40px 24px;
             text-align: center;
         }
-        .qualifier h2 {
-            font-size: clamp(20px, 3.5vw, 28px);
-            font-weight: 800;
-            color: #fff;
-            margin-bottom: 16px;
-        }
-        .qualifier p {
-            font-size: clamp(15px, 2.2vw, 17px);
-            color: #bbb;
-            max-width: 600px;
-            margin: 0 auto;
-        }
+        .qualifier h2 { font-size: clamp(20px, 3.5vw, 28px); font-weight: 800; color: #fff; margin-bottom: 16px; }
+        .qualifier p { font-size: clamp(15px, 2.2vw, 17px); color: #bbb; max-width: 600px; margin: 0 auto; }
         .qualifier p span { color: #e74c3c; font-weight: 600; }
-
-        /* MODULES / COURSE CONTENT */
-        .modules {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0;
-        }
-        .module-row {
-            display: flex;
-            align-items: flex-start;
-            gap: 16px;
-            margin-bottom: 32px;
-            width: 100%;
-        }
-        .module-row .icon {
-            flex-shrink: 0;
-            color: #e74c3c;
-            font-size: 20px;
-            margin-top: 2px;
-        }
-        .module-row strong {
-            color: #fff;
-            font-weight: 700;
-        }
-        .module-row p {
-            font-size: clamp(14px, 2vw, 16px);
-            color: #ccc;
-            line-height: 1.6;
-        }
-
-        /* INSTRUCTOR SECTION */
-        .instructor {
-            display: flex;
-            gap: 40px;
-            align-items: flex-start;
-            max-width: 780px;
-            margin: 0 auto;
-            padding: 60px 24px;
-        }
-        .instructor-photo {
-            flex-shrink: 0;
-            width: 260px;
-        }
-        .instructor-photo img {
-            width: 100%;
-            border-radius: 10px;
-            display: block;
-        }
-        .instructor-photo .caption {
-            text-align: center;
-            margin-top: 14px;
-        }
-        .instructor-photo .caption .label {
-            font-size: 14px;
-            color: #888;
-            text-decoration: underline;
-        }
-        .instructor-photo .caption .name {
-            font-size: 18px;
-            font-weight: 700;
-            color: #fff;
-            margin-top: 4px;
-        }
-        .instructor-bio h3 {
-            font-size: clamp(22px, 3.5vw, 30px);
-            font-weight: 800;
-            color: #fff;
-            margin-bottom: 20px;
-        }
-        .instructor-bio p {
-            font-size: clamp(14px, 2vw, 16px);
-            color: #bbb;
-            margin-bottom: 16px;
-            line-height: 1.7;
-        }
-
-        /* SOCIAL PROOF IMAGE */
-        .social-proof {
-            max-width: 500px;
-            margin: 30px auto 0;
-            text-align: center;
-        }
-        .social-proof img {
-            width: 100%;
-            border-radius: 10px;
-            border: 1px solid #222;
-        }
-        .social-proof .caption {
-            font-size: 13px;
-            color: #666;
-            margin-top: 8px;
-        }
-
-        /* FINAL CTA */
-        .final-cta {
-            text-align: center;
-            padding: 60px 24px 40px;
-            max-width: 780px;
-            margin: 0 auto;
-        }
-        .final-cta h2 {
-            font-size: clamp(18px, 3vw, 24px);
-            font-weight: 800;
-            color: #fff;
-            margin-bottom: 24px;
-            letter-spacing: 1px;
-        }
-
-        /* FOOTER */
-        .funnel-footer {
-            text-align: center;
-            padding: 40px 24px;
-            border-top: 1px solid #1a1a1a;
-            color: #555;
-            font-size: 13px;
-        }
+        .modules { display: flex; flex-wrap: wrap; gap: 0; }
+        .module-row { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 32px; width: 100%; }
+        .module-row .icon { flex-shrink: 0; color: #e74c3c; font-size: 20px; margin-top: 2px; }
+        .module-row strong { color: #fff; font-weight: 700; }
+        .module-row p { font-size: clamp(14px, 2vw, 16px); color: #ccc; line-height: 1.6; }
+        .instructor { display: flex; gap: 40px; align-items: flex-start; max-width: 780px; margin: 0 auto; padding: 60px 24px; }
+        .instructor-photo { flex-shrink: 0; width: 260px; }
+        .instructor-photo img { width: 100%; border-radius: 10px; display: block; }
+        .instructor-photo .caption { text-align: center; margin-top: 14px; }
+        .instructor-photo .caption .label { font-size: 14px; color: #888; text-decoration: underline; }
+        .instructor-photo .caption .name { font-size: 18px; font-weight: 700; color: #fff; margin-top: 4px; }
+        .instructor-bio h3 { font-size: clamp(22px, 3.5vw, 30px); font-weight: 800; color: #fff; margin-bottom: 20px; }
+        .instructor-bio p { font-size: clamp(14px, 2vw, 16px); color: #bbb; margin-bottom: 16px; line-height: 1.7; }
+        .social-proof { max-width: 500px; margin: 30px auto 0; text-align: center; }
+        .social-proof img { width: 100%; border-radius: 10px; border: 1px solid #222; }
+        .final-cta { text-align: center; padding: 60px 24px 40px; max-width: 780px; margin: 0 auto; }
+        .final-cta h2 { font-size: clamp(18px, 3vw, 24px); font-weight: 800; color: #fff; margin-bottom: 24px; letter-spacing: 1px; }
+        .funnel-footer { text-align: center; padding: 40px 24px; border-top: 1px solid #1a1a1a; color: #555; font-size: 13px; }
         .funnel-footer a { color: #888; text-decoration: underline; }
 
-        /* MOBILE */
+        /* MODAL OVERLAY */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.75);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: #fff;
+            color: #222;
+            border-radius: 12px;
+            max-width: 480px;
+            width: 100%;
+            padding: 36px 32px 28px;
+            position: relative;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-close {
+            position: absolute;
+            top: 12px;
+            right: 14px;
+            background: none;
+            border: none;
+            font-size: 22px;
+            cursor: pointer;
+            color: #888;
+            line-height: 1;
+        }
+        .modal-close:hover { color: #333; }
+        .modal h2 {
+            text-align: center;
+            font-size: 22px;
+            font-weight: 800;
+            margin-bottom: 24px;
+            color: #111;
+            line-height: 1.3;
+        }
+        .modal label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 6px;
+            margin-top: 16px;
+        }
+        .modal label:first-of-type { margin-top: 0; }
+        .modal input[type="text"],
+        .modal input[type="email"],
+        .modal input[type="tel"] {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 15px;
+            font-family: inherit;
+            background: #f9f9f9;
+            color: #222;
+        }
+        .modal input:focus { outline: none; border-color: #e74c3c; background: #fff; }
+        .phone-row {
+            display: flex;
+            gap: 8px;
+        }
+        .phone-row select {
+            padding: 12px 8px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            background: #f9f9f9;
+            color: #222;
+            min-width: 80px;
+        }
+        .phone-row input { flex: 1; }
+        .modal .question {
+            margin-top: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            line-height: 1.5;
+        }
+        .modal .radio-group {
+            margin-top: 10px;
+        }
+        .modal .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 400;
+            color: #444;
+            margin-top: 8px;
+            cursor: pointer;
+        }
+        .modal .radio-group input[type="radio"] {
+            width: 16px;
+            height: 16px;
+            accent-color: #e74c3c;
+        }
+        .modal .submit-btn {
+            display: block;
+            width: 100%;
+            background: #e74c3c;
+            color: #fff;
+            font-size: 18px;
+            font-weight: 800;
+            padding: 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 24px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: background 0.2s;
+        }
+        .modal .submit-btn:hover { background: #c0392b; }
+        .modal .submit-btn:disabled { background: #ccc; cursor: not-allowed; }
+        .modal .fine-print {
+            margin-top: 16px;
+            font-size: 11px;
+            color: #999;
+            text-align: center;
+            line-height: 1.5;
+        }
+        .modal .fine-print a { color: #888; }
+        .modal .step-2 { display: none; }
+        .modal .step-2.active { display: block; }
+        .modal .step-1.hidden { display: none; }
+
         @media (max-width: 700px) {
-            .instructor {
-                flex-direction: column;
-                align-items: center;
-                text-align: center;
-            }
+            .instructor { flex-direction: column; align-items: center; text-align: center; }
             .instructor-photo { width: 200px; }
             .hero { padding: 40px 20px 30px; }
             .section { padding: 40px 20px; }
             .cta-btn { padding: 16px 32px; }
+            .modal { padding: 28px 20px 24px; }
         }
     </style>
 </head>
@@ -337,52 +303,31 @@
     <section class="hero">
         <h1>How Complete Beginners Are Using <span class="highlight">AI + Proven Niches</span> To Monetize YouTube Shorts Channels In 30 Days Or Less</h1>
         <p class="sub-headline">Includes Free Access to <em>ViewHunt</em> (Niche Finder Tool), <em>5-Module Mini Course</em>, &amp; Our <em>Viral Format Library</em></p>
-
-        <!-- Course mockup image -->
         <div class="course-mockup">
             <img src="/free/course-mockup.png" alt="YouTube Shorts Mastery Mini Course">
         </div>
-
         <div class="price-anchor">
             NORMALLY <span class="old-price">$497</span> — <span class="free">FREE</span> TODAY
         </div>
-
-        <a href="/app" class="cta-btn">YES! I WANT FREE ACCESS</a>
+        <button class="cta-btn" onclick="openModal()">YES! I WANT FREE ACCESS</button>
     </section>
 
     <!-- WHAT'S INCLUDED -->
     <section class="section">
         <h2 class="section-title">WHAT'S INCLUDED</h2>
         <ul class="included-list">
-            <li>
-                <div class="check"></div>
-                <div>ViewHunt Free — Our AI niche finder that scans YouTube's database to find high-demand, low-competition niches blowing up right now <span class="value">(Worth $50/mo)</span></div>
-            </li>
-            <li>
-                <div class="check"></div>
-                <div>The 5-Module Shorts Mastery Mini Course — From picking your niche to scaling your first channel, step by step <span class="value">(Worth $197)</span></div>
-            </li>
-            <li>
-                <div class="check"></div>
-                <div>The 3 Criteria Framework — How to validate any niche for demand, competition &amp; longevity before you post a single video <span class="value">(Worth $97)</span></div>
-            </li>
-            <li>
-                <div class="check"></div>
-                <div>BONUS: Viral Format Library — Proven hook formulas, storytelling frameworks &amp; templates that have generated hundreds of millions of views <span class="value">(Worth $97)</span></div>
-            </li>
-            <li>
-                <div class="check"></div>
-                <div>BONUS: AI Content System — The exact prompts and workflows to script 30 days of content in one sitting <span class="value">(Worth $67)</span></div>
-            </li>
+            <li><div class="check"></div><div>ViewHunt Free — Our AI niche finder that scans YouTube's database to find high-demand, low-competition niches blowing up right now <span class="value">(Worth $50/mo)</span></div></li>
+            <li><div class="check"></div><div>The 5-Module Shorts Mastery Mini Course — From picking your niche to scaling your first channel, step by step <span class="value">(Worth $197)</span></div></li>
+            <li><div class="check"></div><div>The 3 Criteria Framework — How to validate any niche for demand, competition &amp; longevity before you post a single video <span class="value">(Worth $97)</span></div></li>
+            <li><div class="check"></div><div>BONUS: Viral Format Library — Proven hook formulas, storytelling frameworks &amp; templates that have generated hundreds of millions of views <span class="value">(Worth $97)</span></div></li>
+            <li><div class="check"></div><div>BONUS: AI Content System — The exact prompts and workflows to script 30 days of content in one sitting <span class="value">(Worth $67)</span></div></li>
         </ul>
-
         <div class="total-value">
             <div class="amount">TOTAL VALUE: <s>$508.00</s></div>
             <div class="free-text">GET IT ALL FOR FREE</div>
         </div>
-
         <div style="text-align: center; margin-top: 32px;">
-            <a href="/app" class="cta-btn">YES! GIVE ME FREE ACCESS →</a>
+            <button class="cta-btn" onclick="openModal()">YES! GIVE ME FREE ACCESS →</button>
         </div>
     </section>
 
@@ -405,26 +350,11 @@
         <div class="instructor-bio">
             <h3>Here's What You'll Learn In This Course...</h3>
             <div class="modules">
-                <div class="module-row">
-                    <span class="icon">✔</span>
-                    <p><strong>Module 1:</strong> Why YouTube Shorts is the best digital asset to build in 2026 — and why it beats dropshipping, day trading &amp; real estate for beginners</p>
-                </div>
-                <div class="module-row">
-                    <span class="icon">✔</span>
-                    <p><strong>Module 2:</strong> The 3 criteria every winning niche must have — demand asymmetry, competition gaps &amp; evergreen proof (and how to find them with ViewHunt)</p>
-                </div>
-                <div class="module-row">
-                    <span class="icon">✔</span>
-                    <p><strong>Module 3:</strong> How to create your first 30 videos using AI — scripting, voiceover &amp; editing without showing your face or spending a cent</p>
-                </div>
-                <div class="module-row">
-                    <span class="icon">✔</span>
-                    <p><strong>Module 4:</strong> The Barrier Breakthrough Framework — what to do when your videos get stuck at 200 views, 1K views, or 15K views (every plateau has a fix)</p>
-                </div>
-                <div class="module-row">
-                    <span class="icon">✔</span>
-                    <p><strong>Module 5:</strong> How to go from solo creator to channel owner — hiring editors for $5-15/video and removing yourself from production entirely</p>
-                </div>
+                <div class="module-row"><span class="icon">✔</span><p><strong>Module 1:</strong> Why YouTube Shorts is the best digital asset to build in 2026 — and why it beats dropshipping, day trading &amp; real estate for beginners</p></div>
+                <div class="module-row"><span class="icon">✔</span><p><strong>Module 2:</strong> The 3 criteria every winning niche must have — demand asymmetry, competition gaps &amp; evergreen proof (and how to find them with ViewHunt)</p></div>
+                <div class="module-row"><span class="icon">✔</span><p><strong>Module 3:</strong> How to create your first 30 videos using AI — scripting, voiceover &amp; editing without showing your face or spending a cent</p></div>
+                <div class="module-row"><span class="icon">✔</span><p><strong>Module 4:</strong> The Barrier Breakthrough Framework — what to do when your videos get stuck at 200 views, 1K views, or 15K views (every plateau has a fix)</p></div>
+                <div class="module-row"><span class="icon">✔</span><p><strong>Module 5:</strong> How to go from solo creator to channel owner — hiring editors for $5-15/video and removing yourself from production entirely</p></div>
             </div>
         </div>
     </section>
@@ -437,17 +367,15 @@
             <p style="margin-bottom: 16px;">Now I help busy professionals replicate this model: pick the niche, build the team, install the workflow, and create the content pipeline.</p>
             <p>I'm not teaching theory. I'm giving you the exact system I use on my own channels — for free.</p>
         </div>
-
-        <!-- Social proof screenshot -->
         <div class="social-proof">
-            <img src="/social-proof-26k.jpg" alt="Client result — €26K/month" loading="lazy" onerror="this.parentElement.style.display='none'">
+            <img src="/social-proof-26k.jpg" alt="Client result" loading="lazy" onerror="this.parentElement.style.display='none'">
         </div>
     </section>
 
     <!-- FINAL CTA -->
     <section class="final-cta">
         <h2>CLICK THE BUTTON BELOW TO GET FREE ACCESS</h2>
-        <a href="/app" class="cta-btn">GIVE ME ACCESS →</a>
+        <button class="cta-btn" onclick="openModal()">GIVE ME ACCESS →</button>
     </section>
 
     <!-- FOOTER -->
@@ -458,6 +386,148 @@
             NOT YOUTUBE™: This site is not a part of the YouTube™ website or Google Inc. This site is NOT endorsed by YouTube™ in any way. YOUTUBE™ is a trademark of Google Inc.
         </p>
     </footer>
+
+    <!-- LEAD CAPTURE MODAL -->
+    <div class="modal-overlay" id="leadModal">
+        <div class="modal">
+            <button class="modal-close" onclick="closeModal()" aria-label="Close">&times;</button>
+
+            <!-- STEP 1: Contact info + commitment question -->
+            <div class="step-1" id="step1">
+                <h2>WHERE SHOULD WE SEND<br>THE FREE COURSE?</h2>
+
+                <label for="lead-name">First Name *</label>
+                <input type="text" id="lead-name" placeholder="First Name*" required>
+
+                <label for="lead-email">Email *</label>
+                <input type="email" id="lead-email" placeholder="Email*" required>
+
+                <label for="lead-phone">Phone *</label>
+                <div class="phone-row">
+                    <select id="lead-country">
+                        <option value="+1">🇺🇸 +1</option>
+                        <option value="+44" selected>🇬🇧 +44</option>
+                        <option value="+353">🇮🇪 +353</option>
+                        <option value="+61">🇦🇺 +61</option>
+                        <option value="+91">🇮🇳 +91</option>
+                        <option value="+49">🇩🇪 +49</option>
+                        <option value="+33">🇫🇷 +33</option>
+                        <option value="+234">🇳🇬 +234</option>
+                        <option value="+27">🇿🇦 +27</option>
+                        <option value="+971">🇦🇪 +971</option>
+                        <option value="+65">🇸🇬 +65</option>
+                        <option value="+81">🇯🇵 +81</option>
+                        <option value="+55">🇧🇷 +55</option>
+                        <option value="+52">🇲🇽 +52</option>
+                        <option value="+31">🇳🇱 +31</option>
+                        <option value="+46">🇸🇪 +46</option>
+                        <option value="+47">🇳🇴 +47</option>
+                        <option value="+34">🇪🇸 +34</option>
+                        <option value="+39">🇮🇹 +39</option>
+                        <option value="+82">🇰🇷 +82</option>
+                    </select>
+                    <input type="tel" id="lead-phone" placeholder="Phone*" required>
+                </div>
+
+                <p class="question">Are you willing to dedicate at least 1 hour a day to building your YouTube Shorts channel?</p>
+                <div class="radio-group">
+                    <label><input type="radio" name="commitment" value="yes" required> Yes — I'm ready to commit</label>
+                    <label><input type="radio" name="commitment" value="no"> No — Just browsing for now</label>
+                </div>
+
+                <button class="submit-btn" id="step1Btn" onclick="goToStep2()">GET FREE ACCESS NOW</button>
+
+                <p class="fine-print">By completing this form, I agree to having the course, ViewHunt access &amp; bonuses sent to me and I agree to the <a href="/terms">terms</a> &amp; <a href="/privacy">privacy policy</a> of ViewMastery.</p>
+            </div>
+
+            <!-- STEP 2: Qualifier question -->
+            <div class="step-2" id="step2">
+                <h2>ONE LAST QUESTION...</h2>
+                <p class="question">What best describes your current situation?</p>
+                <div class="radio-group">
+                    <label><input type="radio" name="situation" value="fulltime_75k+" required> I work full-time earning $75K+/year and want to build income on the side</label>
+                    <label><input type="radio" name="situation" value="fulltime_under75k"> I work full-time earning under $75K/year and want extra income</label>
+                    <label><input type="radio" name="situation" value="self_employed"> I'm self-employed / run a business</label>
+                    <label><input type="radio" name="situation" value="student_between"> I'm currently between jobs or a student</label>
+                </div>
+
+                <button class="submit-btn" id="step2Btn" onclick="submitLead()">COMPLETE &amp; GET ACCESS →</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function openModal() {
+        document.getElementById('leadModal').classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeModal() {
+        document.getElementById('leadModal').classList.remove('active');
+        document.body.style.overflow = '';
+    }
+    // Close on overlay click
+    document.getElementById('leadModal').addEventListener('click', function(e) {
+        if (e.target === this) closeModal();
+    });
+
+    function goToStep2() {
+        var name = document.getElementById('lead-name').value.trim();
+        var email = document.getElementById('lead-email').value.trim();
+        var phone = document.getElementById('lead-phone').value.trim();
+        var commitment = document.querySelector('input[name="commitment"]:checked');
+
+        if (!name || !email || !phone) {
+            alert('Please fill in all fields.');
+            return;
+        }
+        if (!commitment) {
+            alert('Please answer the commitment question.');
+            return;
+        }
+
+        // Show step 2
+        document.getElementById('step1').classList.add('hidden');
+        document.getElementById('step2').classList.add('active');
+    }
+
+    function submitLead() {
+        var situation = document.querySelector('input[name="situation"]:checked');
+        if (!situation) {
+            alert('Please select your current situation.');
+            return;
+        }
+
+        var btn = document.getElementById('step2Btn');
+        btn.disabled = true;
+        btn.textContent = 'SENDING...';
+
+        var data = {
+            name: document.getElementById('lead-name').value.trim(),
+            email: document.getElementById('lead-email').value.trim(),
+            phone: document.getElementById('lead-country').value + ' ' + document.getElementById('lead-phone').value.trim(),
+            commitment: document.querySelector('input[name="commitment"]:checked').value,
+            situation: situation.value,
+            source: 'free-funnel',
+            timestamp: new Date().toISOString()
+        };
+
+        // Send to our backend (which forwards to MailerLite)
+        fetch('/api/leads/capture', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            // Redirect to app registration regardless of API result
+            window.location.href = '/app';
+        })
+        .catch(function() {
+            // Still redirect even if API fails
+            window.location.href = '/app';
+        });
+    }
+    </script>
 
 </body>
 </html>
