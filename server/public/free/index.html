@@ -280,8 +280,6 @@
         .modal .fine-print a { color: #888; }
         .modal .step-2 { display: none; }
         .modal .step-2.active { display: block; }
-        .modal .step-3 { display: none; }
-        .modal .step-3.active { display: block; }
         .modal .step-1.hidden { display: none; }
 
         @media (max-width: 700px) {
@@ -394,7 +392,7 @@
         <div class="modal">
             <button class="modal-close" onclick="closeModal()" aria-label="Close">&times;</button>
 
-            <!-- STEP 1: Contact info + commitment question -->
+            <!-- STEP 1: Contact info + situation qualifier (single form) -->
             <div class="step-1" id="step1">
                 <h2>WHERE SHOULD WE SEND<br>THE FREE COURSE?</h2>
 
@@ -431,20 +429,6 @@
                     <input type="tel" id="lead-phone" placeholder="Phone*" required>
                 </div>
 
-                <p class="question">Are you willing to dedicate at least 1 hour a day to building your YouTube Shorts channel?</p>
-                <div class="radio-group">
-                    <label><input type="radio" name="commitment" value="yes" required> Yes — I'm ready to commit</label>
-                    <label><input type="radio" name="commitment" value="no"> No — Just browsing for now</label>
-                </div>
-
-                <button class="submit-btn" id="step1Btn" onclick="goToStep2()">GET FREE ACCESS NOW</button>
-
-                <p class="fine-print">By completing this form, I agree to having the course, ViewHunt access &amp; bonuses sent to me and I agree to the <a href="/terms">terms</a> &amp; <a href="/privacy">privacy policy</a> of ViewMastery.</p>
-            </div>
-
-            <!-- STEP 2: Qualifier question -->
-            <div class="step-2" id="step2">
-                <h2>ONE LAST QUESTION...</h2>
                 <p class="question">What best describes your current situation?</p>
                 <div class="radio-group">
                     <label><input type="radio" name="situation" value="fulltime_75k+" required> I work full-time earning $75K+/year and want to build income on the side</label>
@@ -453,11 +437,13 @@
                     <label><input type="radio" name="situation" value="student_between"> I'm currently between jobs or a student</label>
                 </div>
 
-                <button class="submit-btn" id="step2Btn" onclick="submitLead()">COMPLETE &amp; GET ACCESS →</button>
+                <button class="submit-btn" id="submitBtn" onclick="submitLead()">GET FREE ACCESS NOW</button>
+
+                <p class="fine-print">By completing this form, I agree to having the course, ViewHunt access &amp; bonuses sent to me and I agree to the <a href="/terms">terms</a> &amp; <a href="/privacy">privacy policy</a> of ViewMastery.</p>
             </div>
 
-            <!-- STEP 3: Check your email confirmation -->
-            <div class="step-3" id="step3">
+            <!-- STEP 2: Check your email confirmation -->
+            <div class="step-2" id="step2">
                 <div style="text-align: center; padding: 20px 0;">
                     <div style="font-size: 56px; margin-bottom: 16px;">📧</div>
                     <h2 style="margin-bottom: 12px;">CHECK YOUR EMAIL!</h2>
@@ -491,68 +477,51 @@
         if (e.target === this) closeModal();
     });
 
-    function goToStep2() {
+    function submitLead() {
         var name = document.getElementById('lead-name').value.trim();
         var email = document.getElementById('lead-email').value.trim();
         var phone = document.getElementById('lead-phone').value.trim();
-        var commitment = document.querySelector('input[name="commitment"]:checked');
+        var situation = document.querySelector('input[name="situation"]:checked');
 
         if (!name || !email || !phone) {
             alert('Please fill in all fields.');
             return;
         }
-        if (!commitment) {
-            alert('Please answer the commitment question.');
-            return;
-        }
-
-        // Show step 2
-        document.getElementById('step1').classList.add('hidden');
-        document.getElementById('step2').classList.add('active');
-    }
-
-    function submitLead() {
-        var situation = document.querySelector('input[name="situation"]:checked');
         if (!situation) {
             alert('Please select your current situation.');
             return;
         }
 
-        var btn = document.getElementById('step2Btn');
+        var btn = document.getElementById('submitBtn');
         btn.disabled = true;
         btn.textContent = 'SENDING...';
 
-        var email = document.getElementById('lead-email').value.trim();
         var data = {
-            name: document.getElementById('lead-name').value.trim(),
+            name: name,
             email: email,
-            phone: document.getElementById('lead-country').value + ' ' + document.getElementById('lead-phone').value.trim(),
-            commitment: document.querySelector('input[name="commitment"]:checked').value,
+            phone: document.getElementById('lead-country').value + ' ' + phone,
             situation: situation.value,
             source: 'free-funnel',
             timestamp: new Date().toISOString()
         };
 
-        // Send to our backend (which forwards to MailerLite)
         fetch('/api/leads/capture', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         })
         .then(function(r) { return r.json(); })
-        .then(function(res) {
-            // Show "check your email" confirmation
+        .then(function() {
             showConfirmation(email);
         })
         .catch(function() {
-            // Still show confirmation even if API had issues
             showConfirmation(email);
         });
     }
 
     function showConfirmation(email) {
-        document.getElementById('step2').classList.remove('active');
-        document.getElementById('step3').classList.add('active');
+        document.getElementById('step1').classList.add('hidden');
+        document.getElementById('step2').classList.add('active');
         document.getElementById('confirmEmail').textContent = email;
     }
     </script>

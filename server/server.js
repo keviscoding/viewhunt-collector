@@ -52,7 +52,7 @@ app.use('/api/studio', trainingUploadRoutes);
 // Lead capture endpoint (free funnel → MailerLite)
 app.post('/api/leads/capture', rateLimit({ windowMs: 60000, max: 10 }), async (req, res) => {
     try {
-        var { name, email, phone, commitment, situation, source } = req.body;
+        var { name, email, phone, situation, source } = req.body;
         if (!name || !email) return res.status(400).json({ error: 'Name and email required' });
 
         // Generate unique access token
@@ -62,7 +62,6 @@ app.post('/api/leads/capture', rateLimit({ windowMs: 60000, max: 10 }), async (r
         // Save to MongoDB
         var lead = {
             name, email, phone: phone || '',
-            commitment: commitment || '',
             situation: situation || '',
             source: source || 'free-funnel',
             accessToken: accessToken,
