@@ -829,9 +829,9 @@ body {
     }
 
     .nav-btn-studio {
-        width: 60px;
-        height: 60px;
-        margin-top: -20px;
+        width: 62px;
+        height: 62px;
+        margin-top: -22px;
     }
 
     .nav-studio-icon {
@@ -875,16 +875,16 @@ body {
     color: #667eea;
 }
 
-/* Studio center button — raised + gradient like Higgsfield */
+/* Studio center button — raised CTA with pulse ring to invite taps */
 .nav-btn-studio {
     flex: 0 0 auto;
     width: 56px;
     height: 56px;
     margin-top: -26px;
-    border-radius: 18px;
-    background: linear-gradient(135deg, #667eea, #764ba2);
+    border-radius: 50%;
+    background: linear-gradient(145deg, #ff6b6b, #ee5a24);
     color: white;
-    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.45);
+    box-shadow: 0 4px 18px rgba(238, 90, 36, 0.5);
     padding: 0;
     display: flex;
     flex-direction: column;
@@ -892,15 +892,33 @@ body {
     justify-content: center;
     gap: 1px;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
+    position: relative;
+    border: 3px solid rgba(255, 255, 255, 0.9);
+}
+
+/* Animated pulse ring — draws the eye without being annoying */
+.nav-btn-studio::before {
+    content: '';
+    position: absolute;
+    inset: -5px;
+    border-radius: 50%;
+    border: 2px solid rgba(238, 90, 36, 0.6);
+    animation: studioPulse 2.5s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes studioPulse {
+    0%, 100% { transform: scale(1); opacity: 0.6; }
+    50% { transform: scale(1.15); opacity: 0; }
 }
 
 .nav-btn-studio:hover {
-    transform: scale(1.08);
-    box-shadow: 0 6px 28px rgba(102, 126, 234, 0.55);
+    transform: scale(1.1);
+    box-shadow: 0 6px 24px rgba(238, 90, 36, 0.6);
 }
 
 .nav-btn-studio:active {
-    transform: scale(0.95);
+    transform: scale(0.93);
 }
 
 .nav-studio-icon {
