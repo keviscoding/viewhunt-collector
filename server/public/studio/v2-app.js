@@ -127,7 +127,7 @@ async function handleDirectorGeneration(script) {
     generationInProgress = true;
     currentScenes = [];
     
-    show('director-section');
+    show('director-section', 'generation-warning');
     hide('config-section', 'results-section', 'progress-section');
     
     const container = document.getElementById('director-scenes');
@@ -169,6 +169,7 @@ async function handleDirectorGeneration(script) {
         
     } catch (error) {
         console.error('Director generation error:', error);
+        hide('generation-warning');
         if (error.message !== '__credit_error__') {
             container.innerHTML = `<div class="director-error">❌ ${error.message}<br><button class="btn btn-secondary btn-sm" onclick="resetToConfig()" style="margin-top:1rem">Try Again</button></div>`;
         } else {
@@ -466,10 +467,10 @@ async function submitAssemblyJob(scenesWithVideo, videoUrlKey) {
 
 async function pollAssemblyJob(jobId, resultDiv) {
     var msgs = {
-        queued: '⏳ Waiting in queue...',
-        generating_voiceover: '🎙️ Generating voiceover...',
-        analyzing_edit_points: '🧠 Analyzing edit points...',
-        assembling_video: '🎬 Assembling video (1-3 min)...'
+        queued: '⏳ Waiting in queue... Please keep this tab open.',
+        generating_voiceover: '🎙️ Generating voiceover... Keep this tab open.',
+        analyzing_edit_points: '🧠 Analyzing edit points... Almost there, stay on this tab.',
+        assembling_video: '🎬 Assembling video (1-3 min)... Don\'t close this tab.'
     };
     var failCount = 0;
     while (true) {
@@ -545,6 +546,7 @@ async function assembleAutoVideo() {
     if (!confirm('Assemble final video from ' + scenes.length + ' scenes?\nEstimated time: 2-4 minutes.')) return;
     var btn = document.getElementById('auto-assemble-btn');
     btn.disabled = true; btn.textContent = '⏳ Submitting...';
+    show('generation-warning');
     var rd = document.getElementById('auto-assembly-result');
     rd.innerHTML = '<div class="assembly-progress">🎬 Submitting job...</div>';
     try {
@@ -558,6 +560,7 @@ async function assembleAutoVideo() {
         rd.innerHTML = '<div class="assembly-progress" style="color:var(--red)">❌ ' + err.message + '</div>';
     } finally {
         btn.disabled = false; btn.textContent = '🎬 Assemble Final Video';
+        hide('generation-warning');
     }
 }
 
@@ -567,6 +570,7 @@ async function assembleVideo() {
     if (!confirm('Assemble final video from ' + scenes.length + ' scenes?\nEstimated time: 2-4 minutes.')) return;
     var btn = document.getElementById('director-assemble-btn');
     btn.disabled = true; btn.textContent = '⏳ Submitting...';
+    show('generation-warning');
     var old = document.getElementById('assembly-progress');
     if (old) old.remove();
     var bar = document.getElementById('director-action-bar');
@@ -585,6 +589,7 @@ async function assembleVideo() {
         rd.innerHTML = '<div style="color:var(--red)">❌ ' + err.message + '</div>';
     } finally {
         btn.disabled = false; btn.textContent = '🎬 Assemble Final Video';
+        hide('generation-warning');
     }
 }
 
@@ -594,7 +599,7 @@ async function handleAutoGeneration(script, generateVideos) {
     generationInProgress = true;
     currentScenes = [];
     
-    show('progress-section');
+    show('progress-section', 'generation-warning');
     hide('config-section', 'results-section', 'director-section');
     
     document.querySelectorAll('.progress-chip').forEach(c => { c.classList.remove('active', 'done', 'error'); });
@@ -630,6 +635,7 @@ async function handleAutoGeneration(script, generateVideos) {
     } catch (error) {
         console.error('Generation error:', error);
         updateMsg(`❌ Error: ${error.message}`);
+        hide('generation-warning');
         setTimeout(() => { if (confirm('Generation failed. Try again?')) resetToConfig(); }, 2000);
     } finally {
         generationInProgress = false;
@@ -672,6 +678,7 @@ function handleComplete(data) {
     setChip('complete', 'done');
     document.getElementById('progress-fill').style.width = '100%';
     updateMsg('🎉 Generation complete!');
+    hide('generation-warning');
     currentScenes = data.scenes || currentScenes;
     generationInProgress = false;
     
@@ -739,7 +746,7 @@ function hide(...ids) { ids.forEach(id => document.getElementById(id)?.classList
 
 function resetToConfig() {
     show('config-section');
-    hide('progress-section', 'results-section', 'director-section');
+    hide('progress-section', 'results-section', 'director-section', 'generation-warning');
     currentScenes = [];
     generationInProgress = false;
 }
