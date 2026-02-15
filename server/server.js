@@ -35,8 +35,8 @@ app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// Serve static files for landing page
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static files for landing page (index: false so our route handler controls /)
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // Serve mobile app static files
 app.use('/mobile', express.static(path.join(__dirname, 'mobile')));
@@ -138,79 +138,17 @@ app.get('/free/access', async (req, res) => {
     res.redirect('/free');
 });
 
-// Landing page route
+// Landing page route — redirect to /free funnel
 app.get('/', (req, res) => {
-    const indexPath = path.join(__dirname, 'public', 'index.html');
-    console.log('Serving landing page from:', indexPath);
-    
-    // Check if file exists
-    const fs = require('fs');
-    if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
-    } else {
-        console.error('index.html not found at:', indexPath);
-        // Fallback HTML
-        res.send(`
-            <!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>ViewHunt - Find Untapped YouTube Shorts Niches</title>
-                <style>
-                    * { margin: 0; padding: 0; box-sizing: border-box; }
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        min-height: 100vh;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        color: white;
-                        padding: 20px;
-                    }
-                    .container {
-                        text-align: center;
-                        max-width: 800px;
-                        padding: 2rem;
-                        background: rgba(255, 255, 255, 0.1);
-                        border-radius: 20px;
-                        backdrop-filter: blur(10px);
-                        border: 1px solid rgba(255, 255, 255, 0.2);
-                    }
-                    h1 { font-size: 2.5rem; margin-bottom: 1rem; }
-                    p { font-size: 1.2rem; margin-bottom: 1.5rem; }
-                    .btn {
-                        display: inline-block;
-                        background: white;
-                        color: #764ba2;
-                        padding: 12px 24px;
-                        border-radius: 8px;
-                        font-weight: 600;
-                        text-decoration: none;
-                        transition: all 0.3s;
-                        margin: 10px;
-                    }
-                    .btn:hover {
-                        transform: translateY(-3px);
-                        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <h1>Welcome to ViewHunt</h1>
-                    <p>Find untapped YouTube Shorts niches with data-driven confidence.</p>
-                    <p>Discover profitable niches before they saturate.</p>
-                    <div>
-                        <a href="/app" class="btn">Launch App</a>
-                        <a href="/pricing" class="btn">View Pricing</a>
-                    </div>
-                </div>
-            </body>
-            </html>
-        `);
-    }
+    res.redirect('/free');
+});
+
+// Free funnel page (index: false means we need an explicit route)
+app.get('/free', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'free', 'index.html'));
+});
+app.get('/free/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'free', 'index.html'));
 });
 
 // Pricing page route
