@@ -717,7 +717,7 @@ class ViewHuntApp {
                 loading.style.display = 'none';
                 emptyState.style.display = 'block';
                 emptyState.querySelector('h2').textContent = 'Sign In Required';
-                emptyState.querySelector('p').textContent = 'Please sign in to view approved channels.';
+                emptyState.querySelector('p').textContent = 'Please sign in to view saved niches.';
                 return;
             }
 
@@ -809,8 +809,8 @@ class ViewHuntApp {
 
             if (this.channels.length === 0 && !append) {
                 emptyState.style.display = 'block';
-                emptyState.querySelector('h2').textContent = 'No Approved Channels';
-                emptyState.querySelector('p').textContent = 'Start reviewing channels to build your approved list.';
+                emptyState.querySelector('h2').textContent = 'No Saved Niches';
+                emptyState.querySelector('p').textContent = 'Start reviewing niches to build your saved list.';
             } else {
                 this.renderChannels();
                 
