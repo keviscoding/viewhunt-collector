@@ -35,8 +35,8 @@ app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// Serve static files for landing page
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static files for landing page (index: false so our route handler controls /)
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // Serve mobile app static files
 app.use('/mobile', express.static(path.join(__dirname, 'mobile')));
