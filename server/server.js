@@ -143,6 +143,11 @@ app.get('/', (req, res) => {
     res.redirect('/free');
 });
 
+// Free funnel page (index: false means we need an explicit route)
+app.get('/free', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'free', 'index.html'));
+});
+
 // Pricing page route
 app.get('/pricing', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'pricing.html'));
