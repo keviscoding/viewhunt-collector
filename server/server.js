@@ -147,6 +147,9 @@ app.get('/', (req, res) => {
 app.get('/free', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'free', 'index.html'));
 });
+app.get('/free/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'free', 'index.html'));
+});
 
 // Pricing page route
 app.get('/pricing', (req, res) => {
