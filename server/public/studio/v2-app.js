@@ -86,16 +86,16 @@ function updateGenerateButtonCost() {
     var btn = document.querySelector('#generate-btn .btn-text');
     if (!btn) return;
     if (directorMode) {
-        // Director: script (5) + images (~12 scenes × 2) = ~29 credits
-        btn.textContent = 'Generate Scenes + Images · ~29 💎';
+        // Director: script (5) + images (~12 scenes × 0.5) = ~11 credits
+        btn.textContent = 'Generate Scenes + Images · ~11 💎';
     } else {
         var withVideos = document.getElementById('generateVideos')?.checked;
         if (withVideos) {
-            // Auto with videos: script (5) + images (12×2) + videos (12×5) + assembly (5) = ~94
-            btn.textContent = 'Generate Video · ~94 💎';
+            // Auto with videos: script (5) + images (12×0.5) + videos (12×5) + assembly (2) = ~73
+            btn.textContent = 'Generate Video · ~73 💎';
         } else {
-            // Auto images only: script (5) + images (12×2) = ~29
-            btn.textContent = 'Generate Images Only · ~29 💎';
+            // Auto images only: script (5) + images (12×0.5) = ~11
+            btn.textContent = 'Generate Images Only · ~11 💎';
         }
     }
 }
@@ -119,6 +119,18 @@ function initGenerateButton() {
     
     // Set initial button cost
     updateGenerateButtonCost();
+    
+    // Word count tracker
+    var scriptEl = document.getElementById('script');
+    var wcHint = document.getElementById('word-count-hint');
+    if (scriptEl && wcHint) {
+        scriptEl.addEventListener('input', function() {
+            var words = scriptEl.value.trim().split(/\s+/).filter(function(w) { return w.length > 0; }).length;
+            var color = (words >= 150 && words <= 220) ? '#22c55e' : (words > 220 ? '#f59e0b' : 'var(--text-muted)');
+            wcHint.style.color = color;
+            wcHint.textContent = words + ' word' + (words !== 1 ? 's' : '') + (words >= 150 && words <= 220 ? ' ✓' : '');
+        });
+    }
 }
 
 // ==================== DIRECTOR MODE ====================
@@ -156,7 +168,7 @@ async function handleDirectorGeneration(script) {
         bar.id = 'director-action-bar';
         bar.innerHTML = `
             <button class="btn btn-green" onclick="generateAllSelectedVideos()">🎥 Generate All Videos</button>
-            <button class="btn btn-primary" onclick="assembleVideo()" id="director-assemble-btn" style="display:none">🎬 Assemble · 5 💎</button>
+            <button class="btn btn-primary" onclick="assembleVideo()" id="director-assemble-btn" style="display:none">🎬 Assemble · 2 💎</button>
             <button class="btn btn-primary" onclick="downloadAllDirectorVideos()" id="director-download-btn" style="display:none">📥 Download All Videos</button>
             <button class="btn btn-secondary" onclick="resetToConfig()">← Start Over</button>
         `;
@@ -209,7 +221,7 @@ function createDirectorCard(scene, index) {
         </div>
         
         <div class="scene-controls">
-            <button class="btn btn-secondary btn-sm" onclick="generateSceneImages(${index}, 4)">↻ More Images · 2 💎</button>
+            <button class="btn btn-secondary btn-sm" onclick="generateSceneImages(${index}, 4)">↻ More Images · 0.5 💎</button>
             <button class="btn-upload" id="upload-btn-${index}" onclick="triggerUpload(${index})" title="Upload your own image">+ Upload</button>
             <button class="btn btn-green btn-sm" onclick="generateSceneVideo(${index})" id="video-btn-${index}" disabled>🎥 Generate Video · 5 💎</button>
         </div>
@@ -293,12 +305,12 @@ async function generateSceneImages(sceneIndex, count) {
             gallery.appendChild(w);
         });
         
-        // If ALL images failed, show one single error message
+        // If ALL images failed, show one single error message with credit protection notice
         var successCount = data.images.filter(function(img) { return !img.error; }).length;
         if (successCount === 0) {
             var errEl = document.createElement('div');
             errEl.className = 'gallery-error';
-            errEl.innerHTML = 'Generation failed · <a href="#" onclick="event.preventDefault();generateSceneImages(' + sceneIndex + ', 4)" style="color:var(--accent);text-decoration:underline">Retry</a>';
+            errEl.innerHTML = '🛡️ Image generation failed. <span style="color:#22c55e">No credits charged.</span><br><a href="#" onclick="event.preventDefault();generateSceneImages(' + sceneIndex + ', 4)" style="color:var(--accent);text-decoration:underline">Retry</a>';
             gallery.appendChild(errEl);
         }
         
@@ -311,7 +323,7 @@ async function generateSceneImages(sceneIndex, count) {
     } catch (error) {
         console.error(`Scene ${sceneIndex + 1} image error:`, error);
         if (existing.length === 0) {
-            gallery.innerHTML = '<div class="gallery-error">Generation failed · <a href="#" onclick="event.preventDefault();generateSceneImages(' + sceneIndex + ', 4)" style="color:var(--accent);text-decoration:underline">Retry</a></div>';
+            gallery.innerHTML = '<div class="gallery-error">🛡️ Image generation failed. <span style="color:#22c55e">No credits charged.</span><br><a href="#" onclick="event.preventDefault();generateSceneImages(' + sceneIndex + ', 4)" style="color:var(--accent);text-decoration:underline">Retry</a></div>';
         }
     }
 }
@@ -392,7 +404,7 @@ async function generateSceneVideo(idx) {
         
     } catch (err) {
         console.error(`Scene ${idx + 1} video error:`, err);
-        result.innerHTML = '<div class="video-error">Failed · <a href="#" onclick="event.preventDefault();generateSceneVideo(' + idx + ')" style="color:var(--accent);text-decoration:underline">Retry</a></div>';
+        result.innerHTML = '<div class="video-error">🛡️ Video generation failed. <span style="color:#22c55e">No credits charged.</span><br><a href="#" onclick="event.preventDefault();generateSceneVideo(' + idx + ')" style="color:var(--accent);text-decoration:underline">Retry</a></div>';
     } finally {
         btn.disabled = false; btn.textContent = '🎥 Generate Video';
     }
@@ -543,7 +555,15 @@ function renderAssemblyResult(container, result, retryFnName) {
 async function assembleAutoVideo() {
     var scenes = currentScenes.filter(function(s) { return s.videoUrl; });
     if (scenes.length === 0) return alert('No videos generated yet');
-    if (!confirm('Assemble final video from ' + scenes.length + ' scenes?\nEstimated time: 2-4 minutes.')) return;
+    
+    // Warn about missing scenes
+    var missing = currentScenes.filter(function(s) { return !s.videoUrl; });
+    var confirmMsg = 'Assemble final video from ' + scenes.length + ' scenes?\nEstimated time: 2-4 minutes.';
+    if (missing.length > 0) {
+        var missingNums = missing.map(function(s) { return 'Scene ' + (s.sceneNumber || '?'); }).join(', ');
+        confirmMsg = '⚠️ ' + missing.length + ' scene(s) have no video: ' + missingNums + '\n\nAssemble with ' + scenes.length + ' available scenes?\nEstimated time: 2-4 minutes.';
+    }
+    if (!confirm(confirmMsg)) return;
     var btn = document.getElementById('auto-assemble-btn');
     btn.disabled = true; btn.textContent = '⏳ Submitting...';
     show('generation-warning');
@@ -557,7 +577,7 @@ async function assembleAutoVideo() {
         renderAssemblyResult(rd, result, 'assembleAutoVideo');
     } catch (err) {
         console.error('Assembly error:', err);
-        rd.innerHTML = '<div class="assembly-progress" style="color:var(--red)">❌ ' + err.message + '</div>';
+        rd.innerHTML = '<div class="assembly-progress" style="color:var(--red)">❌ ' + err.message + '<br><span style="color:#22c55e">🛡️ Credits refunded.</span> Please retry.</div>';
     } finally {
         btn.disabled = false; btn.textContent = '🎬 Assemble Final Video';
         hide('generation-warning');
@@ -567,7 +587,15 @@ async function assembleAutoVideo() {
 async function assembleVideo() {
     var scenes = currentScenes.filter(function(s) { return s._videoUrl; });
     if (scenes.length === 0) return alert('Generate videos first');
-    if (!confirm('Assemble final video from ' + scenes.length + ' scenes?\nEstimated time: 2-4 minutes.')) return;
+    
+    // Warn about missing scenes
+    var missing = currentScenes.filter(function(s) { return !s._videoUrl; });
+    var confirmMsg = 'Assemble final video from ' + scenes.length + ' scenes?\nEstimated time: 2-4 minutes.';
+    if (missing.length > 0) {
+        var missingNums = missing.map(function(s) { return 'Scene ' + (s.sceneNumber || '?'); }).join(', ');
+        confirmMsg = '⚠️ ' + missing.length + ' scene(s) have no video: ' + missingNums + '\n\nAssemble with ' + scenes.length + ' available scenes?\nEstimated time: 2-4 minutes.';
+    }
+    if (!confirm(confirmMsg)) return;
     var btn = document.getElementById('director-assemble-btn');
     btn.disabled = true; btn.textContent = '⏳ Submitting...';
     show('generation-warning');
@@ -586,7 +614,7 @@ async function assembleVideo() {
         renderAssemblyResult(rd, result, 'assembleVideo');
     } catch (err) {
         console.error('Assembly error:', err);
-        rd.innerHTML = '<div style="color:var(--red)">❌ ' + err.message + '</div>';
+        rd.innerHTML = '<div style="color:var(--red)">❌ ' + err.message + '<br><span style="color:#22c55e">🛡️ Credits refunded.</span> Please retry.</div>';
     } finally {
         btn.disabled = false; btn.textContent = '🎬 Assemble Final Video';
         hide('generation-warning');

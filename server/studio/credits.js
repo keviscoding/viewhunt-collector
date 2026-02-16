@@ -3,9 +3,9 @@
  * 
  * Credit costs per action:
  *   - Script generation (Claude): 5 credits
- *   - Image generation (per scene): 2 credits
+ *   - Image generation (per scene): 0.5 credits
  *   - Video generation (per scene): 5 credits
- *   - Final assembly (TTS + Whisper + FFmpeg): 5 credits
+ *   - Final assembly (TTS + Whisper + FFmpeg): 2 credits
  * 
  * Plans:
  *   - Starter ($29/mo): 300 credits/mo
@@ -26,9 +26,9 @@ const TRANSACTIONS = 'credit_transactions';
 // Credit costs per action
 const COSTS = {
     script_generation: 5,
-    image_generation: 2,   // per scene
+    image_generation: 0.5,   // per scene (was 2, reduced — nano-banana is cheap)
     video_generation: 5,   // per scene
-    assembly: 5
+    assembly: 2            // was 5, reduced
 };
 
 // Plan credit allocations (monthly)

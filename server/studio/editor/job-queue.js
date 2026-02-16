@@ -28,7 +28,7 @@ class JobQueue {
     /**
      * Submit a new assembly job. Returns immediately with a jobId.
      */
-    submit(script, scenes, voiceName) {
+    submit(script, scenes, voiceName, userId) {
         // Prevent queue flooding — max 10 pending jobs
         if (this.queue.length >= 10) {
             throw new Error('Queue is full. Please wait for current jobs to finish.');
@@ -44,8 +44,10 @@ class JobQueue {
             script,
             scenes,
             voiceName: voiceName || 'Charon',
+            userId: userId || null,
             result: null,
             error: null,
+            _refunded: false,
             createdAt: Date.now()
         });
 
@@ -75,8 +77,17 @@ class JobQueue {
             position: queuePos >= 0 ? queuePos + 1 : 0,
             queueLength: this.queue.length,
             result: job.result,
-            error: job.error
+            error: job.error,
+            _refunded: job._refunded || false
         };
+    }
+
+    /**
+     * Mark a job as refunded (prevents double-refund)
+     */
+    markRefunded(jobId) {
+        const job = this.jobs.get(jobId);
+        if (job) job._refunded = true;
     }
 
     /**

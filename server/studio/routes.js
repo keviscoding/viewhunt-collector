@@ -361,7 +361,7 @@ router.post('/generate/scene-images', requireAuth, studioGenerateLimiter, async 
         const { format, imagePrompt, sceneNumber, count } = req.body;
         if (!format || !imagePrompt) return res.status(400).json({ error: 'Format and imagePrompt are required' });
         
-        // Credit check: image_generation = 3 credits per scene
+        // Credit check: image_generation = 0.5 credits per scene
         const userId = String(req.user.userId);
         const check = await credits.checkCredits(userId, 'image_generation', 1);
         if (!check.allowed) {
@@ -384,6 +384,12 @@ router.post('/generate/scene-images', requireAuth, studioGenerateLimiter, async 
         const results = await Promise.all(imagePromises);
         const images = results.map((r, i) => typeof r === 'string' ? { url: r, index: i } : { error: r.error, index: i });
         
+        // Check if ALL images failed — no credits charged
+        const successCount = images.filter(img => !img.error).length;
+        if (successCount === 0) {
+            return res.json({ success: true, sceneNumber, images, creditProtected: true });
+        }
+        
         // Deduct credits on success (1 scene worth of image generation)
         await credits.deductCredits(userId, 'image_generation', 1, 'Images for scene ' + sceneNumber);
         
@@ -400,7 +406,7 @@ router.post('/generate/scene-video', requireAuth, studioGenerateLimiter, async (
         let { format, imageUrl, videoPrompt, sceneNumber } = req.body;
         if (!format || !imageUrl || !videoPrompt) return res.status(400).json({ error: 'format, imageUrl, and videoPrompt are required' });
         
-        // Credit check: video_generation = 8 credits per scene
+        // Credit check: video_generation = 5 credits per scene
         const userId = String(req.user.userId);
         const check = await credits.checkCredits(userId, 'video_generation', 1);
         if (!check.allowed) {
@@ -431,7 +437,8 @@ router.post('/generate/scene-video', requireAuth, studioGenerateLimiter, async (
         res.json({ success: true, sceneNumber, videoUrl });
     } catch (error) {
         console.error('Scene video generation error:', error.message);
-        res.status(500).json({ error: error.message });
+        // Credits were not deducted (only deducted on success), so no refund needed
+        res.status(500).json({ error: error.message, creditProtected: true });
     }
 });
 
@@ -465,7 +472,7 @@ router.post('/assemble', requireAuth, studioAssemblyLimiter, async (req, res) =>
             return res.status(400).json({ error: 'No scenes have generated videos' });
         }
         
-        // Credit check: assembly = 10 credits
+        // Credit check: assembly = 2 credits
         const userId = String(req.user.userId);
         const check = await credits.checkCredits(userId, 'assembly', 1);
         if (!check.allowed) {
@@ -477,7 +484,7 @@ router.post('/assemble', requireAuth, studioAssemblyLimiter, async (req, res) =>
         
         console.log(`\n🎬 Assembly job submitted: ${scenesWithVideo.length} scenes, ${script.length} chars\n`);
         
-        const jobId = assemblyQueue.submit(script, scenesWithVideo, voiceName);
+        const jobId = assemblyQueue.submit(script, scenesWithVideo, voiceName, userId);
         
         res.json({ success: true, jobId, userId });
         
@@ -489,9 +496,22 @@ router.post('/assemble', requireAuth, studioAssemblyLimiter, async (req, res) =>
 });
 
 // Poll assembly job status
-router.get('/assemble/status/:jobId', requireAuth, (req, res) => {
+router.get('/assemble/status/:jobId', requireAuth, async (req, res) => {
     const status = assemblyQueue.getStatus(req.params.jobId);
     if (!status) return res.status(404).json({ error: 'Job not found' });
+    
+    // Auto-refund credits on assembly failure (once)
+    if (status.status === 'failed' && !status._refunded) {
+        try {
+            const userId = String(req.user.userId);
+            await credits.refundCredits(userId, 'assembly', 1, 'Assembly failed: ' + (status.error || 'unknown'));
+            assemblyQueue.markRefunded(req.params.jobId);
+            status.refunded = true;
+        } catch (refundErr) {
+            console.error('Assembly refund error:', refundErr.message);
+        }
+    }
+    
     res.json(status);
 });
 
