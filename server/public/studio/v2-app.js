@@ -162,6 +162,9 @@ async function handleDirectorGeneration(script) {
         
         currentScenes.forEach((scene, i) => container.appendChild(createDirectorCard(scene, i)));
         
+        // Refresh credit balance after scene generation
+        loadCreditBalance();
+        
         // Action bar with download all + generate all
         const bar = document.createElement('div');
         bar.className = 'action-bar';
@@ -305,6 +308,9 @@ async function generateSceneImages(sceneIndex, count) {
             gallery.appendChild(w);
         });
         
+        // Refresh credit balance
+        loadCreditBalance();
+        
         // If ALL images failed, show one single error message with credit protection notice
         var successCount = data.images.filter(function(img) { return !img.error; }).length;
         if (successCount === 0) {
@@ -398,6 +404,9 @@ async function generateSceneVideo(idx) {
             <video src="${data.videoUrl}" controls muted loop class="video-preview"></video>
             <div style="margin-top:0.5rem"><button class="btn btn-secondary btn-sm" onclick="generateSceneVideo(${idx})">↻ Regenerate</button></div>
         `;
+        
+        // Refresh credit balance
+        loadCreditBalance();
         
         // Show download all button if any videos exist
         updateDirectorDownloadBtn();
@@ -700,6 +709,7 @@ function handleSceneComplete(scene, hasVideos) {
     const card = createAutoCard(scene, scene.sceneNumber, hasVideos);
     container.appendChild(card);
     card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    loadCreditBalance();
 }
 
 function handleComplete(data) {
