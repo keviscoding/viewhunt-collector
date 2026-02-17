@@ -115,24 +115,27 @@ function getAuthToken(){
 (function(){
     // === PLANS ===
     var plans=[
-        {id:'starter',name:'Starter',price:'$29',credits:'300',pop:false,features:[
+        {id:'starter',name:'Starter',price:'$29',credits:'300',pop:false,content:'~4 min of finished content',features:[
             'ViewHunt Niche Database (unlimited)',
             '300 video credits per month',
+            '~4 full videos per month (~48 scene clips)',
             'All video formats & styles',
             'Custom SFX & background music',
             'Word-by-word captions'
         ]},
-        {id:'creator',name:'Creator',price:'$59',credits:'600',pop:true,features:[
+        {id:'creator',name:'Creator',price:'$59',credits:'600',pop:true,content:'~8 min of finished content',features:[
             'ViewHunt Niche Database (unlimited)',
             '600 video credits per month',
+            '~8 full videos per month (~96 scene clips)',
             'All video formats & styles',
             'Custom SFX & background music',
             'Word-by-word captions',
             'Priority generation queue'
         ]},
-        {id:'studio',name:'Studio',price:'$119',credits:'1,200',pop:false,features:[
+        {id:'studio',name:'Studio',price:'$119',credits:'1,200',pop:false,content:'~16 min of finished content',features:[
             'ViewHunt Niche Database (unlimited)',
             '1,200 video credits per month',
+            '~16 full videos per month (~192 scene clips)',
             'All video formats & styles',
             'Custom SFX & background music',
             'Word-by-word captions',
@@ -148,6 +151,7 @@ function getAuthToken(){
         h+='<div class="plan-name">'+p.name+'</div>';
         h+='<div class="plan-price">'+p.price+' <span>/month</span></div>';
         h+='<div class="plan-credits">💎 '+p.credits+' credits/month</div>';
+        if(p.content) h+='<div class="plan-videos">📹 '+p.content+'</div>';
         h+='<ul class="plan-features">';
         p.features.forEach(function(f){h+='<li>'+f+'</li>'});
         h+='</ul>';
@@ -159,9 +163,9 @@ function getAuthToken(){
 
     // === TOP-UPS ===
     var packs=[
-        {id:'small',credits:'200',videos:'~2 videos',was:'$30',now:'$19.99',discount:'-33%',per:'$0.10/credit',best:false},
-        {id:'medium',credits:'500',videos:'~5 videos',was:'$70',now:'$49.99',discount:'-29%',per:'$0.10/credit',best:false},
-        {id:'large',credits:'1,200',videos:'~12 videos',was:'$140',now:'$99.99',discount:'-29%',per:'$0.083/credit',best:true}
+        {id:'small',credits:'200',videos:'~36 scene clips · ~3 min of content',was:'$30',now:'$19.99',discount:'-33%',per:'$0.10/credit',best:false},
+        {id:'medium',credits:'500',videos:'~90 scene clips · ~7 min of content',was:'$70',now:'$49.99',discount:'-29%',per:'$0.10/credit',best:false},
+        {id:'large',credits:'1,200',videos:'~218 scene clips · ~18 min of content',was:'$140',now:'$99.99',discount:'-29%',per:'$0.083/credit',best:true}
     ];
 
     var t='<div class="topup-section"><h2>🔋 Need more credits?</h2><p>Buy a top-up pack anytime. Top-up credits never expire.</p><div class="topup-grid">';
@@ -187,10 +191,11 @@ function getAuthToken(){
     f+='</div>';
     f+='<div class="cost-table"><h3>💎 Credit Costs Per Action</h3>';
     f+='<div class="cost-row"><span>Script Generation</span><span>5 credits</span></div>';
-    f+='<div class="cost-row"><span>Image Generation (per scene)</span><span>2 credits</span></div>';
-    f+='<div class="cost-row"><span>Video Generation (per scene)</span><span>5 credits</span></div>';
-    f+='<div class="cost-row"><span>Final Assembly</span><span>5 credits</span></div>';
-    f+='<div class="cost-row" style="border-top:2px solid var(--border);margin-top:0.25rem;padding-top:0.5rem"><span style="font-weight:700">Full Video (~12 scenes)</span><span style="font-weight:700">~94 credits</span></div>';
+    f+='<div class="cost-row"><span>Image Generation (per scene)</span><span>0.5 credits</span></div>';
+    f+='<div class="cost-row"><span>Video Clip Generation (5s, per scene)</span><span>5 credits</span></div>';
+    f+='<div class="cost-row"><span>Final Assembly (voiceover + captions + SFX)</span><span>2 credits</span></div>';
+    f+='<div class="cost-row" style="border-top:2px solid var(--border);margin-top:0.25rem;padding-top:0.5rem"><span style="font-weight:700">Full Video (~12 scenes, ~1 min)</span><span style="font-weight:700">~73 credits</span></div>';
+    f+='<div style="text-align:center;margin-top:0.75rem;font-size:0.78rem;color:var(--text-dim);line-height:1.5">Each scene = one 5-second AI video clip.<br>A 12-scene video = ~1 minute of finished content.<br>🛡️ Failed generations are never charged.</div>';
     f+='</div></div>';
     document.getElementById('features').innerHTML=f;
 })();
