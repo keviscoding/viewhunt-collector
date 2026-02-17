@@ -117,7 +117,7 @@ app.post('/api/leads/capture', rateLimit({ windowMs: 60000, max: 10 }), async (r
 // Verify access token from email link → redirect to /app
 app.get('/free/access', async (req, res) => {
     var token = req.query.token;
-    if (!token) return res.redirect('/free');
+    if (!token) return res.redirect('/');
 
     try {
         var lead = await db.collection('leads').findOneAndUpdate(
@@ -134,16 +134,16 @@ app.get('/free/access', async (req, res) => {
         console.error('Access token error:', err);
     }
 
-    // Invalid or expired token — still send them to the funnel
-    res.redirect('/free');
+    // Invalid or expired token — send to landing page
+    res.redirect('/');
 });
 
-// Landing page route — redirect to /free funnel
+// Landing page route — serve the original landing page
 app.get('/', (req, res) => {
-    res.redirect('/free');
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Free funnel page (index: false means we need an explicit route)
+// Free funnel page (still accessible directly)
 app.get('/free', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'free', 'index.html'));
 });
