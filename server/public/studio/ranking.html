@@ -29,13 +29,9 @@
         .logo{font-size:1rem;font-weight:700;letter-spacing:-0.02em}
         .logo span{color:var(--accent)}
         .credit-badge{display:flex;align-items:center;gap:0.4rem;padding:0.4rem 0.75rem;border-radius:8px;background:var(--surface);border:1px solid var(--border);font-size:0.85rem;font-weight:600}
-
-        /* Cards */
         .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:1.5rem;margin-bottom:1.25rem}
         .card-title{font-size:1.1rem;font-weight:700;margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem}
         .card-desc{font-size:0.85rem;color:var(--text-muted);line-height:1.5;margin-bottom:1rem}
-
-        /* Steps indicator */
         .steps{display:flex;gap:0.5rem;margin-bottom:1.5rem}
         .step{flex:1;height:4px;border-radius:2px;background:var(--surface-3);transition:background 0.3s}
         .step.active{background:var(--accent)}
@@ -43,30 +39,44 @@
 
         /* Clip list */
         .clip-list{display:flex;flex-direction:column;gap:0.75rem}
-        .clip-item{display:flex;align-items:center;gap:0.75rem;padding:0.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;position:relative}
-        .clip-item .clip-num{width:32px;height:32px;border-radius:50%;background:var(--yellow);color:#0e0e12;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.9rem;flex-shrink:0}
-        .clip-item .clip-info{flex:1;min-width:0}
-        .clip-item .clip-name{font-size:0.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-        .clip-item .clip-meta{font-size:0.75rem;color:var(--text-dim)}
-        .clip-item .clip-actions{display:flex;gap:0.4rem}
-        .clip-item .clip-actions button{background:var(--surface-3);border:1px solid var(--border);color:var(--text-muted);padding:0.3rem 0.5rem;border-radius:6px;cursor:pointer;font-size:0.75rem;transition:all 0.15s}
-        .clip-item .clip-actions button:hover{color:var(--text);border-color:var(--border-hover)}
-        .clip-item .clip-actions button.danger:hover{color:var(--red);border-color:var(--red)}
+        .clip-item{display:flex;align-items:center;gap:0.75rem;padding:0.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px}
+        .clip-num{width:32px;height:32px;border-radius:50%;background:var(--yellow);color:#0e0e12;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.9rem;flex-shrink:0}
+        .clip-info{flex:1;min-width:0}
+        .clip-name{font-size:0.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .clip-meta{font-size:0.75rem;color:var(--text-dim)}
+        .clip-actions{display:flex;gap:0.4rem}
+        .clip-actions button{background:var(--surface-3);border:1px solid var(--border);color:var(--text-muted);padding:0.3rem 0.5rem;border-radius:6px;cursor:pointer;font-size:0.75rem;transition:all 0.15s}
+        .clip-actions button:hover{color:var(--text);border-color:var(--border-hover)}
+        .clip-actions button.danger:hover{color:var(--red);border-color:var(--red)}
 
         /* Upload area */
         .upload-zone{border:2px dashed var(--border);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s}
-        .upload-zone:hover{border-color:var(--accent);background:var(--accent-glow)}
-        .upload-zone.dragover{border-color:var(--accent);background:var(--accent-glow)}
+        .upload-zone:hover,.upload-zone.dragover{border-color:var(--accent);background:var(--accent-glow)}
         .upload-zone p{color:var(--text-muted);font-size:0.9rem;margin-top:0.5rem}
         .upload-zone .icon{font-size:2rem;margin-bottom:0.25rem}
 
-        /* Trim UI */
-        .trim-container{margin-top:1rem}
-        .trim-video{width:100%;max-height:400px;border-radius:10px;background:#000;margin-bottom:0.75rem}
-        .trim-controls{display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap}
-        .trim-input{display:flex;align-items:center;gap:0.4rem;font-size:0.85rem}
-        .trim-input label{color:var(--text-muted);font-size:0.8rem}
-        .trim-input input{width:70px;padding:0.35rem 0.5rem;border-radius:6px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:0.85rem;font-family:inherit}
+        /* Timeline scrubber */
+        .trim-video-wrap{position:relative;width:100%;background:#000;border-radius:10px;overflow:hidden;margin-bottom:0.75rem}
+        .trim-video{width:100%;display:block;max-height:360px;object-fit:contain}
+        .timeline-wrap{position:relative;margin:0.75rem 0;user-select:none}
+        .timeline-track{position:relative;height:48px;background:var(--surface-3);border-radius:8px;overflow:hidden;cursor:pointer}
+        .timeline-fill{position:absolute;top:0;height:100%;background:rgba(124,106,239,0.3);border-left:3px solid var(--accent);border-right:3px solid var(--accent);pointer-events:none}
+        .timeline-playhead{position:absolute;top:-6px;width:3px;height:60px;background:var(--red);border-radius:2px;pointer-events:none;z-index:3}
+        .timeline-playhead::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:8px solid var(--red)}
+        .timeline-handle{position:absolute;top:0;width:14px;height:100%;cursor:ew-resize;z-index:2;display:flex;align-items:center;justify-content:center}
+        .timeline-handle::after{content:'';width:4px;height:24px;border-radius:2px;background:var(--accent)}
+        .timeline-handle.handle-start{left:0}
+        .timeline-handle.handle-end{right:0}
+        .timeline-handle:hover::after{background:white;width:5px}
+        .timeline-ticks{display:flex;justify-content:space-between;padding:0.25rem 0;font-size:0.7rem;color:var(--text-dim)}
+        .trim-info{display:flex;align-items:center;justify-content:space-between;gap:1rem;font-size:0.85rem;margin-top:0.5rem}
+        .trim-info .time-display{display:flex;align-items:center;gap:0.5rem}
+        .trim-info .time-val{font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+        .trim-info .duration-badge{background:var(--green-dim);color:var(--green);padding:0.2rem 0.6rem;border-radius:6px;font-weight:700;font-size:0.85rem}
+
+        /* Label input */
+        .label-input{width:100%;padding:0.45rem 0.65rem;border-radius:6px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:0.85rem;font-family:inherit}
+        .label-input:focus{outline:none;border-color:var(--accent)}
 
         /* Title config */
         .title-input{width:100%;padding:0.65rem 0.85rem;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:1rem;font-family:inherit;margin-bottom:0.75rem}
@@ -74,10 +84,6 @@
         .title-preview{background:#000;border-radius:10px;padding:1.5rem;text-align:center;margin-bottom:1rem}
         .title-preview h2{font-size:1.4rem;color:white;font-weight:800}
         .title-preview h2 .highlight{color:var(--yellow);background:rgba(250,204,21,0.15);padding:0 4px;border-radius:4px}
-
-        /* Label input */
-        .label-input{width:100%;padding:0.45rem 0.65rem;border-radius:6px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:0.85rem;font-family:inherit}
-        .label-input:focus{outline:none;border-color:var(--accent)}
 
         /* Buttons */
         .btn{display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.6rem 1.1rem;border-radius:8px;font-weight:600;font-size:0.9rem;cursor:pointer;border:none;transition:all 0.15s;font-family:inherit}
@@ -95,22 +101,20 @@
         .result-card{text-align:center}
         .result-video{width:100%;max-width:360px;border-radius:12px;margin:1rem auto;display:block}
         .result-info{font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem}
-
-        /* Progress */
         .progress-bar{width:100%;height:6px;background:var(--surface-3);border-radius:3px;overflow:hidden;margin:1rem 0}
         .progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width 0.3s}
         .progress-text{font-size:0.85rem;color:var(--text-muted);text-align:center}
 
-        /* Drag handle */
-        .drag-handle{cursor:grab;color:var(--text-dim);font-size:1.1rem;padding:0 0.25rem}
+        /* Drag reorder */
+        .drag-handle{cursor:grab;color:var(--text-dim);font-size:1.1rem;padding:0 0.25rem;flex-shrink:0}
         .drag-handle:active{cursor:grabbing}
+        .clip-item.dragging{opacity:0.4}
 
-        /* Hidden */
-        .hidden{display:none}
+        .hidden{display:none!important}
 
         @media(max-width:640px){
             .app{padding:1rem 0.75rem 3rem}
-            .trim-controls{flex-direction:column;align-items:stretch}
+            .timeline-track{height:40px}
         }
     </style>
 </head>
@@ -124,7 +128,6 @@
         <div class="credit-badge">💎 <span id="credit-balance">—</span></div>
     </header>
 
-    <!-- Steps indicator -->
     <div class="steps">
         <div class="step active" id="step-1"></div>
         <div class="step" id="step-2"></div>
@@ -135,7 +138,7 @@
     <!-- STEP 1: Upload clips -->
     <div id="screen-upload" class="card">
         <div class="card-title">📤 Upload Your Clips</div>
-        <div class="card-desc">Upload the video clips you want to rank. You can upload 2–10 clips. Drag and drop or click to browse.</div>
+        <div class="card-desc">Upload the video clips you want to rank (2–10 clips). Drag and drop or click to browse.</div>
 
         <div class="upload-zone" id="upload-zone">
             <div class="icon">🎬</div>
@@ -154,25 +157,29 @@
     <!-- STEP 2: Trim each clip -->
     <div id="screen-trim" class="card hidden">
         <div class="card-title">✂️ Trim Clip <span id="trim-clip-num">1</span> of <span id="trim-total">1</span></div>
-        <div class="card-desc">Set the start and end time for this clip. Only the selected portion will be used.</div>
+        <div class="card-desc">Drag the purple handles to set the start and end points. Click the timeline to seek.</div>
 
-        <video class="trim-video" id="trim-video" controls></video>
+        <div class="trim-video-wrap">
+            <video class="trim-video" id="trim-video"></video>
+        </div>
 
-        <div class="trim-controls">
-            <div class="trim-input">
-                <label>Start (s):</label>
-                <input type="number" id="trim-start" value="0" min="0" step="0.1">
-                <button class="btn btn-secondary" id="btn-set-start" style="font-size:0.75rem;padding:0.3rem 0.5rem">Set to current</button>
+        <!-- Timeline scrubber -->
+        <div class="timeline-wrap" id="timeline-wrap">
+            <div class="timeline-track" id="timeline-track">
+                <div class="timeline-fill" id="timeline-fill"></div>
+                <div class="timeline-handle handle-start" id="handle-start"></div>
+                <div class="timeline-handle handle-end" id="handle-end"></div>
+                <div class="timeline-playhead" id="timeline-playhead"></div>
             </div>
-            <div class="trim-input">
-                <label>End (s):</label>
-                <input type="number" id="trim-end" value="0" min="0" step="0.1">
-                <button class="btn btn-secondary" id="btn-set-end" style="font-size:0.75rem;padding:0.3rem 0.5rem">Set to current</button>
+            <div class="timeline-ticks" id="timeline-ticks"></div>
+        </div>
+
+        <div class="trim-info">
+            <div class="time-display">
+                <span style="color:var(--text-dim)">In:</span> <span class="time-val" id="trim-start-display">0.0s</span>
+                <span style="color:var(--text-dim);margin-left:0.5rem">Out:</span> <span class="time-val" id="trim-end-display">0.0s</span>
             </div>
-            <div class="trim-input">
-                <label>Duration:</label>
-                <span id="trim-duration" style="font-weight:600">0.0s</span>
-            </div>
+            <div class="duration-badge" id="trim-duration-badge">0.0s selected</div>
         </div>
 
         <div style="margin-top:0.75rem">
@@ -189,7 +196,7 @@
     <!-- STEP 3: Title & Order -->
     <div id="screen-title" class="card hidden">
         <div class="card-title">🎯 Title & Order</div>
-        <div class="card-desc">Set your video title and arrange the clip order. The last clip (#1) is the big reveal.</div>
+        <div class="card-desc">Set your video title and arrange the clip order. The last clip plays as the #1 reveal.</div>
 
         <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:0.35rem">Video Title:</label>
         <input type="text" class="title-input" id="title-text" placeholder="e.g. Ranking The Best Baby Moments" maxlength="60">
@@ -201,7 +208,7 @@
             <h2>Your Title Here</h2>
         </div>
 
-        <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:0.5rem">Clip playback order (drag to reorder — #1 plays last as the big reveal):</label>
+        <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:0.5rem">Clip playback order (drag to reorder — last clip = #1 big reveal):</label>
         <div class="clip-list" id="order-list"></div>
 
         <div class="btn-row">
@@ -214,21 +221,21 @@
     <div id="screen-result" class="card hidden result-card">
         <div class="card-title" style="justify-content:center">🎉 Your Ranking Video</div>
 
-        <div id="assembly-progress" class="hidden">
+        <div id="assembly-progress">
             <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
             <div class="progress-text" id="progress-text">Assembling...</div>
         </div>
 
-        <video class="result-video" id="result-video" controls class="hidden"></video>
-        <div class="result-info" id="result-info"></div>
+        <video class="result-video hidden" id="result-video" controls></video>
+        <div class="result-info hidden" id="result-info"></div>
 
-        <div class="btn-row" style="justify-content:center" id="result-actions" class="hidden">
+        <div class="btn-row hidden" style="justify-content:center" id="result-actions">
             <a class="btn btn-green" id="btn-download" download>⬇ Download</a>
             <button class="btn btn-secondary" id="btn-new">+ New Ranking Video</button>
         </div>
     </div>
 </div>
 
-<script src="/studio/ranking-app.js?v=20260218a"></script>
+<script src="/studio/ranking-app.js?v=20260218b"></script>
 </body>
 </html>

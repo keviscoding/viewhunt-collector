@@ -3,12 +3,10 @@
  * 
  * Takes user-uploaded/downloaded clips, trims them, adds:
  *   - Black bars top/bottom (letterbox for 9:16)
- *   - Numbered list on left side
- *   - Title text overlay with highlighted keyword
  *   - Concatenates clips in user-specified order
  * 
  * Phase 1: Upload + trim + basic concat with black bars
- * Phase 2: Title overlay + numbered list
+ * Phase 2: Title overlay + numbered list (image-based overlays)
  */
 const { execFile } = require('child_process');
 const { promisify } = require('util');
@@ -28,27 +26,6 @@ class RankingAssembler {
         for (var dir of [this.tempDir, this.outputDir, this.uploadDir]) {
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         }
-
-        // Find a usable font for drawtext
-        this.fontPath = this.findFont();
-    }
-
-    /**
-     * Find a font file that exists on this system
-     */
-    findFont() {
-        var candidates = [
-            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-            '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
-            '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf',
-            '/System/Library/Fonts/Helvetica.ttc',
-            '/System/Library/Fonts/SFNSMono.ttf'
-        ];
-        for (var i = 0; i < candidates.length; i++) {
-            if (fs.existsSync(candidates[i])) return candidates[i];
-        }
-        return null; // Will use FFmpeg default font
     }
 
     /**
@@ -67,7 +44,7 @@ class RankingAssembler {
     }
 
     /**
-     * Get video dimensions
+     * Get video dimensions + duration
      */
     async getVideoInfo(filePath) {
         try {
@@ -80,11 +57,7 @@ class RankingAssembler {
             var info = JSON.parse(r.stdout);
             var stream = (info.streams && info.streams[0]) || {};
             var duration = parseFloat(stream.duration) || parseFloat((info.format || {}).duration) || 0;
-            return {
-                width: stream.width || 0,
-                height: stream.height || 0,
-                duration: duration
-            };
+            return { width: stream.width || 0, height: stream.height || 0, duration: duration };
         } catch (err) {
             return { width: 0, height: 0, duration: 0 };
         }
@@ -92,18 +65,18 @@ class RankingAssembler {
 
     /**
      * Trim a clip: extract from startTime to endTime
-     * Returns path to trimmed file
      */
     async trimClip(inputPath, startTime, endTime, outputPath) {
         var duration = endTime - startTime;
         if (duration <= 0) throw new Error('Invalid trim range');
 
         await this.ffmpeg([
-            '-i', inputPath,
             '-ss', String(startTime),
+            '-i', inputPath,
             '-t', String(duration),
             '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
             '-c:a', 'aac', '-b:a', '128k',
+            '-avoid_negative_ts', 'make_zero',
             '-y', outputPath
         ]);
 
@@ -111,12 +84,24 @@ class RankingAssembler {
     }
 
     /**
+     * Generate a thumbnail at a specific timestamp
+     */
+    async generateThumbnail(inputPath, timestamp, outputPath) {
+        await this.ffmpeg([
+            '-ss', String(timestamp),
+            '-i', inputPath,
+            '-vframes', '1',
+            '-vf', 'scale=320:-1',
+            '-y', outputPath
+        ]);
+        return outputPath;
+    }
+
+    /**
      * Assemble ranking video from trimmed clips.
      * 
-     * clips: [{ path, label, number }] — in playback order
-     * title: { text, highlightWord, highlightColor }
-     * 
-     * Output: 1080x1920 (9:16) with black bars, numbered list, title
+     * clips: [{ path, number }] — in playback order
+     * Output: 1080x1920 (9:16) with black bars
      */
     async assemble(clips, title, options) {
         options = options || {};
@@ -132,7 +117,7 @@ class RankingAssembler {
             for (var i = 0; i < clips.length; i++) {
                 var clip = clips[i];
                 var outPath = path.join(jobDir, 'norm-' + i + '.ts');
-                await this.normalizeClip(clip.path, outPath, clip.number, clip.label, title);
+                await this.normalizeClip(clip.path, outPath);
                 normalizedPaths.push(outPath);
                 console.log('  ✓ Clip ' + (i + 1) + '/' + clips.length + ' normalized');
             }
@@ -153,9 +138,7 @@ class RankingAssembler {
             var finalPath = path.join(this.outputDir, outputName);
             fs.copyFileSync(concatPath, finalPath);
 
-            // Get duration
             var duration = await this.getDuration(finalPath);
-
             console.log('🏆 Ranking video complete: ' + duration.toFixed(1) + 's');
 
             return {
@@ -165,7 +148,6 @@ class RankingAssembler {
             };
 
         } finally {
-            // Cleanup temp
             try {
                 if (fs.existsSync(jobDir)) fs.rmSync(jobDir, { recursive: true, force: true });
             } catch (e) { console.warn('Cleanup:', e.message); }
@@ -173,58 +155,12 @@ class RankingAssembler {
     }
 
     /**
-     * Normalize a single clip to 1080x1920 with:
-     * - Black bars top/bottom
-     * - Number overlay on left
-     * - Clip label next to number
-     * - Title at top
+     * Normalize a single clip to 1080x1920 with black bars.
+     * Phase 1: scale + pad only (no drawtext — ffmpeg-static lacks libfreetype).
      */
-    async normalizeClip(inputPath, outputPath, number, label, title) {
-        var filters = [];
-        var fontOpt = this.fontPath ? ':fontfile=' + this.fontPath : '';
-
-        // Scale + pad to 1080x1920 with black bars
-        filters.push(
-            'scale=1080:1440:force_original_aspect_ratio=decrease',
-            'pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black'
-        );
-
-        // Number overlay — big yellow number on left
-        if (number) {
-            filters.push(
-                "drawtext=text='" + number + "'" +
-                ":fontsize=120:fontcolor=yellow" +
-                ":x=40:y=(h/2)-60" +
-                fontOpt +
-                ":borderw=4:bordercolor=black"
-            );
-        }
-
-        // Label next to number
-        if (label) {
-            var safeLabel = label.replace(/'/g, "'\\''").replace(/:/g, '\\:');
-            filters.push(
-                "drawtext=text='" + safeLabel + "'" +
-                ":fontsize=36:fontcolor=white" +
-                ":x=180:y=(h/2)-18" +
-                fontOpt +
-                ":borderw=2:bordercolor=black"
-            );
-        }
-
-        // Title at top center
-        if (title && title.text) {
-            var safeTitle = title.text.replace(/'/g, "'\\''").replace(/:/g, '\\:');
-            filters.push(
-                "drawtext=text='" + safeTitle + "'" +
-                ":fontsize=48:fontcolor=white" +
-                ":x=(w-text_w)/2:y=60" +
-                fontOpt +
-                ":borderw=3:bordercolor=black"
-            );
-        }
-
-        var filterStr = filters.join(',');
+    async normalizeClip(inputPath, outputPath) {
+        // Scale to fit 1080 wide, max 1440 tall, then pad to 1080x1920 centered (black bars)
+        var filterStr = 'scale=1080:1440:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black';
 
         await this.ffmpeg([
             '-i', inputPath,

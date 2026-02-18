@@ -1,24 +1,26 @@
 /**
  * Ranking Video — Frontend App
- * Phase 1: Upload clips → Trim → Title/Order → Assemble
+ * Upload clips → Trim with visual timeline → Title/Order → Assemble
  */
 (function() {
     'use strict';
 
     // --- State ---
-    var clips = []; // [{ filename, url, duration, label, startTime, endTime, originalDuration }]
+    var clips = []; // [{ filename, url, duration, label, startTime, endTime, originalDuration, originalName }]
     var currentTrimIndex = 0;
     var currentStep = 1;
+
+    // Timeline drag state
+    var dragging = null; // 'start', 'end', or 'playhead'
+    var timelineDuration = 0;
 
     // --- Auth ---
     function getToken() {
         return localStorage.getItem('viewhunt_token') || localStorage.getItem('token') || null;
     }
-
     function authHeaders() {
         return { 'Authorization': 'Bearer ' + getToken() };
     }
-
     async function apiFetch(url, opts) {
         opts = opts || {};
         opts.headers = Object.assign({}, opts.headers || {}, authHeaders());
@@ -30,21 +32,19 @@
         return res;
     }
 
-    // --- Credit balance ---
+    // --- Credits ---
     async function loadCredits() {
         try {
             var res = await apiFetch('/api/studio/credits/balance');
             var data = await res.json();
-            var el = document.getElementById('credit-balance');
-            if (el) el.textContent = (data.totalAvailable || 0);
+            document.getElementById('credit-balance').textContent = (data.totalAvailable || 0);
         } catch (e) { console.warn('Credits:', e); }
     }
 
     // --- Step navigation ---
     function goToStep(step) {
         currentStep = step;
-        var screens = ['screen-upload', 'screen-trim', 'screen-title', 'screen-result'];
-        screens.forEach(function(id, i) {
+        ['screen-upload','screen-trim','screen-title','screen-result'].forEach(function(id, i) {
             var el = document.getElementById(id);
             if (i + 1 === step) el.classList.remove('hidden');
             else el.classList.add('hidden');
@@ -57,26 +57,18 @@
         }
     }
 
-    // --- Upload ---
+    // ==================== STEP 1: UPLOAD ====================
     function initUpload() {
         var zone = document.getElementById('upload-zone');
         var input = document.getElementById('file-input');
 
         zone.addEventListener('click', function() { input.click(); });
-
-        zone.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            zone.classList.add('dragover');
-        });
-        zone.addEventListener('dragleave', function() {
-            zone.classList.remove('dragover');
-        });
+        zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('dragover'); });
+        zone.addEventListener('dragleave', function() { zone.classList.remove('dragover'); });
         zone.addEventListener('drop', function(e) {
-            e.preventDefault();
-            zone.classList.remove('dragover');
+            e.preventDefault(); zone.classList.remove('dragover');
             if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
         });
-
         input.addEventListener('change', function() {
             if (input.files.length) handleFiles(input.files);
             input.value = '';
@@ -84,83 +76,57 @@
     }
 
     async function handleFiles(fileList) {
-        if (clips.length >= 10) {
-            alert('Maximum 10 clips allowed');
-            return;
-        }
-
-        for (var i = 0; i < fileList.length; i++) {
-            if (clips.length >= 10) break;
+        for (var i = 0; i < fileList.length && clips.length < 10; i++) {
             var file = fileList[i];
             if (!file.type.startsWith('video/')) continue;
             await uploadFile(file);
         }
-        renderClipList();
-        updateNextButton();
+        if (clips.length >= 10) alert('Maximum 10 clips reached');
     }
 
     async function uploadFile(file) {
-        var formData = new FormData();
-        formData.append('clip', file);
-
-        // Show uploading state
-        var tempId = 'uploading-' + Date.now();
-        clips.push({ _tempId: tempId, filename: null, url: null, duration: 0, label: '', startTime: 0, endTime: 0, originalName: file.name, uploading: true });
+        var tempId = 'up-' + Date.now() + Math.random();
+        clips.push({ _tempId: tempId, uploading: true, originalName: file.name, filename: null, url: null, duration: 0, originalDuration: 0, label: '', startTime: 0, endTime: 0 });
         renderClipList();
 
         try {
-            var res = await apiFetch('/api/studio/ranking/upload', {
-                method: 'POST',
-                body: formData
-            });
+            var fd = new FormData();
+            fd.append('clip', file);
+            var res = await apiFetch('/api/studio/ranking/upload', { method: 'POST', body: fd });
             var data = await res.json();
             if (!data.success) throw new Error(data.error || 'Upload failed');
 
-            // Replace temp entry
             var idx = clips.findIndex(function(c) { return c._tempId === tempId; });
             if (idx >= 0) {
                 clips[idx] = {
-                    filename: data.filename,
-                    url: data.url,
-                    duration: data.duration,
-                    originalDuration: data.duration,
-                    label: '',
-                    startTime: 0,
-                    endTime: data.duration,
-                    originalName: file.name,
-                    uploading: false
+                    filename: data.filename, url: data.url,
+                    duration: data.duration, originalDuration: data.duration,
+                    label: '', startTime: 0, endTime: data.duration,
+                    originalName: file.name, uploading: false
                 };
             }
         } catch (err) {
-            // Remove failed upload
             clips = clips.filter(function(c) { return c._tempId !== tempId; });
             alert('Upload failed: ' + err.message);
         }
-
         renderClipList();
         updateNextButton();
     }
 
     function renderClipList() {
         var list = document.getElementById('clip-list');
-        if (!list) return;
         var html = '';
         clips.forEach(function(clip, i) {
-            html += '<div class="clip-item" data-index="' + i + '">';
-            html += '<div class="clip-num">' + (i + 1) + '</div>';
-            html += '<div class="clip-info">';
+            html += '<div class="clip-item"><div class="clip-num">' + (i + 1) + '</div><div class="clip-info">';
             if (clip.uploading) {
-                html += '<div class="clip-name">⏳ Uploading...</div>';
-                html += '<div class="clip-meta">' + (clip.originalName || '') + '</div>';
+                html += '<div class="clip-name">⏳ Uploading ' + (clip.originalName || '') + '</div>';
             } else {
                 html += '<div class="clip-name">' + (clip.originalName || clip.filename) + '</div>';
                 html += '<div class="clip-meta">' + clip.duration.toFixed(1) + 's</div>';
             }
             html += '</div>';
             if (!clip.uploading) {
-                html += '<div class="clip-actions">';
-                html += '<button onclick="window._rankingApp.removeClip(' + i + ')" class="danger" title="Remove">✕</button>';
-                html += '</div>';
+                html += '<div class="clip-actions"><button onclick="window._rk.remove(' + i + ')" class="danger" title="Remove">✕</button></div>';
             }
             html += '</div>';
         });
@@ -168,23 +134,19 @@
     }
 
     function updateNextButton() {
-        var btn = document.getElementById('btn-next-trim');
         var ready = clips.filter(function(c) { return !c.uploading && c.filename; });
-        btn.disabled = ready.length < 2;
+        document.getElementById('btn-next-trim').disabled = ready.length < 2;
     }
 
     function removeClip(index) {
         var clip = clips[index];
-        if (clip && clip.filename) {
-            // Delete from server (fire and forget)
-            apiFetch('/api/studio/ranking/clip/' + clip.filename, { method: 'DELETE' }).catch(function() {});
-        }
+        if (clip && clip.filename) apiFetch('/api/studio/ranking/clip/' + clip.filename, { method: 'DELETE' }).catch(function(){});
         clips.splice(index, 1);
         renderClipList();
         updateNextButton();
     }
 
-    // --- Trim ---
+    // ==================== STEP 2: TRIM WITH TIMELINE ====================
     function startTrimming() {
         currentTrimIndex = 0;
         goToStep(2);
@@ -203,46 +165,144 @@
         video.src = clip.url;
         video.load();
 
-        document.getElementById('trim-start').value = clip.startTime || 0;
-        document.getElementById('trim-end').value = clip.endTime || clip.duration;
+        timelineDuration = clip.originalDuration || clip.duration;
         document.getElementById('trim-label').value = clip.label || '';
-        updateTrimDuration();
 
-        // Prev/next buttons
+        // Wait for video metadata to set up timeline
+        video.onloadedmetadata = function() {
+            timelineDuration = video.duration || clip.duration;
+            if (clip.endTime === 0 || clip.endTime > timelineDuration) clip.endTime = timelineDuration;
+            updateTimelineUI();
+            renderTicks();
+            video.currentTime = clip.startTime;
+        };
+
         document.getElementById('btn-trim-prev').style.display = index === 0 ? 'none' : '';
-        var nextBtn = document.getElementById('btn-trim-next');
-        nextBtn.textContent = index === clips.length - 1 ? 'Next: Title & Order →' : 'Next Clip →';
+        document.getElementById('btn-trim-next').textContent = index === clips.length - 1 ? 'Next: Title & Order →' : 'Next Clip →';
+    }
+
+    function getTrackRect() {
+        return document.getElementById('timeline-track').getBoundingClientRect();
+    }
+
+    function timeToPercent(t) {
+        if (timelineDuration <= 0) return 0;
+        return Math.max(0, Math.min(100, (t / timelineDuration) * 100));
+    }
+
+    function percentToTime(pct) {
+        return Math.max(0, Math.min(timelineDuration, (pct / 100) * timelineDuration));
+    }
+
+    function xToPercent(clientX) {
+        var rect = getTrackRect();
+        return Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+    }
+
+    function updateTimelineUI() {
+        var clip = clips[currentTrimIndex];
+        if (!clip) return;
+
+        var startPct = timeToPercent(clip.startTime);
+        var endPct = timeToPercent(clip.endTime);
+
+        var fill = document.getElementById('timeline-fill');
+        fill.style.left = startPct + '%';
+        fill.style.width = (endPct - startPct) + '%';
+
+        var handleStart = document.getElementById('handle-start');
+        handleStart.style.left = 'calc(' + startPct + '% - 7px)';
+
+        var handleEnd = document.getElementById('handle-end');
+        handleEnd.style.left = 'calc(' + endPct + '% - 7px)';
+
+        // Update displays
+        document.getElementById('trim-start-display').textContent = clip.startTime.toFixed(1) + 's';
+        document.getElementById('trim-end-display').textContent = clip.endTime.toFixed(1) + 's';
+        var dur = Math.max(0, clip.endTime - clip.startTime);
+        document.getElementById('trim-duration-badge').textContent = dur.toFixed(1) + 's selected';
+    }
+
+    function updatePlayhead() {
+        var video = document.getElementById('trim-video');
+        var pct = timeToPercent(video.currentTime);
+        var playhead = document.getElementById('timeline-playhead');
+        playhead.style.left = 'calc(' + pct + '% - 1.5px)';
+    }
+
+    function renderTicks() {
+        var ticks = document.getElementById('timeline-ticks');
+        var count = Math.min(10, Math.max(3, Math.floor(timelineDuration / 5)));
+        var html = '';
+        for (var i = 0; i <= count; i++) {
+            var t = (timelineDuration / count) * i;
+            html += '<span>' + t.toFixed(1) + 's</span>';
+        }
+        ticks.innerHTML = html;
+    }
+
+    function initTimeline() {
+        var track = document.getElementById('timeline-track');
+        var handleStart = document.getElementById('handle-start');
+        var handleEnd = document.getElementById('handle-end');
+        var video = document.getElementById('trim-video');
+
+        // Playhead follows video time
+        video.addEventListener('timeupdate', updatePlayhead);
+
+        // Click on track to seek
+        track.addEventListener('click', function(e) {
+            if (dragging) return;
+            var pct = xToPercent(e.clientX);
+            var t = percentToTime(pct);
+            video.currentTime = t;
+        });
+
+        // Handle drag: start
+        handleStart.addEventListener('mousedown', function(e) { e.preventDefault(); e.stopPropagation(); dragging = 'start'; });
+        handleStart.addEventListener('touchstart', function(e) { e.preventDefault(); e.stopPropagation(); dragging = 'start'; }, { passive: false });
+
+        // Handle drag: end
+        handleEnd.addEventListener('mousedown', function(e) { e.preventDefault(); e.stopPropagation(); dragging = 'end'; });
+        handleEnd.addEventListener('touchstart', function(e) { e.preventDefault(); e.stopPropagation(); dragging = 'end'; }, { passive: false });
+
+        // Mouse/touch move
+        function onMove(clientX) {
+            if (!dragging) return;
+            var clip = clips[currentTrimIndex];
+            if (!clip) return;
+            var pct = xToPercent(clientX);
+            var t = percentToTime(pct);
+            t = Math.round(t * 10) / 10; // snap to 0.1s
+
+            if (dragging === 'start') {
+                clip.startTime = Math.min(t, clip.endTime - 0.5);
+                if (clip.startTime < 0) clip.startTime = 0;
+                video.currentTime = clip.startTime;
+            } else if (dragging === 'end') {
+                clip.endTime = Math.max(t, clip.startTime + 0.5);
+                if (clip.endTime > timelineDuration) clip.endTime = timelineDuration;
+                video.currentTime = clip.endTime;
+            }
+            updateTimelineUI();
+        }
+
+        document.addEventListener('mousemove', function(e) { onMove(e.clientX); });
+        document.addEventListener('touchmove', function(e) {
+            if (dragging && e.touches.length) onMove(e.touches[0].clientX);
+        }, { passive: true });
+
+        document.addEventListener('mouseup', function() { dragging = null; });
+        document.addEventListener('touchend', function() { dragging = null; });
     }
 
     function saveTrimState() {
         var clip = clips[currentTrimIndex];
         if (!clip) return;
-        clip.startTime = parseFloat(document.getElementById('trim-start').value) || 0;
-        clip.endTime = parseFloat(document.getElementById('trim-end').value) || clip.duration;
         clip.label = document.getElementById('trim-label').value.trim();
     }
 
-    function updateTrimDuration() {
-        var s = parseFloat(document.getElementById('trim-start').value) || 0;
-        var e = parseFloat(document.getElementById('trim-end').value) || 0;
-        var dur = Math.max(0, e - s);
-        document.getElementById('trim-duration').textContent = dur.toFixed(1) + 's';
-    }
-
     function initTrimControls() {
-        document.getElementById('btn-set-start').addEventListener('click', function() {
-            var video = document.getElementById('trim-video');
-            document.getElementById('trim-start').value = video.currentTime.toFixed(1);
-            updateTrimDuration();
-        });
-        document.getElementById('btn-set-end').addEventListener('click', function() {
-            var video = document.getElementById('trim-video');
-            document.getElementById('trim-end').value = video.currentTime.toFixed(1);
-            updateTrimDuration();
-        });
-        document.getElementById('trim-start').addEventListener('input', updateTrimDuration);
-        document.getElementById('trim-end').addEventListener('input', updateTrimDuration);
-
         document.getElementById('btn-trim-prev').addEventListener('click', function() {
             saveTrimState();
             if (currentTrimIndex > 0) showTrimClip(currentTrimIndex - 1);
@@ -252,7 +312,6 @@
             if (currentTrimIndex < clips.length - 1) {
                 showTrimClip(currentTrimIndex + 1);
             } else {
-                // Done trimming → go to title/order
                 goToStep(3);
                 renderOrderList();
                 updateTitlePreview();
@@ -260,54 +319,46 @@
         });
     }
 
-    // --- Title & Order ---
+    // ==================== STEP 3: TITLE & ORDER ====================
     function renderOrderList() {
         var list = document.getElementById('order-list');
         var html = '';
         clips.forEach(function(clip, i) {
-            var num = clips.length - i; // Reverse: last clip = #1
-            var trimDur = (clip.endTime - clip.startTime).toFixed(1);
-            html += '<div class="clip-item" data-index="' + i + '">';
+            var num = clips.length - i;
+            var trimDur = Math.max(0, clip.endTime - clip.startTime).toFixed(1);
+            html += '<div class="clip-item" draggable="true" data-index="' + i + '">';
             html += '<span class="drag-handle" title="Drag to reorder">⠿</span>';
             html += '<div class="clip-num">' + num + '</div>';
             html += '<div class="clip-info">';
             html += '<div class="clip-name">' + (clip.label || clip.originalName || clip.filename) + '</div>';
             html += '<div class="clip-meta">' + trimDur + 's clip</div>';
-            html += '</div>';
-            html += '</div>';
+            html += '</div></div>';
         });
         list.innerHTML = html;
         initDragReorder(list);
     }
 
     function initDragReorder(list) {
-        var items = list.querySelectorAll('.clip-item');
         var dragItem = null;
-
+        var items = list.querySelectorAll('.clip-item');
         items.forEach(function(item) {
-            item.draggable = true;
             item.addEventListener('dragstart', function(e) {
                 dragItem = item;
-                item.style.opacity = '0.5';
+                item.classList.add('dragging');
                 e.dataTransfer.effectAllowed = 'move';
             });
             item.addEventListener('dragend', function() {
-                item.style.opacity = '1';
+                item.classList.remove('dragging');
                 dragItem = null;
             });
-            item.addEventListener('dragover', function(e) {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-            });
+            item.addEventListener('dragover', function(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
             item.addEventListener('drop', function(e) {
                 e.preventDefault();
                 if (!dragItem || dragItem === item) return;
-                var fromIdx = parseInt(dragItem.dataset.index);
-                var toIdx = parseInt(item.dataset.index);
-                // Swap in clips array
-                var temp = clips[fromIdx];
-                clips.splice(fromIdx, 1);
-                clips.splice(toIdx, 0, temp);
+                var from = parseInt(dragItem.dataset.index);
+                var to = parseInt(item.dataset.index);
+                var moved = clips.splice(from, 1)[0];
+                clips.splice(to, 0, moved);
                 renderOrderList();
             });
         });
@@ -315,13 +366,11 @@
 
     function updateTitlePreview() {
         var text = document.getElementById('title-text').value || 'Your Title Here';
-        var highlight = document.getElementById('title-highlight').value;
+        var hl = document.getElementById('title-highlight').value;
         var preview = document.getElementById('title-preview');
-
-        if (highlight && text.toLowerCase().includes(highlight.toLowerCase())) {
-            var regex = new RegExp('(' + highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'i');
-            var html = text.replace(regex, '<span class="highlight">$1</span>');
-            preview.innerHTML = '<h2>' + html + '</h2>';
+        if (hl && text.toLowerCase().includes(hl.toLowerCase())) {
+            var re = new RegExp('(' + hl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'i');
+            preview.innerHTML = '<h2>' + text.replace(re, '<span class="highlight">$1</span>') + '</h2>';
         } else {
             preview.innerHTML = '<h2>' + text + '</h2>';
         }
@@ -330,29 +379,27 @@
     function initTitleControls() {
         document.getElementById('title-text').addEventListener('input', updateTitlePreview);
         document.getElementById('title-highlight').addEventListener('input', updateTitlePreview);
-
         document.getElementById('btn-back-trim').addEventListener('click', function() {
             goToStep(2);
             showTrimClip(clips.length - 1);
         });
     }
 
-    // --- Assembly ---
+    // ==================== STEP 4: ASSEMBLE ====================
     async function assembleVideo() {
         var btn = document.getElementById('btn-assemble');
         btn.disabled = true;
         btn.textContent = '⏳ Trimming clips...';
 
         goToStep(4);
-        var progressEl = document.getElementById('assembly-progress');
         var progressFill = document.getElementById('progress-fill');
         var progressText = document.getElementById('progress-text');
-        progressEl.classList.remove('hidden');
         progressFill.style.width = '0%';
         progressText.textContent = 'Trimming clips...';
+        document.getElementById('assembly-progress').classList.remove('hidden');
 
         try {
-            // Step 1: Trim all clips server-side
+            // Trim all clips server-side
             var trimmedClips = [];
             for (var i = 0; i < clips.length; i++) {
                 var clip = clips[i];
@@ -360,7 +407,6 @@
                 progressFill.style.width = pct + '%';
                 progressText.textContent = 'Trimming clip ' + (i + 1) + ' of ' + clips.length + '...';
 
-                // Only trim if start/end differ from original
                 var needsTrim = clip.startTime > 0.1 || Math.abs(clip.endTime - clip.originalDuration) > 0.1;
                 var filename = clip.filename;
 
@@ -368,89 +414,71 @@
                     var trimRes = await apiFetch('/api/studio/ranking/trim', {
                         method: 'POST',
                         headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
-                        body: JSON.stringify({
-                            filename: clip.filename,
-                            startTime: clip.startTime,
-                            endTime: clip.endTime
-                        })
+                        body: JSON.stringify({ filename: clip.filename, startTime: clip.startTime, endTime: clip.endTime })
                     });
                     var trimData = await trimRes.json();
                     if (!trimData.success) throw new Error(trimData.error || 'Trim failed');
                     filename = trimData.filename;
                 }
 
-                var num = clips.length - i; // Reverse numbering: last in array = #1
                 trimmedClips.push({
                     filename: filename,
-                    number: num,
+                    number: clips.length - i,
                     label: clip.label || ''
                 });
             }
 
-            // Step 2: Assemble
+            // Assemble
             progressFill.style.width = '60%';
-            progressText.textContent = 'Assembling ranking video...';
+            progressText.textContent = 'Assembling ranking video... keep this tab open';
 
             var title = {
                 text: document.getElementById('title-text').value || '',
                 highlightWord: document.getElementById('title-highlight').value || ''
             };
 
-            var assembleRes = await apiFetch('/api/studio/ranking/assemble', {
+            var aRes = await apiFetch('/api/studio/ranking/assemble', {
                 method: 'POST',
                 headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
                 body: JSON.stringify({ clips: trimmedClips, title: title })
             });
-            var assembleData = await assembleRes.json();
+            var aData = await aRes.json();
+            if (!aData.success) throw new Error(aData.error || 'Assembly failed');
 
-            if (!assembleData.success) {
-                throw new Error(assembleData.error || 'Assembly failed');
-            }
-
-            // Done
             progressFill.style.width = '100%';
             progressText.textContent = 'Done!';
-
-            setTimeout(function() {
-                progressEl.classList.add('hidden');
-                showResult(assembleData);
-            }, 500);
-
+            setTimeout(function() { showResult(aData); }, 400);
             loadCredits();
 
         } catch (err) {
             progressFill.style.width = '0%';
             progressText.textContent = '❌ ' + err.message;
-            btn.disabled = false;
-            btn.textContent = '🎬 Assemble Video (2 💎)';
-
-            // If credit error
             if (err.message.includes('credits')) {
                 progressText.textContent = '❌ Not enough credits. ' + err.message;
             }
+            btn.disabled = false;
+            btn.textContent = '🎬 Assemble Video (2 💎)';
             loadCredits();
         }
     }
 
     function showResult(data) {
+        document.getElementById('assembly-progress').classList.add('hidden');
         var video = document.getElementById('result-video');
         video.src = data.videoUrl;
         video.classList.remove('hidden');
         video.load();
-
-        var info = document.getElementById('result-info');
-        info.textContent = data.clipCount + ' clips · ' + data.duration.toFixed(1) + 's · 2 💎';
-
-        var actions = document.getElementById('result-actions');
-        actions.classList.remove('hidden');
-
+        document.getElementById('result-info').textContent = data.clipCount + ' clips · ' + data.duration.toFixed(1) + 's · 2 💎';
+        document.getElementById('result-info').classList.remove('hidden');
+        document.getElementById('result-actions').classList.remove('hidden');
         document.getElementById('btn-download').href = data.videoUrl;
     }
 
-    // --- Init ---
+    // ==================== INIT ====================
     function init() {
         loadCredits();
         initUpload();
+        initTimeline();
         initTrimControls();
         initTitleControls();
 
@@ -464,6 +492,7 @@
             document.getElementById('title-text').value = '';
             document.getElementById('title-highlight').value = '';
             document.getElementById('result-video').classList.add('hidden');
+            document.getElementById('result-info').classList.add('hidden');
             document.getElementById('result-actions').classList.add('hidden');
             document.getElementById('btn-assemble').disabled = false;
             document.getElementById('btn-assemble').textContent = '🎬 Assemble Video (2 💎)';
@@ -473,10 +502,6 @@
         goToStep(1);
     }
 
-    // Expose for inline onclick handlers
-    window._rankingApp = {
-        removeClip: removeClip
-    };
-
+    window._rk = { remove: removeClip };
     init();
 })();
