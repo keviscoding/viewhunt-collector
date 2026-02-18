@@ -85,32 +85,78 @@
     }
 
     async function uploadFile(file) {
+        // Check file size client-side first
+        if (file.size > 50 * 1024 * 1024) {
+            alert('File too large: ' + file.name + ' (' + (file.size / 1024 / 1024).toFixed(1) + 'MB). Maximum 50MB per clip.');
+            return;
+        }
+
         var tempId = 'up-' + Date.now() + Math.random();
-        clips.push({ _tempId: tempId, uploading: true, originalName: file.name, filename: null, url: null, duration: 0, originalDuration: 0, label: '', startTime: 0, endTime: 0 });
+        clips.push({ _tempId: tempId, uploading: true, uploadPct: 0, originalName: file.name, filename: null, url: null, duration: 0, originalDuration: 0, label: '', startTime: 0, endTime: 0 });
         renderClipList();
 
-        try {
+        return new Promise(function(resolve) {
             var fd = new FormData();
             fd.append('clip', file);
-            var res = await apiFetch('/api/studio/ranking/upload', { method: 'POST', body: fd });
-            var data = await res.json();
-            if (!data.success) throw new Error(data.error || 'Upload failed');
 
-            var idx = clips.findIndex(function(c) { return c._tempId === tempId; });
-            if (idx >= 0) {
-                clips[idx] = {
-                    filename: data.filename, url: data.url,
-                    duration: data.duration, originalDuration: data.duration,
-                    label: '', startTime: 0, endTime: data.duration,
-                    originalName: file.name, uploading: false
-                };
-            }
-        } catch (err) {
-            clips = clips.filter(function(c) { return c._tempId !== tempId; });
-            alert('Upload failed: ' + err.message);
-        }
-        renderClipList();
-        updateNextButton();
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/studio/ranking/upload');
+            xhr.setRequestHeader('Authorization', 'Bearer ' + getToken());
+
+            // Upload progress
+            xhr.upload.onprogress = function(e) {
+                if (e.lengthComputable) {
+                    var pct = Math.round((e.loaded / e.total) * 100);
+                    var idx = clips.findIndex(function(c) { return c._tempId === tempId; });
+                    if (idx >= 0) { clips[idx].uploadPct = pct; renderClipList(); }
+                }
+            };
+
+            xhr.onload = function() {
+                try {
+                    var data = JSON.parse(xhr.responseText);
+                    if (xhr.status >= 200 && xhr.status < 300 && data.success) {
+                        var idx = clips.findIndex(function(c) { return c._tempId === tempId; });
+                        if (idx >= 0) {
+                            clips[idx] = {
+                                filename: data.filename, url: data.url,
+                                duration: data.duration, originalDuration: data.duration,
+                                label: '', startTime: 0, endTime: data.duration,
+                                originalName: file.name, uploading: false
+                            };
+                        }
+                    } else {
+                        clips = clips.filter(function(c) { return c._tempId !== tempId; });
+                        alert('Upload failed: ' + (data.error || 'Server error'));
+                    }
+                } catch (e) {
+                    clips = clips.filter(function(c) { return c._tempId !== tempId; });
+                    alert('Upload failed: Could not parse response');
+                }
+                renderClipList();
+                updateNextButton();
+                resolve();
+            };
+
+            xhr.onerror = function() {
+                clips = clips.filter(function(c) { return c._tempId !== tempId; });
+                alert('Upload failed: Network error. The file may be too large or the connection was lost. Try a smaller file (under 50MB).');
+                renderClipList();
+                updateNextButton();
+                resolve();
+            };
+
+            xhr.ontimeout = function() {
+                clips = clips.filter(function(c) { return c._tempId !== tempId; });
+                alert('Upload timed out. Try a smaller file.');
+                renderClipList();
+                updateNextButton();
+                resolve();
+            };
+
+            xhr.timeout = 120000; // 2 minute timeout
+            xhr.send(fd);
+        });
     }
 
     function renderClipList() {
@@ -119,7 +165,8 @@
         clips.forEach(function(clip, i) {
             html += '<div class="clip-item"><div class="clip-num">' + (i + 1) + '</div><div class="clip-info">';
             if (clip.uploading) {
-                html += '<div class="clip-name">⏳ Uploading ' + (clip.originalName || '') + '</div>';
+                var pct = clip.uploadPct || 0;
+                html += '<div class="clip-name">⏳ Uploading ' + (clip.originalName || '') + ' (' + pct + '%)</div>';
             } else {
                 html += '<div class="clip-name">' + (clip.originalName || clip.filename) + '</div>';
                 html += '<div class="clip-meta">' + clip.duration.toFixed(1) + 's</div>';

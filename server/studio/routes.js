@@ -741,7 +741,7 @@ router.post('/credits/admin-grant', requireAuth, async (req, res) => {
 
 // === RANKING FORMAT ENDPOINTS ===
 
-// Multer for ranking video uploads (up to 100MB per clip)
+// Multer for ranking video uploads (up to 50MB per clip)
 const rankingUploadDir = path.join(__dirname, '../public/studio/ranking-uploads');
 if (!fs.existsSync(rankingUploadDir)) {
     fs.mkdirSync(rankingUploadDir, { recursive: true });
@@ -754,38 +754,46 @@ const rankingUpload = multer({
             cb(null, `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
         }
     }),
-    limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
     fileFilter: (req, file, cb) => {
         if (file.mimetype.startsWith('video/')) cb(null, true);
         else cb(new Error('Only video files allowed'));
     }
 });
 
-// Upload a ranking clip
-router.post('/ranking/upload', requireAuth, rankingUpload.single('clip'), async (req, res) => {
-    try {
-        if (!req.file) return res.status(400).json({ error: 'No video file provided' });
+// Upload a ranking clip (with multer error handling)
+router.post('/ranking/upload', requireAuth, function(req, res) {
+    rankingUpload.single('clip')(req, res, async function(err) {
+        if (err) {
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(413).json({ error: 'File too large. Maximum 50MB per clip.' });
+            }
+            return res.status(400).json({ error: err.message });
+        }
+        try {
+            if (!req.file) return res.status(400).json({ error: 'No video file provided' });
 
-        var assembler = new RankingAssembler();
-        var filePath = req.file.path;
-        var info = await assembler.getVideoInfo(filePath);
-        var duration = await assembler.getDuration(filePath);
+            var assembler = new RankingAssembler();
+            var filePath = req.file.path;
+            var info = await assembler.getVideoInfo(filePath);
+            var duration = await assembler.getDuration(filePath);
 
-        var url = '/studio/ranking-uploads/' + req.file.filename;
-        console.log('🏆 Ranking clip uploaded: ' + url + ' (' + duration.toFixed(1) + 's)');
+            var url = '/studio/ranking-uploads/' + req.file.filename;
+            console.log('🏆 Ranking clip uploaded: ' + url + ' (' + duration.toFixed(1) + 's)');
 
-        res.json({
-            success: true,
-            url: url,
-            filename: req.file.filename,
-            duration: duration,
-            width: info.width,
-            height: info.height
-        });
-    } catch (error) {
-        console.error('Ranking upload error:', error.message);
-        res.status(500).json({ error: error.message });
-    }
+            res.json({
+                success: true,
+                url: url,
+                filename: req.file.filename,
+                duration: duration,
+                width: info.width,
+                height: info.height
+            });
+        } catch (error) {
+            console.error('Ranking upload error:', error.message);
+            res.status(500).json({ error: error.message });
+        }
+    });
 });
 
 // Trim a ranking clip
