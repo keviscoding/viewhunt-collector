@@ -157,7 +157,8 @@
             renderClipList(); updateNextButton();
         } catch (err) {
             status.style.color = 'var(--red)';
-            status.textContent = err.message;
+            status.textContent = err.message + ' — Download the video to your device first, then upload it.';
+            status.classList.remove('hidden');
         }
 
         btn.disabled = false; btn.textContent = 'Import';
