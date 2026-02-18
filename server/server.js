@@ -181,6 +181,11 @@ app.get('/studio/v2', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'studio', 'v2.html'));
 });
 
+// Studio Ranking page route
+app.get('/studio/ranking', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'studio', 'ranking.html'));
+});
+
 // Subscription success page
 app.get('/subscription-success', async (req, res) => {
     try {

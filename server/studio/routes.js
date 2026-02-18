@@ -8,6 +8,7 @@ const { ObjectId } = require('mongodb');
 const { getDb } = require('./db');
 const SkeletonGenerator = require('./formats/skeleton-anatomy/generator');
 const SkeletonGeneratorV2 = require('./formats/skeleton-anatomy-v2/generator');
+const RankingAssembler = require('./formats/ranking/assembler');
 const GeminiAnalyzer = require('./editor/gemini-analyzer');
 const GeminiTTS = require('./editor/gemini-tts');
 const VideoEditor = require('./editor/video-editor');
@@ -205,6 +206,14 @@ router.get('/formats', (req, res) => {
                 avgViews: '2M+',
                 generationTime: '5 min',
                 versions: ['v1', 'v2']
+            },
+            {
+                id: 'ranking',
+                name: 'Ranking & Countdown',
+                description: 'Upload clips, trim, add title + numbered list, assemble ranking video',
+                icon: '🏆',
+                generationTime: '1-2 min',
+                creditCost: 2
             }
         ]
     });
@@ -730,11 +739,175 @@ router.post('/credits/admin-grant', requireAuth, async (req, res) => {
     }
 });
 
+// === RANKING FORMAT ENDPOINTS ===
+
+// Multer for ranking video uploads (up to 100MB per clip)
+const rankingUploadDir = path.join(__dirname, '../public/studio/ranking-uploads');
+if (!fs.existsSync(rankingUploadDir)) {
+    fs.mkdirSync(rankingUploadDir, { recursive: true });
+}
+const rankingUpload = multer({
+    storage: multer.diskStorage({
+        destination: rankingUploadDir,
+        filename: (req, file, cb) => {
+            const ext = path.extname(file.originalname) || '.mp4';
+            cb(null, `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
+        }
+    }),
+    limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('video/')) cb(null, true);
+        else cb(new Error('Only video files allowed'));
+    }
+});
+
+// Upload a ranking clip
+router.post('/ranking/upload', requireAuth, rankingUpload.single('clip'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No video file provided' });
+
+        var assembler = new RankingAssembler();
+        var filePath = req.file.path;
+        var info = await assembler.getVideoInfo(filePath);
+        var duration = await assembler.getDuration(filePath);
+
+        var url = '/studio/ranking-uploads/' + req.file.filename;
+        console.log('🏆 Ranking clip uploaded: ' + url + ' (' + duration.toFixed(1) + 's)');
+
+        res.json({
+            success: true,
+            url: url,
+            filename: req.file.filename,
+            duration: duration,
+            width: info.width,
+            height: info.height
+        });
+    } catch (error) {
+        console.error('Ranking upload error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Trim a ranking clip
+router.post('/ranking/trim', requireAuth, async (req, res) => {
+    try {
+        var { filename, startTime, endTime } = req.body;
+        if (!filename) return res.status(400).json({ error: 'filename required' });
+
+        var inputPath = path.join(rankingUploadDir, filename);
+        if (!fs.existsSync(inputPath)) return res.status(404).json({ error: 'Clip not found' });
+
+        var assembler = new RankingAssembler();
+        var trimmedName = 'trimmed-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + '.mp4';
+        var outputPath = path.join(rankingUploadDir, trimmedName);
+
+        await assembler.trimClip(inputPath, startTime || 0, endTime, outputPath);
+        var duration = await assembler.getDuration(outputPath);
+
+        console.log('🏆 Clip trimmed: ' + trimmedName + ' (' + duration.toFixed(1) + 's)');
+
+        res.json({
+            success: true,
+            url: '/studio/ranking-uploads/' + trimmedName,
+            filename: trimmedName,
+            duration: duration
+        });
+    } catch (error) {
+        console.error('Ranking trim error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get clip info (duration, dimensions)
+router.post('/ranking/clip-info', requireAuth, async (req, res) => {
+    try {
+        var { filename } = req.body;
+        if (!filename) return res.status(400).json({ error: 'filename required' });
+
+        var filePath = path.join(rankingUploadDir, filename);
+        if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Clip not found' });
+
+        var assembler = new RankingAssembler();
+        var info = await assembler.getVideoInfo(filePath);
+        var duration = await assembler.getDuration(filePath);
+
+        res.json({ success: true, duration: duration, width: info.width, height: info.height });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Assemble ranking video
+router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req, res) => {
+    try {
+        var { clips, title } = req.body;
+        // clips: [{ filename, number, label, startTime, endTime }]
+        // title: { text, highlightWord, highlightColor }
+
+        if (!clips || !Array.isArray(clips) || clips.length === 0) {
+            return res.status(400).json({ error: 'At least one clip is required' });
+        }
+
+        // Credit check
+        var userId = String(req.user.userId);
+        var check = await credits.checkCredits(userId, 'ranking_assembly', 1);
+        if (!check.allowed) {
+            return res.status(402).json({ error: 'Not enough credits', ...check });
+        }
+
+        // Deduct upfront (refund on failure)
+        await credits.deductCredits(userId, 'ranking_assembly', 1, 'Ranking video assembly');
+
+        var assembler = new RankingAssembler();
+
+        // Build clip list with full paths
+        var clipList = clips.map(function(c, i) {
+            var filePath = path.join(rankingUploadDir, c.filename);
+            if (!fs.existsSync(filePath)) throw new Error('Clip not found: ' + c.filename);
+            return {
+                path: filePath,
+                number: c.number || (i + 1),
+                label: c.label || ''
+            };
+        });
+
+        var result = await assembler.assemble(clipList, title || {});
+
+        console.log('🏆 Ranking video assembled: ' + result.videoUrl);
+        res.json({ success: true, ...result });
+
+    } catch (error) {
+        console.error('Ranking assembly error:', error.message);
+        // Refund on failure
+        try {
+            var userId2 = String(req.user.userId);
+            await credits.refundCredits(userId2, 'ranking_assembly', 1, 'Assembly failed: ' + error.message);
+        } catch (refundErr) {
+            console.error('Ranking refund error:', refundErr.message);
+        }
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete a ranking clip (cleanup)
+router.delete('/ranking/clip/:filename', requireAuth, (req, res) => {
+    try {
+        var filePath = path.join(rankingUploadDir, req.params.filename);
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            console.log('🏆 Clip deleted: ' + req.params.filename);
+        }
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Health check
 router.get('/health', (req, res) => {
     res.json({ 
         status: 'ok',
-        availableFormats: ['skeleton-anatomy']
+        availableFormats: ['skeleton-anatomy', 'ranking']
     });
 });
 

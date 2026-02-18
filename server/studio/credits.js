@@ -28,7 +28,8 @@ const COSTS = {
     script_generation: 5,
     image_generation: 0.5,   // per scene (was 2, reduced — nano-banana is cheap)
     video_generation: 5,   // per scene
-    assembly: 2            // was 5, reduced
+    assembly: 2,           // was 5, reduced
+    ranking_assembly: 2    // ranking format — pure FFmpeg, no AI APIs
 };
 
 // Plan credit allocations (monthly)
