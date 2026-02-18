@@ -848,7 +848,7 @@ router.post('/ranking/clip-info', requireAuth, async (req, res) => {
 // Assemble ranking video
 router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req, res) => {
     try {
-        var { clips, title } = req.body;
+        var { clips, title, layout } = req.body;
         // clips: [{ filename, number, label, startTime, endTime }]
         // title: { text, highlightWord, highlightColor }
 
@@ -879,7 +879,7 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             };
         });
 
-        var result = await assembler.assemble(clipList, title || {});
+        var result = await assembler.assemble(clipList, title || {}, { layout: layout || {} });
 
         console.log('🏆 Ranking video assembled: ' + result.videoUrl);
         res.json({ success: true, ...result });

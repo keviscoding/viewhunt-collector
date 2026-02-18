@@ -68,6 +68,7 @@ class RankingAssembler {
      * Assemble ranking video.
      * clips: [{ path, number, label }] in playback order (highest number first, #1 last)
      * title: { text, highlightWord }
+     * options: { layout: { listXPercent, titleYPercent, titleFontSize } }
      */
     async assemble(clips, title, options) {
         var jobId = 'ranking-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
@@ -97,7 +98,7 @@ class RankingAssembler {
 
             // Step 3: Generate ASS overlay
             var assPath = path.join(jobDir, 'overlay.ass');
-            this.generateASS(assPath, clips, durations, title);
+            this.generateASS(assPath, clips, durations, title, options);
 
             // Step 4: Burn subtitles
             var outputName = 'ranking-' + Date.now() + '.mp4';
@@ -126,21 +127,26 @@ class RankingAssembler {
     }
 
     /**
-     * Generate ASS subtitle file with ranking-style overlays:
+     * Generate ASS subtitle file with ranking-style overlays.
      * 
      * Layout (1080x1920):
-     *   - Title at top center (y ~50-120), entire duration
+     *   - Title at top center, entire duration
      *   - Numbers stacked on left side, ALL visible entire duration
-     *     Positioned in the lower-left area (y starts ~500)
-     *     Spacing: ~65px per number row
-     *   - When a clip plays, its label fades in next to the number
-     *   - Currently playing number gets brighter/highlighted
-     * 
-     * Number order on screen: highest at top, #1 at bottom
-     * (e.g., for 5 clips: 5, 4, 3, 2, 1 from top to bottom)
+     *   - Number order: #1 at top, ascending down (#1, #2, #3...)
+     *   - When a clip plays, its label fades in next to its number
+     *   - Currently playing number is highlighted
+     *   - Position controlled by layout params from frontend
      */
-    generateASS(outputPath, clips, durations, title) {
+    generateASS(outputPath, clips, durations, title, options) {
         var totalClips = clips.length;
+        var lo = (options && options.layout) || {};
+        var listXPct = lo.listXPercent || 5;
+        var titleYPct = lo.titleYPercent || 6;
+        var titleFontSize = lo.titleFontSize || 48;
+
+        // Convert percentages to pixel positions (1080x1920)
+        var listX = Math.round((listXPct / 100) * 1080);
+        var titleY = Math.round((titleYPct / 100) * 1920);
 
         // Calculate time offsets
         var offsets = [0];
@@ -149,25 +155,21 @@ class RankingAssembler {
         }
         var totalDuration = offsets[offsets.length - 1] + durations[durations.length - 1];
 
-        // Build number-to-clip mapping
-        // clips are in playback order. We need to know all unique numbers.
+        // Sort numbers ascending for display (#1 at top, #2 below, etc.)
         var allNumbers = clips.map(function(c) { return c.number; });
-        // Sort descending for display (highest at top)
-        var sortedNumbers = allNumbers.slice().sort(function(a, b) { return b - a; });
+        var sortedNumbers = allNumbers.slice().sort(function(a, b) { return a - b; });
 
-        // Calculate vertical positions for the number list
-        // Numbers go in the middle-left area of the video content zone
-        // Content zone is roughly y=240 to y=1680 (the 1440px between black bars)
-        // We want the list centered vertically in the content area
+        // Calculate vertical positions — centered in content area
         var rowHeight = 65;
         var listHeight = sortedNumbers.length * rowHeight;
-        var listStartY = Math.max(400, Math.floor(960 - listHeight / 2)); // centered around middle
+        var listStartY = Math.max(400, Math.floor(960 - listHeight / 2));
 
-        // Map number → row Y position
         var numberYMap = {};
         for (var n = 0; n < sortedNumbers.length; n++) {
             numberYMap[sortedNumbers[n]] = listStartY + n * rowHeight;
         }
+
+        var labelX = listX + 80;
 
         var ass = '';
         ass += '[Script Info]\n';
@@ -180,19 +182,13 @@ class RankingAssembler {
         ass += '[V4+ Styles]\n';
         ass += 'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n';
 
-        // Title: top center, white, bold, black outline
-        ass += 'Style: Title,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,8,20,20,50,1\n';
+        // Title style — uses custom font size and Y position via MarginV
+        ass += 'Style: Title,Arial,' + titleFontSize + ',&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,8,20,20,' + titleY + ',1\n';
 
-        // Number dim: visible but dimmed (grey), positioned manually via \\pos
+        // Number styles
         ass += 'Style: NumDim,Arial,50,&H00888888,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
-
-        // Number active: bright yellow, slightly larger
         ass += 'Style: NumActive,Arial,56,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,7,0,0,0,1\n';
-
-        // Number done: stays yellow but normal size (already revealed)
         ass += 'Style: NumDone,Arial,50,&H0000CCFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
-
-        // Label: white text, fades in next to number
         ass += 'Style: Label,Arial,32,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,7,0,0,0,1\n';
 
         ass += '\n[Events]\n';
@@ -201,7 +197,7 @@ class RankingAssembler {
         var t0 = this.assTime(0);
         var tEnd = this.assTime(totalDuration);
 
-        // --- Title (entire duration) ---
+        // Title (entire duration)
         if (title && title.text) {
             var titleText = title.text;
             if (title.highlightWord && titleText.toLowerCase().includes(title.highlightWord.toLowerCase())) {
@@ -214,49 +210,36 @@ class RankingAssembler {
             ass += 'Dialogue: 2,' + t0 + ',' + tEnd + ',Title,,0,0,0,,' + titleText + '\n';
         }
 
-        // --- Numbers: always visible, change style when their clip plays ---
-        // For each number, we create multiple dialogue lines for different phases:
-        //   1. Before its clip plays: dim grey with just the number + dot
-        //   2. While its clip plays: bright yellow, active, label fades in
-        //   3. After its clip plays: stays yellow (revealed), label stays
-
-        // Build a lookup: number → { clipIndex, offset, duration }
+        // Build lookup: number → clip info
         var numberInfo = {};
         for (var c = 0; c < clips.length; c++) {
             numberInfo[clips[c].number] = {
-                clipIndex: c,
-                offset: offsets[c],
-                duration: durations[c],
-                label: clips[c].label || ''
+                clipIndex: c, offset: offsets[c], duration: durations[c], label: clips[c].label || ''
             };
         }
 
+        // Numbers — #1 at top, ascending
         for (var s = 0; s < sortedNumbers.length; s++) {
             var num = sortedNumbers[s];
             var y = numberYMap[num];
             var info = numberInfo[num];
             var clipStart = info.offset;
             var clipEnd = info.offset + info.duration;
-            var numX = 50;
-            var labelX = numX + 80;
 
-            // Phase 1: Before clip plays — dim number
+            // Phase 1: Before clip plays — dim
             if (clipStart > 0.1) {
-                ass += 'Dialogue: 1,' + t0 + ',' + this.assTime(clipStart) + ',NumDim,,0,0,0,,{\\pos(' + numX + ',' + y + ')}' + num + '.\n';
+                ass += 'Dialogue: 1,' + t0 + ',' + this.assTime(clipStart) + ',NumDim,,0,0,0,,{\\pos(' + listX + ',' + y + ')}' + num + '.\n';
             }
 
-            // Phase 2: While clip plays — active yellow number + label fade in
-            var fadeMs = 300;
-            ass += 'Dialogue: 3,' + this.assTime(clipStart) + ',' + this.assTime(clipEnd) + ',NumActive,,0,0,0,,{\\pos(' + numX + ',' + y + ')}' + num + '.\n';
-
-            // Label fades in
+            // Phase 2: While clip plays — active yellow
+            ass += 'Dialogue: 3,' + this.assTime(clipStart) + ',' + this.assTime(clipEnd) + ',NumActive,,0,0,0,,{\\pos(' + listX + ',' + y + ')}' + num + '.\n';
             if (info.label) {
-                ass += 'Dialogue: 3,' + this.assTime(clipStart) + ',' + this.assTime(clipEnd) + ',Label,,0,0,0,,{\\pos(' + labelX + ',' + y + ')\\fad(' + fadeMs + ',0)}' + info.label + '\n';
+                ass += 'Dialogue: 3,' + this.assTime(clipStart) + ',' + this.assTime(clipEnd) + ',Label,,0,0,0,,{\\pos(' + labelX + ',' + y + ')\\fad(300,0)}' + info.label + '\n';
             }
 
-            // Phase 3: After clip plays — stays revealed (yellow-ish)
+            // Phase 3: After clip plays — stays revealed
             if (clipEnd < totalDuration - 0.1) {
-                ass += 'Dialogue: 1,' + this.assTime(clipEnd) + ',' + tEnd + ',NumDone,,0,0,0,,{\\pos(' + numX + ',' + y + ')}' + num + '.\n';
+                ass += 'Dialogue: 1,' + this.assTime(clipEnd) + ',' + tEnd + ',NumDone,,0,0,0,,{\\pos(' + listX + ',' + y + ')}' + num + '.\n';
                 if (info.label) {
                     ass += 'Dialogue: 1,' + this.assTime(clipEnd) + ',' + tEnd + ',Label,,0,0,0,,{\\pos(' + labelX + ',' + y + ')}' + info.label + '\n';
                 }
@@ -264,7 +247,7 @@ class RankingAssembler {
         }
 
         fs.writeFileSync(outputPath, ass);
-        console.log('  ✓ ASS overlay generated (' + totalClips + ' numbers, ' + totalDuration.toFixed(1) + 's)');
+        console.log('  ASS overlay generated (' + totalClips + ' numbers, ' + totalDuration.toFixed(1) + 's, listX=' + listX + ', titleY=' + titleY + ', titleSize=' + titleFontSize + ')');
     }
 
     assTime(seconds) {
