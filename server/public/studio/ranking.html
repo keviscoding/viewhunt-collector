@@ -21,7 +21,7 @@
             --amber:#fbbf24;--red:#f87171;--yellow:#facc15;
         }
         body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
-        .app{max-width:800px;margin:0 auto;padding:1.5rem 1.25rem 4rem}
+        .app{max-width:1100px;margin:0 auto;padding:1.5rem 1.25rem 4rem}
         .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem}
         .header-left{display:flex;align-items:center;gap:0.75rem}
         .back-btn{color:var(--text-muted);text-decoration:none;font-size:0.85rem;padding:0.4rem 0.75rem;border-radius:6px;border:1px solid var(--border);transition:all 0.15s}
@@ -36,6 +36,11 @@
         .step{flex:1;height:4px;border-radius:2px;background:var(--surface-3);transition:background 0.3s}
         .step.active{background:var(--accent)}
         .step.done{background:var(--green)}
+
+        /* Two-column layout for trim + dashboard */
+        .split-layout{display:flex;gap:1.25rem;align-items:flex-start}
+        .split-controls{flex:1;min-width:0}
+        .split-preview{width:240px;flex-shrink:0;position:sticky;top:1.5rem}
 
         /* Clip list */
         .clip-list{display:flex;flex-direction:column;gap:0.75rem}
@@ -55,9 +60,16 @@
         .upload-zone p{color:var(--text-muted);font-size:0.9rem;margin-top:0.5rem}
         .upload-zone .icon{font-size:2rem;margin-bottom:0.25rem}
 
+        /* Video player with play button */
+        .trim-video-wrap{position:relative;width:100%;background:#000;border-radius:10px;overflow:hidden;margin-bottom:0.75rem;cursor:pointer}
+        .trim-video{width:100%;display:block;max-height:340px;object-fit:contain}
+        .play-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.25);transition:opacity 0.2s;pointer-events:none}
+        .play-overlay.is-playing{opacity:0}
+        .play-overlay .play-icon{width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(0,0,0,0.3)}
+        .play-overlay .play-icon::after{content:'';display:block;width:0;height:0;border-style:solid;border-width:10px 0 10px 18px;border-color:transparent transparent transparent #0e0e12;margin-left:3px}
+        .trim-video-wrap:hover .play-overlay:not(.is-playing){background:rgba(0,0,0,0.15)}
+
         /* Timeline scrubber */
-        .trim-video-wrap{position:relative;width:100%;background:#000;border-radius:10px;overflow:hidden;margin-bottom:0.75rem}
-        .trim-video{width:100%;display:block;max-height:360px;object-fit:contain}
         .timeline-wrap{position:relative;margin:0.75rem 0;user-select:none}
         .timeline-track{position:relative;height:48px;background:var(--surface-3);border-radius:8px;overflow:hidden;cursor:pointer}
         .timeline-fill{position:absolute;top:0;height:100%;background:rgba(124,106,239,0.3);border-left:3px solid var(--accent);border-right:3px solid var(--accent);pointer-events:none}
@@ -81,9 +93,6 @@
         /* Title config */
         .title-input{width:100%;padding:0.65rem 0.85rem;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:1rem;font-family:inherit;margin-bottom:0.75rem}
         .title-input:focus{outline:none;border-color:var(--accent)}
-        .title-preview{background:#000;border-radius:10px;padding:1.5rem;text-align:center;margin-bottom:1rem}
-        .title-preview h2{font-size:1.4rem;color:white;font-weight:800}
-        .title-preview h2 .highlight{color:var(--yellow);background:rgba(250,204,21,0.15);padding:0 4px;border-radius:4px}
 
         /* Buttons */
         .btn{display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.6rem 1.1rem;border-radius:8px;font-weight:600;font-size:0.9rem;cursor:pointer;border:none;transition:all 0.15s;font-family:inherit}
@@ -121,11 +130,34 @@
         .clip-item .move-btns button{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:0.7rem;padding:0 0.2rem;line-height:1}
         .clip-item .move-btns button:hover{color:var(--text)}
 
+        /* ===== LIVE PREVIEW PHONE FRAME ===== */
+        .preview-frame{background:#000;border-radius:16px;border:3px solid var(--surface-3);overflow:hidden;aspect-ratio:9/16;position:relative;font-family:'Inter',sans-serif}
+        .preview-frame .pv-title{position:absolute;top:6%;left:0;right:0;text-align:center;padding:0 8%;z-index:2}
+        .preview-frame .pv-title-text{font-size:0.7rem;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:0.02em;text-shadow:0 1px 6px rgba(0,0,0,0.8)}
+        .preview-frame .pv-title-text .pv-hl{color:var(--yellow)}
+        .preview-frame .pv-list{position:absolute;left:8%;top:50%;transform:translateY(-50%);z-index:2;display:flex;flex-direction:column;gap:3px}
+        .preview-frame .pv-row{display:flex;align-items:center;gap:4px;transition:opacity 0.3s}
+        .preview-frame .pv-num{font-size:0.65rem;font-weight:800;min-width:16px;text-align:right;text-shadow:0 1px 4px rgba(0,0,0,0.8)}
+        .preview-frame .pv-num.dim{color:#666}
+        .preview-frame .pv-num.active{color:var(--yellow);font-size:0.72rem}
+        .preview-frame .pv-num.done{color:#ccaa00}
+        .preview-frame .pv-label{font-size:0.5rem;font-weight:600;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,0.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+        .preview-frame .pv-label.dim{opacity:0}
+        .preview-frame .pv-bg{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.5) 0%,rgba(0,0,0,0.1) 25%,rgba(0,0,0,0.1) 75%,rgba(0,0,0,0.5) 100%)}
+        .preview-frame .pv-bars{position:absolute;left:0;right:0;background:#000}
+        .preview-frame .pv-bars.top{top:0;height:12%}
+        .preview-frame .pv-bars.bottom{bottom:0;height:12%}
+        .preview-frame .pv-clip-label{position:absolute;bottom:16%;left:0;right:0;text-align:center;font-size:0.55rem;color:var(--text-muted);font-style:italic}
+        .preview-tag{text-align:center;font-size:0.65rem;color:var(--text-dim);margin-top:0.5rem}
+        .preview-tag span{color:var(--accent);font-weight:600}
+
         .hidden{display:none!important}
 
-        @media(max-width:640px){
+        @media(max-width:740px){
             .app{padding:1rem 0.75rem 3rem}
             .timeline-track{height:40px}
+            .split-layout{flex-direction:column}
+            .split-preview{width:100%;max-width:200px;margin:0 auto;position:static}
         }
     </style>
 </head>
@@ -150,16 +182,13 @@
     <div id="screen-upload" class="card">
         <div class="card-title">📤 Upload Your Clips</div>
         <div class="card-desc">Upload the video clips you want to rank (2–10 clips). Drag and drop or click to browse.</div>
-
         <div class="upload-zone" id="upload-zone">
             <div class="icon">🎬</div>
             <p>Drop video files here or click to upload</p>
             <p style="font-size:0.75rem;color:var(--text-dim);margin-top:0.25rem">MP4, MOV, WebM — up to 50MB each</p>
         </div>
         <input type="file" id="file-input" accept="video/*" multiple class="hidden">
-
         <div class="clip-list" id="clip-list" style="margin-top:1rem"></div>
-
         <div class="btn-row">
             <button class="btn btn-primary" id="btn-next-trim" disabled>Next: Trim Clips →</button>
         </div>
@@ -168,90 +197,90 @@
     <!-- STEP 2: Trim each clip -->
     <div id="screen-trim" class="card hidden">
         <div class="card-title">✂️ Trim Clip <span id="trim-clip-num">1</span> of <span id="trim-total">1</span></div>
-        <div class="card-desc">Drag the purple handles to set the start and end points. Click the timeline to seek.</div>
-
-        <div class="trim-video-wrap">
-            <video class="trim-video" id="trim-video"></video>
-        </div>
-
-        <!-- Timeline scrubber -->
-        <div class="timeline-wrap" id="timeline-wrap">
-            <div class="timeline-track" id="timeline-track">
-                <div class="timeline-fill" id="timeline-fill"></div>
-                <div class="timeline-handle handle-start" id="handle-start"></div>
-                <div class="timeline-handle handle-end" id="handle-end"></div>
-                <div class="timeline-playhead" id="timeline-playhead"></div>
+        <div class="card-desc">Drag the purple handles to trim. Click the video to play/pause.</div>
+        <div class="split-layout">
+            <div class="split-controls">
+                <div class="trim-video-wrap" id="trim-video-wrap">
+                    <video class="trim-video" id="trim-video"></video>
+                    <div class="play-overlay" id="play-overlay">
+                        <div class="play-icon"></div>
+                    </div>
+                </div>
+                <div class="timeline-wrap" id="timeline-wrap">
+                    <div class="timeline-track" id="timeline-track">
+                        <div class="timeline-fill" id="timeline-fill"></div>
+                        <div class="timeline-handle handle-start" id="handle-start"></div>
+                        <div class="timeline-handle handle-end" id="handle-end"></div>
+                        <div class="timeline-playhead" id="timeline-playhead"></div>
+                    </div>
+                    <div class="timeline-ticks" id="timeline-ticks"></div>
+                </div>
+                <div class="trim-info">
+                    <div class="time-display">
+                        <span style="color:var(--text-dim)">In:</span> <span class="time-val" id="trim-start-display">0.0s</span>
+                        <span style="color:var(--text-dim);margin-left:0.5rem">Out:</span> <span class="time-val" id="trim-end-display">0.0s</span>
+                    </div>
+                    <div class="duration-badge" id="trim-duration-badge">0.0s selected</div>
+                </div>
+                <div style="margin-top:0.75rem">
+                    <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:0.35rem">Clip label (shown next to number):</label>
+                    <input type="text" class="label-input" id="trim-label" placeholder="e.g. Baby vs Dog" maxlength="40">
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-secondary" id="btn-trim-prev">← Previous</button>
+                    <button class="btn btn-primary" id="btn-trim-next">Next Clip →</button>
+                </div>
             </div>
-            <div class="timeline-ticks" id="timeline-ticks"></div>
-        </div>
-
-        <div class="trim-info">
-            <div class="time-display">
-                <span style="color:var(--text-dim)">In:</span> <span class="time-val" id="trim-start-display">0.0s</span>
-                <span style="color:var(--text-dim);margin-left:0.5rem">Out:</span> <span class="time-val" id="trim-end-display">0.0s</span>
+            <div class="split-preview">
+                <div class="preview-frame" id="preview-trim"></div>
+                <div class="preview-tag">Live preview — <span>overlay</span></div>
             </div>
-            <div class="duration-badge" id="trim-duration-badge">0.0s selected</div>
-        </div>
-
-        <div style="margin-top:0.75rem">
-            <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:0.35rem">Clip label (shown next to number):</label>
-            <input type="text" class="label-input" id="trim-label" placeholder="e.g. Baby vs Dog" maxlength="40">
-        </div>
-
-        <div class="btn-row">
-            <button class="btn btn-secondary" id="btn-trim-prev">← Previous</button>
-            <button class="btn btn-primary" id="btn-trim-next">Next Clip →</button>
         </div>
     </div>
 
-    <!-- STEP 3: Dashboard — Title, Order, Duration -->
+    <!-- STEP 3: Dashboard -->
     <div id="screen-title" class="card hidden">
         <div class="card-title">🎯 Dashboard</div>
         <div class="card-desc">Set your title, adjust clip durations, reorder clips, and edit labels. Numbers count down — last clip = #1 big reveal.</div>
-
-        <!-- Title section -->
-        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem">
-            <div style="flex:1;min-width:200px">
-                <label style="font-size:0.8rem;color:var(--text-dim);display:block;margin-bottom:0.3rem">Video Title</label>
-                <input type="text" class="title-input" id="title-text" placeholder="e.g. Ranking The Best Baby Moments" maxlength="60" style="margin-bottom:0">
+        <div class="split-layout">
+            <div class="split-controls">
+                <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem">
+                    <div style="flex:1;min-width:200px">
+                        <label style="font-size:0.8rem;color:var(--text-dim);display:block;margin-bottom:0.3rem">Video Title</label>
+                        <input type="text" class="title-input" id="title-text" placeholder="e.g. Ranking The Best Baby Moments" maxlength="60" style="margin-bottom:0">
+                    </div>
+                    <div style="width:160px">
+                        <label style="font-size:0.8rem;color:var(--text-dim);display:block;margin-bottom:0.3rem">Highlight Word</label>
+                        <input type="text" class="title-input" id="title-highlight" placeholder="e.g. Best" maxlength="20" style="margin-bottom:0">
+                    </div>
+                </div>
+                <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:0.5rem">Clips (drag ⠿ to reorder):</label>
+                <div class="clip-list" id="order-list"></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.75rem;font-size:0.8rem;color:var(--text-dim)">
+                    <span>Total: <span id="total-duration" style="color:var(--text);font-weight:600">0.0s</span></span>
+                    <span><span id="total-clips" style="color:var(--text);font-weight:600">0</span> clips</span>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-secondary" id="btn-back-trim">← Back to Trim</button>
+                    <button class="btn btn-green" id="btn-assemble">🎬 Assemble Video (2 💎)</button>
+                </div>
             </div>
-            <div style="width:160px">
-                <label style="font-size:0.8rem;color:var(--text-dim);display:block;margin-bottom:0.3rem">Highlight Word</label>
-                <input type="text" class="title-input" id="title-highlight" placeholder="e.g. Best" maxlength="20" style="margin-bottom:0">
+            <div class="split-preview">
+                <div class="preview-frame" id="preview-dash"></div>
+                <div class="preview-tag">Live preview — <span>overlay</span></div>
             </div>
-        </div>
-
-        <div class="title-preview" id="title-preview">
-            <h2>Your Title Here</h2>
-        </div>
-
-        <!-- Clip dashboard list -->
-        <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:0.5rem">Clips (drag ⠿ to reorder):</label>
-        <div class="clip-list" id="order-list"></div>
-
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.75rem;font-size:0.8rem;color:var(--text-dim)">
-            <span>Total: <span id="total-duration" style="color:var(--text);font-weight:600">0.0s</span></span>
-            <span><span id="total-clips" style="color:var(--text);font-weight:600">0</span> clips</span>
-        </div>
-
-        <div class="btn-row">
-            <button class="btn btn-secondary" id="btn-back-trim">← Back to Trim</button>
-            <button class="btn btn-green" id="btn-assemble">🎬 Assemble Video (2 💎)</button>
         </div>
     </div>
 
     <!-- STEP 4: Result -->
     <div id="screen-result" class="card hidden result-card">
         <div class="card-title" style="justify-content:center">🎉 Your Ranking Video</div>
-
         <div id="assembly-progress">
             <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
             <div class="progress-text" id="progress-text">Assembling...</div>
         </div>
-
         <video class="result-video hidden" id="result-video" controls></video>
         <div class="result-info hidden" id="result-info"></div>
-
         <div class="btn-row hidden" style="justify-content:center" id="result-actions">
             <a class="btn btn-green" id="btn-download" download>⬇ Download</a>
             <button class="btn btn-secondary" id="btn-new">+ New Ranking Video</button>
@@ -259,6 +288,6 @@
     </div>
 </div>
 
-<script src="/studio/ranking-app.js?v=20260218e"></script>
+<script src="/studio/ranking-app.js?v=20260218f"></script>
 </body>
 </html>
