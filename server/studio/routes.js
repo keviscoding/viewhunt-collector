@@ -817,13 +817,15 @@ router.post('/ranking/import-url', requireAuth, urlImportLimiter, async (req, re
 
         await youtubedl(url, {
             output: outPath,
-            format: 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]',
+            format: 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]/best',
             mergeOutputFormat: 'mp4',
             noPlaylist: true,
             maxFilesize: '50m',
             noCheckCertificates: true,
             noWarnings: true,
             socketTimeout: 30,
+            extractorArgs: 'youtube:player_client=ios,web',
+            userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
         });
 
         if (!fs.existsSync(outPath)) {
@@ -856,7 +858,7 @@ router.post('/ranking/import-url', requireAuth, urlImportLimiter, async (req, re
         var msg = error.message || '';
         if (msg.includes('not found') || msg.includes('ENOENT')) msg = 'yt-dlp not available. Upload files directly instead.';
         else if (msg.includes('Unsupported URL')) msg = 'Unsupported URL. Try YouTube, TikTok, Instagram, Twitter, etc.';
-        else if (msg.includes('Private video') || msg.includes('Sign in')) msg = 'This video is private or requires login.';
+        else if (msg.includes('Private video') || msg.includes('Sign in')) msg = 'YouTube is blocking this download. Try: 1) a different video, 2) a TikTok/Instagram link instead, or 3) upload the file directly.';
         else if (msg.length > 200) msg = msg.substring(0, 200);
         res.status(500).json({ error: msg });
     }
