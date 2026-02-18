@@ -1,11 +1,12 @@
 /**
  * Ranking Video Assembler — Pure FFmpeg, no AI APIs.
  * 
- * Takes user-uploaded/downloaded clips, trims them, adds:
- *   - Black bars top/bottom (letterbox for 9:16)
- *   - Concatenates clips in user-specified order
+ * Takes user-uploaded/downloaded clips, trims them:
+ *   - Scales to fill 1080px wide (crops height if needed)
+ *   - Black bars top/bottom only (1080x1920 output)
+ *   - Crossfade transitions between clips
  * 
- * Phase 1: Upload + trim + basic concat with black bars
+ * Phase 1: Upload + trim + concat with black bars + crossfade
  * Phase 2: Title overlay + numbered list (image-based overlays)
  */
 const { execFile } = require('child_process');
@@ -16,6 +17,8 @@ const path = require('path');
 
 const ffmpegPath = require('ffmpeg-static');
 const ffprobePath = require('ffprobe-static').path;
+
+const XFADE_DURATION = 0.5; // seconds of crossfade between clips
 
 class RankingAssembler {
     constructor() {
@@ -28,9 +31,6 @@ class RankingAssembler {
         }
     }
 
-    /**
-     * Get video duration in seconds
-     */
     async getDuration(filePath) {
         try {
             var r = await execFileAsync(ffprobePath, [
@@ -43,9 +43,6 @@ class RankingAssembler {
         }
     }
 
-    /**
-     * Get video dimensions + duration
-     */
     async getVideoInfo(filePath) {
         try {
             var r = await execFileAsync(ffprobePath, [
@@ -63,9 +60,6 @@ class RankingAssembler {
         }
     }
 
-    /**
-     * Trim a clip: extract from startTime to endTime
-     */
     async trimClip(inputPath, startTime, endTime, outputPath) {
         var duration = endTime - startTime;
         if (duration <= 0) throw new Error('Invalid trim range');
@@ -79,29 +73,14 @@ class RankingAssembler {
             '-avoid_negative_ts', 'make_zero',
             '-y', outputPath
         ]);
-
         return outputPath;
     }
 
     /**
-     * Generate a thumbnail at a specific timestamp
-     */
-    async generateThumbnail(inputPath, timestamp, outputPath) {
-        await this.ffmpeg([
-            '-ss', String(timestamp),
-            '-i', inputPath,
-            '-vframes', '1',
-            '-vf', 'scale=320:-1',
-            '-y', outputPath
-        ]);
-        return outputPath;
-    }
-
-    /**
-     * Assemble ranking video from trimmed clips.
+     * Assemble ranking video from clips with crossfade transitions.
      * 
      * clips: [{ path, number }] — in playback order
-     * Output: 1080x1920 (9:16) with black bars
+     * Output: 1080x1920 (9:16), black bars top/bottom only, crossfade between clips
      */
     async assemble(clips, title, options) {
         options = options || {};
@@ -112,31 +91,30 @@ class RankingAssembler {
         console.log('\n🏆 Ranking assembly: ' + clips.length + ' clips');
 
         try {
-            // Step 1: Normalize each clip to 1080x1920 with black bars
+            // Step 1: Normalize each clip to 1080x1920 (fill width, black bars top/bottom)
             var normalizedPaths = [];
+            var durations = [];
             for (var i = 0; i < clips.length; i++) {
                 var clip = clips[i];
-                var outPath = path.join(jobDir, 'norm-' + i + '.ts');
+                var outPath = path.join(jobDir, 'norm-' + i + '.mp4');
                 await this.normalizeClip(clip.path, outPath);
+                var dur = await this.getDuration(outPath);
                 normalizedPaths.push(outPath);
-                console.log('  ✓ Clip ' + (i + 1) + '/' + clips.length + ' normalized');
+                durations.push(dur);
+                console.log('  ✓ Clip ' + (i + 1) + '/' + clips.length + ' normalized (' + dur.toFixed(1) + 's)');
             }
 
-            // Step 2: Concat all normalized clips
-            var concatList = path.join(jobDir, 'concat.txt');
-            var lines = normalizedPaths.map(function(p) { return "file '" + p + "'"; });
-            fs.writeFileSync(concatList, lines.join('\n'));
-
-            var concatPath = path.join(jobDir, 'concat.mp4');
-            await this.ffmpeg([
-                '-f', 'concat', '-safe', '0', '-i', concatList,
-                '-c', 'copy', '-y', concatPath
-            ]);
-
-            // Step 3: Move to output
+            // Step 2: Crossfade concat
             var outputName = 'ranking-' + Date.now() + '.mp4';
             var finalPath = path.join(this.outputDir, outputName);
-            fs.copyFileSync(concatPath, finalPath);
+
+            if (normalizedPaths.length === 1) {
+                // Single clip — just copy
+                fs.copyFileSync(normalizedPaths[0], finalPath);
+            } else {
+                // Build xfade chain for 2+ clips
+                await this.crossfadeConcat(normalizedPaths, durations, finalPath, jobDir);
+            }
 
             var duration = await this.getDuration(finalPath);
             console.log('🏆 Ranking video complete: ' + duration.toFixed(1) + 's');
@@ -155,19 +133,67 @@ class RankingAssembler {
     }
 
     /**
-     * Normalize a single clip to 1080x1920 with black bars.
-     * Phase 1: scale + pad only (no drawtext — ffmpeg-static lacks libfreetype).
+     * Crossfade concat: chain xfade filters between clips.
+     * For N clips, we do N-1 xfade operations sequentially
+     * to keep memory low (process pairs one at a time).
+     */
+    async crossfadeConcat(paths, durations, outputPath, jobDir) {
+        // Sequential approach: merge clip 0+1 → temp, then temp+2 → temp2, etc.
+        // This keeps memory usage low (only 2 clips in memory at a time).
+        var currentPath = paths[0];
+        var currentDur = durations[0];
+
+        for (var i = 1; i < paths.length; i++) {
+            var nextPath = paths[i];
+            var nextDur = durations[i];
+            var isLast = (i === paths.length - 1);
+            var outPath = isLast ? outputPath : path.join(jobDir, 'xfade-' + i + '.mp4');
+
+            // xfade offset = duration of current clip minus crossfade duration
+            var offset = Math.max(0, currentDur - XFADE_DURATION);
+
+            await this.ffmpeg([
+                '-i', currentPath,
+                '-i', nextPath,
+                '-filter_complex',
+                '[0:v][1:v]xfade=transition=fade:duration=' + XFADE_DURATION + ':offset=' + offset.toFixed(3) + '[v];' +
+                '[0:a][1:a]acrossfade=d=' + XFADE_DURATION + '[a]',
+                '-map', '[v]', '-map', '[a]',
+                '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+                '-c:a', 'aac', '-b:a', '128k',
+                '-y', outPath
+            ]);
+
+            // Update current for next iteration
+            currentPath = outPath;
+            // New duration = currentDur + nextDur - crossfade overlap
+            currentDur = currentDur + nextDur - XFADE_DURATION;
+        }
+    }
+
+    /**
+     * Normalize a single clip to 1080x1920.
+     * - Scale to fill 1080px wide (crop excess height if wider than 9:16)
+     * - Pad to 1080x1920 with black bars on top/bottom only
+     * - No side bars ever
      */
     async normalizeClip(inputPath, outputPath) {
-        // Scale to fit 1080 wide, max 1440 tall, then pad to 1080x1920 centered (black bars)
-        var filterStr = 'scale=1080:1440:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black';
+        // Strategy:
+        // 1. scale=1080:-2 → force width to 1080, height auto (keeps aspect ratio)
+        // 2. If height > 1440: crop to 1440 from center
+        // 3. If height < 1440: keep as-is
+        // 4. pad to 1080x1920 centered → black bars only on top/bottom
+        var filterStr = [
+            'scale=1080:-2',                                    // fill 1080 wide
+            'crop=1080:min(ih\\,1440):0:(ih-min(ih\\,1440))/2', // crop height to max 1440 from center
+            'pad=1080:1920:0:(oh-ih)/2:black'                   // black bars top/bottom
+        ].join(',');
 
         await this.ffmpeg([
             '-i', inputPath,
             '-vf', filterStr,
             '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
             '-c:a', 'aac', '-b:a', '128k',
-            '-f', 'mpegts',
             '-y', outputPath
         ]);
     }
