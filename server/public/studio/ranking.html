@@ -165,10 +165,18 @@
     <!-- STEP 1: Upload -->
     <div id="screen-upload" class="card">
         <div class="card-title">Upload Your Clips</div>
-        <div class="card-desc">Upload the video clips you want to rank (2-10 clips). Drag and drop or click to browse.</div>
+        <div class="card-desc">Upload video clips or paste a link from YouTube, TikTok, Instagram, Twitter, etc.</div>
+
+        <!-- URL Import -->
+        <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
+            <input type="text" class="title-input" id="url-input" placeholder="Paste video URL (YouTube, TikTok, Instagram...)" style="margin-bottom:0;flex:1">
+            <button class="btn btn-primary" id="btn-import-url" style="white-space:nowrap">Import</button>
+        </div>
+        <div id="url-status" style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem" class="hidden"></div>
+
         <div class="upload-zone" id="upload-zone">
             <div class="icon">+</div>
-            <p>Drop video files here or click to upload</p>
+            <p>Or drop video files here / click to upload</p>
             <p style="font-size:0.75rem;color:var(--text-dim);margin-top:0.25rem">MP4, MOV, WebM &mdash; up to 50MB each</p>
         </div>
         <input type="file" id="file-input" accept="video/*" multiple class="hidden">
@@ -290,6 +298,6 @@
         </div>
     </div>
 </div>
-<script src="/studio/ranking-app.js?v=20260218g"></script>
+<script src="/studio/ranking-app.js?v=20260218i"></script>
 </body>
 </html>

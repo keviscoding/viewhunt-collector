@@ -796,6 +796,72 @@ router.post('/ranking/upload', requireAuth, function(req, res) {
     });
 });
 
+// Import a ranking clip from URL (yt-dlp)
+const urlImportLimiter = rateLimit({ windowMs: 60000, max: 5, message: { error: 'Too many imports. Wait a minute.' } });
+router.post('/ranking/import-url', requireAuth, urlImportLimiter, async (req, res) => {
+    try {
+        var { url } = req.body;
+        if (!url || typeof url !== 'string') return res.status(400).json({ error: 'URL required' });
+
+        url = url.trim();
+        if (!/^https?:\/\/.+/i.test(url)) return res.status(400).json({ error: 'Invalid URL' });
+
+        var youtubedl;
+        try { youtubedl = require('youtube-dl-exec'); }
+        catch (e) { return res.status(500).json({ error: 'Video import not available on this server' }); }
+
+        var outName = 'clip-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.mp4';
+        var outPath = path.join(rankingUploadDir, outName);
+
+        console.log('Ranking URL import: ' + url);
+
+        await youtubedl(url, {
+            output: outPath,
+            format: 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]',
+            mergeOutputFormat: 'mp4',
+            noPlaylist: true,
+            maxFilesize: '50m',
+            noCheckCertificates: true,
+            noWarnings: true,
+            socketTimeout: 30,
+        });
+
+        if (!fs.existsSync(outPath)) {
+            return res.status(500).json({ error: 'Download failed' });
+        }
+
+        var stat = fs.statSync(outPath);
+        if (stat.size > 50 * 1024 * 1024) {
+            fs.unlinkSync(outPath);
+            return res.status(413).json({ error: 'Downloaded video too large (over 50MB). Try a shorter clip.' });
+        }
+
+        var assembler = new RankingAssembler();
+        var info = await assembler.getVideoInfo(outPath);
+        var duration = await assembler.getDuration(outPath);
+
+        var clipUrl = '/studio/ranking-uploads/' + outName;
+        console.log('Ranking URL import done: ' + clipUrl + ' (' + duration.toFixed(1) + 's, ' + (stat.size / 1024 / 1024).toFixed(1) + 'MB)');
+
+        res.json({
+            success: true,
+            url: clipUrl,
+            filename: outName,
+            duration: duration,
+            width: info.width,
+            height: info.height
+        });
+    } catch (error) {
+        console.error('Ranking URL import error:', error.message);
+        var msg = error.message || '';
+        if (msg.includes('not found') || msg.includes('ENOENT')) msg = 'yt-dlp not available. Upload files directly instead.';
+        else if (msg.includes('Unsupported URL')) msg = 'Unsupported URL. Try YouTube, TikTok, Instagram, Twitter, etc.';
+        else if (msg.includes('Private video') || msg.includes('Sign in')) msg = 'This video is private or requires login.';
+        else if (msg.length > 200) msg = msg.substring(0, 200);
+        res.status(500).json({ error: msg });
+    }
+});
+
 // Trim a ranking clip
 router.post('/ranking/trim', requireAuth, async (req, res) => {
     try {

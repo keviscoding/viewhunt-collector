@@ -115,6 +115,61 @@
         clips.splice(index, 1); renderClipList(); updateNextButton();
     }
 
+    // ==================== URL IMPORT ====================
+    async function importFromUrl() {
+        var input = document.getElementById('url-input');
+        var btn = document.getElementById('btn-import-url');
+        var status = document.getElementById('url-status');
+        var url = (input.value || '').trim();
+
+        if (!url) return;
+        if (clips.length >= 10) { alert('Maximum 10 clips reached'); return; }
+
+        btn.disabled = true; btn.textContent = 'Downloading...';
+        status.classList.remove('hidden');
+        status.style.color = 'var(--text-muted)';
+        status.textContent = 'Downloading video from URL... this may take a moment';
+
+        try {
+            var res = await apiFetch('/api/studio/ranking/import-url', {
+                method: 'POST',
+                headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+                body: JSON.stringify({ url: url })
+            });
+            var data = await res.json();
+
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Import failed');
+            }
+
+            clips.push({
+                filename: data.filename, url: data.url,
+                duration: data.duration, originalDuration: data.duration,
+                label: '', startTime: 0, endTime: data.duration,
+                originalName: url.length > 40 ? url.substring(0, 40) + '...' : url,
+                uploading: false
+            });
+
+            input.value = '';
+            status.style.color = 'var(--green)';
+            status.textContent = 'Imported ' + data.duration.toFixed(1) + 's clip';
+            setTimeout(function() { status.classList.add('hidden'); }, 3000);
+            renderClipList(); updateNextButton();
+        } catch (err) {
+            status.style.color = 'var(--red)';
+            status.textContent = err.message;
+        }
+
+        btn.disabled = false; btn.textContent = 'Import';
+    }
+
+    function initUrlImport() {
+        document.getElementById('btn-import-url').addEventListener('click', importFromUrl);
+        document.getElementById('url-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); importFromUrl(); }
+        });
+    }
+
     // ==================== TRIM ====================
     function startTrimming() { currentTrimIndex = 0; goToStep(2); showTrimClip(0); }
 
@@ -415,7 +470,7 @@
 
     // ==================== INIT ====================
     function init() {
-        loadCredits(); initUpload(); initTimeline(); initPlayControls(); initTrimControls(); initTitleControls(); initPositionControls();
+        loadCredits(); initUpload(); initUrlImport(); initTimeline(); initPlayControls(); initTrimControls(); initTitleControls(); initPositionControls();
         document.getElementById('btn-next-trim').addEventListener('click', startTrimming);
         document.getElementById('btn-assemble').addEventListener('click', assembleVideo);
         document.getElementById('btn-new').addEventListener('click', function() {
