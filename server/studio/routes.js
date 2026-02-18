@@ -796,7 +796,66 @@ router.post('/ranking/upload', requireAuth, function(req, res) {
     });
 });
 
-// Import a ranking clip from URL (yt-dlp)
+// Import a ranking clip from URL (yt-dlp — latest binary)
+const { execFile } = require('child_process');
+const https = require('https');
+
+// Download latest yt-dlp binary if not present (or older than 24h)
+var ytdlpPath = path.join(__dirname, '../public/studio/ranking-uploads', '.yt-dlp');
+async function ensureYtdlp() {
+    var needsDownload = false;
+    if (!fs.existsSync(ytdlpPath)) { needsDownload = true; }
+    else {
+        // Re-download if older than 24 hours
+        var stat = fs.statSync(ytdlpPath);
+        if (Date.now() - stat.mtimeMs > 24 * 60 * 60 * 1000) needsDownload = true;
+    }
+    if (!needsDownload) return ytdlpPath;
+
+    console.log('Downloading latest yt-dlp binary...');
+    var dlUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+    // Detect platform
+    if (process.platform === 'darwin') dlUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos';
+    else if (process.platform === 'win32') dlUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe';
+
+    return new Promise(function(resolve, reject) {
+        function download(downloadUrl, redirects) {
+            if (redirects > 5) return reject(new Error('Too many redirects'));
+            var mod = downloadUrl.startsWith('https') ? https : require('http');
+            mod.get(downloadUrl, { headers: { 'User-Agent': 'ViewHunt/1.0' } }, function(resp) {
+                if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+                    return download(resp.headers.location, (redirects || 0) + 1);
+                }
+                if (resp.statusCode !== 200) return reject(new Error('Download failed: HTTP ' + resp.statusCode));
+                var chunks = [];
+                resp.on('data', function(c) { chunks.push(c); });
+                resp.on('end', function() {
+                    var buf = Buffer.concat(chunks);
+                    fs.writeFileSync(ytdlpPath, buf);
+                    fs.chmodSync(ytdlpPath, 0o755);
+                    console.log('yt-dlp binary downloaded (' + (buf.length / 1024 / 1024).toFixed(1) + 'MB)');
+                    resolve(ytdlpPath);
+                });
+                resp.on('error', reject);
+            }).on('error', reject);
+        }
+        download(dlUrl, 0);
+    });
+}
+
+function runYtdlp(args, timeoutMs) {
+    return new Promise(function(resolve, reject) {
+        var proc = execFile(ytdlpPath, args, { timeout: timeoutMs || 120000, maxBuffer: 10 * 1024 * 1024 }, function(err, stdout, stderr) {
+            if (err) {
+                var msg = (stderr || '') + ' ' + (err.message || '');
+                reject(new Error(msg.trim()));
+            } else {
+                resolve((stdout || '').trim());
+            }
+        });
+    });
+}
+
 const urlImportLimiter = rateLimit({ windowMs: 60000, max: 5, message: { error: 'Too many imports. Wait a minute.' } });
 router.post('/ranking/import-url', requireAuth, urlImportLimiter, async (req, res) => {
     try {
@@ -806,30 +865,35 @@ router.post('/ranking/import-url', requireAuth, urlImportLimiter, async (req, re
         url = url.trim();
         if (!/^https?:\/\/.+/i.test(url)) return res.status(400).json({ error: 'Invalid URL' });
 
-        var youtubedl;
-        try { youtubedl = require('youtube-dl-exec'); }
-        catch (e) { return res.status(500).json({ error: 'Video import not available on this server' }); }
+        // Ensure we have the latest yt-dlp
+        try { await ensureYtdlp(); }
+        catch (e) {
+            console.error('yt-dlp download failed:', e.message);
+            return res.status(500).json({ error: 'Video downloader not available. Upload files directly.' });
+        }
 
         var outName = 'clip-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.mp4';
         var outPath = path.join(rankingUploadDir, outName);
 
         console.log('Ranking URL import: ' + url);
 
-        await youtubedl(url, {
-            output: outPath,
-            format: 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]/best',
-            mergeOutputFormat: 'mp4',
-            noPlaylist: true,
-            maxFilesize: '50m',
-            noCheckCertificates: true,
-            noWarnings: true,
-            socketTimeout: 30,
-            extractorArgs: 'youtube:player_client=ios,web',
-            userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-        });
+        var args = [
+            url,
+            '-o', outPath,
+            '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]/best',
+            '--merge-output-format', 'mp4',
+            '--no-playlist',
+            '--no-check-certificates',
+            '--no-warnings',
+            '--socket-timeout', '30',
+            '--extractor-args', 'youtube:player_client=ios,mweb',
+            '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        ];
+
+        await runYtdlp(args, 120000);
 
         if (!fs.existsSync(outPath)) {
-            return res.status(500).json({ error: 'Download failed' });
+            return res.status(500).json({ error: 'Download failed — no output file' });
         }
 
         var stat = fs.statSync(outPath);
@@ -856,9 +920,10 @@ router.post('/ranking/import-url', requireAuth, urlImportLimiter, async (req, re
     } catch (error) {
         console.error('Ranking URL import error:', error.message);
         var msg = error.message || '';
-        if (msg.includes('not found') || msg.includes('ENOENT')) msg = 'yt-dlp not available. Upload files directly instead.';
+        if (msg.includes('not found') || msg.includes('ENOENT')) msg = 'Video downloader not available. Upload files directly.';
         else if (msg.includes('Unsupported URL')) msg = 'Unsupported URL. Try YouTube, TikTok, Instagram, Twitter, etc.';
-        else if (msg.includes('Private video') || msg.includes('Sign in')) msg = 'YouTube is blocking this download. Try: 1) a different video, 2) a TikTok/Instagram link instead, or 3) upload the file directly.';
+        else if (msg.includes('Private video') || msg.includes('Sign in') || msg.includes('login')) msg = 'This video requires login or is private. Try a different video or upload directly.';
+        else if (msg.includes('Video not available')) msg = 'Video not available on this platform. Try uploading the file directly.';
         else if (msg.length > 200) msg = msg.substring(0, 200);
         res.status(500).json({ error: msg });
     }
