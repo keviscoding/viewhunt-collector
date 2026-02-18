@@ -143,12 +143,12 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Free funnel page (still accessible directly)
+// Free funnel page — redirect to main landing page
 app.get('/free', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'free', 'index.html'));
+    res.redirect('/');
 });
 app.get('/free/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'free', 'index.html'));
+    res.redirect('/');
 });
 
 // Pricing page route
