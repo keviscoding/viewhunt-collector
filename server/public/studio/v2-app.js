@@ -311,12 +311,12 @@ async function generateSceneImages(sceneIndex, count) {
         // Refresh credit balance
         loadCreditBalance();
         
-        // If ALL images failed, show one single error message with credit protection notice
+        // If ALL images failed, show error with retry
         var successCount = data.images.filter(function(img) { return !img.error; }).length;
         if (successCount === 0) {
             var errEl = document.createElement('div');
             errEl.className = 'gallery-error';
-            errEl.innerHTML = '🛡️ Image generation failed. <span style="color:#22c55e">No credits charged.</span><br><a href="#" onclick="event.preventDefault();generateSceneImages(' + sceneIndex + ', 4)" style="color:var(--accent);text-decoration:underline">Retry</a>';
+            errEl.innerHTML = 'Image generation failed. <a href="#" onclick="event.preventDefault();generateSceneImages(' + sceneIndex + ', 4)" style="color:var(--accent);text-decoration:underline">Retry</a>';
             gallery.appendChild(errEl);
         }
         
@@ -329,7 +329,7 @@ async function generateSceneImages(sceneIndex, count) {
     } catch (error) {
         console.error(`Scene ${sceneIndex + 1} image error:`, error);
         if (existing.length === 0) {
-            gallery.innerHTML = '<div class="gallery-error">🛡️ Image generation failed. <span style="color:#22c55e">No credits charged.</span><br><a href="#" onclick="event.preventDefault();generateSceneImages(' + sceneIndex + ', 4)" style="color:var(--accent);text-decoration:underline">Retry</a></div>';
+            gallery.innerHTML = '<div class="gallery-error">Image generation failed. <a href="#" onclick="event.preventDefault();generateSceneImages(' + sceneIndex + ', 4)" style="color:var(--accent);text-decoration:underline">Retry</a></div>';
         }
     }
 }
@@ -413,7 +413,7 @@ async function generateSceneVideo(idx) {
         
     } catch (err) {
         console.error(`Scene ${idx + 1} video error:`, err);
-        result.innerHTML = '<div class="video-error">🛡️ Video generation failed. <span style="color:#22c55e">No credits charged.</span><br><a href="#" onclick="event.preventDefault();generateSceneVideo(' + idx + ')" style="color:var(--accent);text-decoration:underline">Retry</a></div>';
+        result.innerHTML = '<div class="video-error">Video generation failed. <a href="#" onclick="event.preventDefault();generateSceneVideo(' + idx + ')" style="color:var(--accent);text-decoration:underline">Retry</a></div>';
     } finally {
         btn.disabled = false; btn.textContent = '🎥 Generate Video';
     }

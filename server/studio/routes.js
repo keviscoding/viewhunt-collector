@@ -383,6 +383,9 @@ router.post('/generate/scene-images', requireAuth, studioGenerateLimiter, async 
         const numImages = Math.min(count || 2, 4); // Max 4 variants
         console.log(`Director mode: generating ${numImages} image(s) for scene ${sceneNumber}`);
         
+        // Deduct credits upfront — image generation costs us money even if it fails
+        await credits.deductCredits(userId, 'image_generation', 1, 'Images for scene ' + sceneNumber);
+        
         const imagePromises = [];
         for (let i = 0; i < numImages; i++) {
             imagePromises.push(
@@ -392,15 +395,6 @@ router.post('/generate/scene-images', requireAuth, studioGenerateLimiter, async 
         
         const results = await Promise.all(imagePromises);
         const images = results.map((r, i) => typeof r === 'string' ? { url: r, index: i } : { error: r.error, index: i });
-        
-        // Check if ALL images failed — no credits charged
-        const successCount = images.filter(img => !img.error).length;
-        if (successCount === 0) {
-            return res.json({ success: true, sceneNumber, images, creditProtected: true });
-        }
-        
-        // Deduct credits on success (1 scene worth of image generation)
-        await credits.deductCredits(userId, 'image_generation', 1, 'Images for scene ' + sceneNumber);
         
         res.json({ success: true, sceneNumber, images });
     } catch (error) {
@@ -437,17 +431,17 @@ router.post('/generate/scene-video', requireAuth, studioGenerateLimiter, async (
         console.log(`  Image URL: ${imageUrl.substring(0, 80)}...`);
         console.log(`  Video Prompt: ${videoPrompt.substring(0, 100)}...`);
         
-        const videoUrl = await generator.generateVideo(imageUrl, videoPrompt, sceneNumber);
-        
-        // Deduct credits on success
+        // Deduct credits upfront — video generation costs us money even if it fails
         await credits.deductCredits(userId, 'video_generation', 1, 'Video for scene ' + sceneNumber);
+        
+        const videoUrl = await generator.generateVideo(imageUrl, videoPrompt, sceneNumber);
         
         console.log(`Director mode: video for scene ${sceneNumber} complete: ${videoUrl.substring(0, 80)}...`);
         res.json({ success: true, sceneNumber, videoUrl });
     } catch (error) {
         console.error('Scene video generation error:', error.message);
-        // Credits were not deducted (only deducted on success), so no refund needed
-        res.status(500).json({ error: error.message, creditProtected: true });
+        // No refund — video generation costs us money via external API even on failure
+        res.status(500).json({ error: error.message });
     }
 });
 
