@@ -366,46 +366,70 @@
         });
     }
 
-    // ==================== STEP 3: TITLE & ORDER ====================
+    // ==================== STEP 3: DASHBOARD ====================
     function renderOrderList() {
         var list = document.getElementById('order-list');
         var html = '';
+        var totalDur = 0;
         clips.forEach(function(clip, i) {
             var num = clips.length - i;
-            var trimDur = Math.max(0, clip.endTime - clip.startTime).toFixed(1);
+            var dur = Math.max(0, clip.endTime - clip.startTime);
+            totalDur += dur;
             html += '<div class="clip-item" draggable="true" data-index="' + i + '">';
             html += '<span class="drag-handle" title="Drag to reorder">⠿</span>';
             html += '<div class="clip-num">' + num + '</div>';
-            html += '<div class="clip-info">';
-            html += '<div class="clip-name">' + (clip.label || clip.originalName || clip.filename) + '</div>';
-            html += '<div class="clip-meta">' + trimDur + 's clip</div>';
-            html += '</div></div>';
+            html += '<div class="clip-info"><div class="dash-row">';
+            html += '<div class="dash-label"><input type="text" class="label-input" value="' + (clip.label || '').replace(/"/g, '&quot;') + '" placeholder="Label..." maxlength="30" data-label-idx="' + i + '"></div>';
+            html += '<div class="dash-dur"><input type="number" value="' + dur.toFixed(1) + '" min="0.5" max="' + clip.originalDuration.toFixed(1) + '" step="0.1" data-dur-idx="' + i + '"><label>sec</label></div>';
+            html += '</div>';
+            html += '<div class="clip-meta" style="margin-top:0.25rem">' + (clip.originalName || clip.filename) + '</div>';
+            html += '</div>';
+            html += '<div class="move-btns">';
+            html += '<button onclick="window._rk.moveUp(' + i + ')" title="Move up">&#9650;</button>';
+            html += '<button onclick="window._rk.moveDown(' + i + ')" title="Move down">&#9660;</button>';
+            html += '</div>';
+            html += '<div class="clip-actions"><button onclick="window._rk.retrim(' + i + ')" title="Re-trim">&#9986;</button></div>';
+            html += '</div>';
         });
         list.innerHTML = html;
+        document.getElementById('total-duration').textContent = totalDur.toFixed(1) + 's';
+        document.getElementById('total-clips').textContent = clips.length;
+
+        list.querySelectorAll('[data-label-idx]').forEach(function(input) {
+            input.addEventListener('change', function() {
+                var idx = parseInt(input.dataset.labelIdx);
+                if (clips[idx]) clips[idx].label = input.value.trim();
+            });
+        });
+        list.querySelectorAll('[data-dur-idx]').forEach(function(input) {
+            input.addEventListener('change', function() {
+                var idx = parseInt(input.dataset.durIdx);
+                if (!clips[idx]) return;
+                var newDur = Math.max(0.5, Math.min(parseFloat(input.value) || 0, clips[idx].originalDuration));
+                input.value = newDur.toFixed(1);
+                clips[idx].endTime = clips[idx].startTime + newDur;
+                if (clips[idx].endTime > clips[idx].originalDuration) {
+                    clips[idx].endTime = clips[idx].originalDuration;
+                    clips[idx].startTime = Math.max(0, clips[idx].endTime - newDur);
+                }
+                var td = 0; clips.forEach(function(c) { td += Math.max(0, c.endTime - c.startTime); });
+                document.getElementById('total-duration').textContent = td.toFixed(1) + 's';
+            });
+        });
         initDragReorder(list);
     }
 
     function initDragReorder(list) {
         var dragItem = null;
-        var items = list.querySelectorAll('.clip-item');
-        items.forEach(function(item) {
-            item.addEventListener('dragstart', function(e) {
-                dragItem = item;
-                item.classList.add('dragging');
-                e.dataTransfer.effectAllowed = 'move';
-            });
-            item.addEventListener('dragend', function() {
-                item.classList.remove('dragging');
-                dragItem = null;
-            });
-            item.addEventListener('dragover', function(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+        list.querySelectorAll('.clip-item').forEach(function(item) {
+            item.addEventListener('dragstart', function(e) { dragItem = item; item.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+            item.addEventListener('dragend', function() { item.classList.remove('dragging'); dragItem = null; });
+            item.addEventListener('dragover', function(e) { e.preventDefault(); });
             item.addEventListener('drop', function(e) {
                 e.preventDefault();
                 if (!dragItem || dragItem === item) return;
-                var from = parseInt(dragItem.dataset.index);
-                var to = parseInt(item.dataset.index);
-                var moved = clips.splice(from, 1)[0];
-                clips.splice(to, 0, moved);
+                var moved = clips.splice(parseInt(dragItem.dataset.index), 1)[0];
+                clips.splice(parseInt(item.dataset.index), 0, moved);
                 renderOrderList();
             });
         });
@@ -549,6 +573,26 @@
         goToStep(1);
     }
 
-    window._rk = { remove: removeClip };
+    function moveUp(index) {
+        if (index <= 0) return;
+        var item = clips.splice(index, 1)[0];
+        clips.splice(index - 1, 0, item);
+        renderOrderList();
+    }
+
+    function moveDown(index) {
+        if (index >= clips.length - 1) return;
+        var item = clips.splice(index, 1)[0];
+        clips.splice(index + 1, 0, item);
+        renderOrderList();
+    }
+
+    function retrim(index) {
+        currentTrimIndex = index;
+        goToStep(2);
+        showTrimClip(index);
+    }
+
+    window._rk = { remove: removeClip, moveUp: moveUp, moveDown: moveDown, retrim: retrim };
     init();
 })();

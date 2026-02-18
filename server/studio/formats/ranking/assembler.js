@@ -1,12 +1,12 @@
 /**
  * Ranking Video Assembler — Pure FFmpeg, no AI APIs.
  * 
- * Takes user-uploaded/downloaded clips, trims them:
- *   - Scales to fill 1080px wide (crops height if needed)
- *   - Black bars top/bottom only (1080x1920 output)
- *   - Hard cuts between clips (no fades)
- *   - ASS subtitle overlays for title, numbers, and labels
- *     (uses libass which IS in ffmpeg-static, unlike drawtext/libfreetype)
+ * Overlay layout (like real ranking videos):
+ *   - Title at top center (highlighted keyword in yellow)
+ *   - ALL numbers (1-N) stacked on left side, visible the ENTIRE video
+ *   - As each clip plays, its label fades in next to its number
+ *   - Currently playing number is highlighted
+ *   - Black bars top/bottom, hard cuts between clips
  */
 const { execFile } = require('child_process');
 const { promisify } = require('util');
@@ -34,10 +34,7 @@ class RankingAssembler {
                 '-v', 'quiet', '-show_entries', 'format=duration', '-of', 'csv=p=0', filePath
             ]);
             return parseFloat(r.stdout.trim()) || 0;
-        } catch (err) {
-            console.warn('Could not get duration:', err.message);
-            return 0;
-        }
+        } catch (err) { return 0; }
     }
 
     async getVideoInfo(filePath) {
@@ -52,37 +49,27 @@ class RankingAssembler {
             var stream = (info.streams && info.streams[0]) || {};
             var duration = parseFloat(stream.duration) || parseFloat((info.format || {}).duration) || 0;
             return { width: stream.width || 0, height: stream.height || 0, duration: duration };
-        } catch (err) {
-            return { width: 0, height: 0, duration: 0 };
-        }
+        } catch (err) { return { width: 0, height: 0, duration: 0 }; }
     }
 
     async trimClip(inputPath, startTime, endTime, outputPath) {
         var duration = endTime - startTime;
         if (duration <= 0) throw new Error('Invalid trim range');
-
         await this.ffmpeg([
-            '-ss', String(startTime),
-            '-i', inputPath,
-            '-t', String(duration),
+            '-ss', String(startTime), '-i', inputPath, '-t', String(duration),
             '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
             '-c:a', 'aac', '-b:a', '128k',
-            '-avoid_negative_ts', 'make_zero',
-            '-y', outputPath
+            '-avoid_negative_ts', 'make_zero', '-y', outputPath
         ]);
         return outputPath;
     }
 
     /**
-     * Assemble ranking video from clips.
-     * Hard cuts, ASS subtitle overlays for title + numbers + labels.
-     * 
-     * clips: [{ path, number, label }] — in playback order
+     * Assemble ranking video.
+     * clips: [{ path, number, label }] in playback order (highest number first, #1 last)
      * title: { text, highlightWord }
-     * Output: 1080x1920 (9:16), black bars top/bottom only
      */
     async assemble(clips, title, options) {
-        options = options || {};
         var jobId = 'ranking-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
         var jobDir = path.join(this.tempDir, jobId);
         fs.mkdirSync(jobDir, { recursive: true });
@@ -90,46 +77,38 @@ class RankingAssembler {
         console.log('\n🏆 Ranking assembly: ' + clips.length + ' clips');
 
         try {
-            // Step 1: Normalize each clip to 1080x1920 (fill width, black bars top/bottom)
+            // Step 1: Normalize each clip
             var normalizedPaths = [];
             var durations = [];
             for (var i = 0; i < clips.length; i++) {
-                var clip = clips[i];
                 var outPath = path.join(jobDir, 'norm-' + i + '.ts');
-                await this.normalizeClip(clip.path, outPath);
+                await this.normalizeClip(clips[i].path, outPath);
                 var dur = await this.getDuration(outPath);
                 normalizedPaths.push(outPath);
                 durations.push(dur);
-                console.log('  ✓ Clip ' + (i + 1) + '/' + clips.length + ' normalized (' + dur.toFixed(1) + 's)');
+                console.log('  ✓ Clip ' + (i + 1) + '/' + clips.length + ' (' + dur.toFixed(1) + 's)');
             }
 
-            // Step 2: Hard-cut concat (no fades)
+            // Step 2: Hard-cut concat
             var concatList = path.join(jobDir, 'concat.txt');
-            var lines = normalizedPaths.map(function(p) { return "file '" + p + "'"; });
-            fs.writeFileSync(concatList, lines.join('\n'));
-
+            fs.writeFileSync(concatList, normalizedPaths.map(function(p) { return "file '" + p + "'"; }).join('\n'));
             var concatPath = path.join(jobDir, 'concat.mp4');
-            await this.ffmpeg([
-                '-f', 'concat', '-safe', '0', '-i', concatList,
-                '-c', 'copy', '-y', concatPath
-            ]);
+            await this.ffmpeg(['-f', 'concat', '-safe', '0', '-i', concatList, '-c', 'copy', '-y', concatPath]);
 
-            // Step 3: Generate ASS subtitle file for overlays
-            var assPath = path.join(jobDir, 'overlays.ass');
+            // Step 3: Generate ASS overlay
+            var assPath = path.join(jobDir, 'overlay.ass');
             this.generateASS(assPath, clips, durations, title);
 
-            // Step 4: Burn subtitles onto the concat video
-            // Escape the ASS path for FFmpeg filter syntax (colons, backslashes, brackets)
-            var escapedAssPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "'\\\\\\''");
+            // Step 4: Burn subtitles
             var outputName = 'ranking-' + Date.now() + '.mp4';
             var finalPath = path.join(this.outputDir, outputName);
+            var escapedAss = assPath.replace(/\\/g, '/').replace(/:/g, '\\:');
 
             await this.ffmpeg([
                 '-i', concatPath,
-                '-vf', 'ass=' + escapedAssPath,
+                '-vf', 'ass=' + escapedAss,
                 '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
-                '-c:a', 'copy',
-                '-y', finalPath
+                '-c:a', 'copy', '-y', finalPath
             ]);
 
             var duration = await this.getDuration(finalPath);
@@ -140,102 +119,154 @@ class RankingAssembler {
                 duration: duration,
                 clipCount: clips.length
             };
-
         } finally {
-            try {
-                if (fs.existsSync(jobDir)) fs.rmSync(jobDir, { recursive: true, force: true });
-            } catch (e) { console.warn('Cleanup:', e.message); }
+            try { if (fs.existsSync(jobDir)) fs.rmSync(jobDir, { recursive: true, force: true }); }
+            catch (e) { console.warn('Cleanup:', e.message); }
         }
     }
 
     /**
-     * Generate ASS subtitle file with:
-     * - Title text at top center (with highlighted word in yellow)
-     * - Number on left side for each clip
-     * - Label next to number for each clip
+     * Generate ASS subtitle file with ranking-style overlays:
      * 
-     * ASS uses a coordinate system based on PlayResX/PlayResY.
-     * We set PlayResX=1080, PlayResY=1920 to match our output.
+     * Layout (1080x1920):
+     *   - Title at top center (y ~50-120), entire duration
+     *   - Numbers stacked on left side, ALL visible entire duration
+     *     Positioned in the lower-left area (y starts ~500)
+     *     Spacing: ~65px per number row
+     *   - When a clip plays, its label fades in next to the number
+     *   - Currently playing number gets brighter/highlighted
+     * 
+     * Number order on screen: highest at top, #1 at bottom
+     * (e.g., for 5 clips: 5, 4, 3, 2, 1 from top to bottom)
      */
     generateASS(outputPath, clips, durations, title) {
-        // Calculate time offsets for each clip
+        var totalClips = clips.length;
+
+        // Calculate time offsets
         var offsets = [0];
         for (var i = 0; i < durations.length - 1; i++) {
             offsets.push(offsets[i] + durations[i]);
         }
         var totalDuration = offsets[offsets.length - 1] + durations[durations.length - 1];
 
-        // ASS header
+        // Build number-to-clip mapping
+        // clips are in playback order. We need to know all unique numbers.
+        var allNumbers = clips.map(function(c) { return c.number; });
+        // Sort descending for display (highest at top)
+        var sortedNumbers = allNumbers.slice().sort(function(a, b) { return b - a; });
+
+        // Calculate vertical positions for the number list
+        // Numbers go in the middle-left area of the video content zone
+        // Content zone is roughly y=240 to y=1680 (the 1440px between black bars)
+        // We want the list centered vertically in the content area
+        var rowHeight = 65;
+        var listHeight = sortedNumbers.length * rowHeight;
+        var listStartY = Math.max(400, Math.floor(960 - listHeight / 2)); // centered around middle
+
+        // Map number → row Y position
+        var numberYMap = {};
+        for (var n = 0; n < sortedNumbers.length; n++) {
+            numberYMap[sortedNumbers[n]] = listStartY + n * rowHeight;
+        }
+
         var ass = '';
         ass += '[Script Info]\n';
         ass += 'ScriptType: v4.00+\n';
         ass += 'PlayResX: 1080\n';
         ass += 'PlayResY: 1920\n';
         ass += 'WrapStyle: 0\n';
-        ass += 'ScaledBorderAndShadow: yes\n';
-        ass += '\n';
+        ass += 'ScaledBorderAndShadow: yes\n\n';
 
-        // Styles
-        // Title style: big bold white text, centered at top, black outline
         ass += '[V4+ Styles]\n';
         ass += 'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n';
-        // Title: top center (Alignment 8 = top center)
-        ass += 'Style: Title,Arial,52,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,8,20,20,55,1\n';
-        // Title highlight word: yellow (Alignment 8 = top center)
-        ass += 'Style: TitleHL,Arial,52,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,8,20,20,55,1\n';
-        // Number: big yellow, left side (Alignment 4 = middle left)
-        ass += 'Style: Number,Arial,110,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,5,3,4,40,20,0,1\n';
-        // Label: white, next to number (Alignment 4 = middle left)
-        ass += 'Style: Label,Arial,38,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,2,4,190,20,0,1\n';
-        ass += '\n';
 
-        // Events (dialogue lines)
-        ass += '[Events]\n';
+        // Title: top center, white, bold, black outline
+        ass += 'Style: Title,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,8,20,20,50,1\n';
+
+        // Number dim: visible but dimmed (grey), positioned manually via \\pos
+        ass += 'Style: NumDim,Arial,50,&H00888888,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
+
+        // Number active: bright yellow, slightly larger
+        ass += 'Style: NumActive,Arial,56,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,7,0,0,0,1\n';
+
+        // Number done: stays yellow but normal size (already revealed)
+        ass += 'Style: NumDone,Arial,50,&H0000CCFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
+
+        // Label: white text, fades in next to number
+        ass += 'Style: Label,Arial,32,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,7,0,0,0,1\n';
+
+        ass += '\n[Events]\n';
         ass += 'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n';
 
-        // Title — shown for entire video duration
-        if (title && title.text) {
-            var titleStart = this.assTime(0);
-            var titleEnd = this.assTime(totalDuration);
+        var t0 = this.assTime(0);
+        var tEnd = this.assTime(totalDuration);
 
-            if (title.highlightWord && title.text.toLowerCase().includes(title.highlightWord.toLowerCase())) {
-                // Split title into parts: before highlight, highlight, after highlight
-                var idx = title.text.toLowerCase().indexOf(title.highlightWord.toLowerCase());
-                var before = title.text.substring(0, idx);
-                var hl = title.text.substring(idx, idx + title.highlightWord.length);
-                var after = title.text.substring(idx + title.highlightWord.length);
-                // Use override tags to color the highlight word yellow within the title
-                var titleText = before + '{\\c&H00FFFF&}' + hl + '{\\c&HFFFFFF&}' + after;
-                ass += 'Dialogue: 1,' + titleStart + ',' + titleEnd + ',Title,,0,0,0,,' + titleText + '\n';
-            } else {
-                ass += 'Dialogue: 1,' + titleStart + ',' + titleEnd + ',Title,,0,0,0,,' + title.text + '\n';
+        // --- Title (entire duration) ---
+        if (title && title.text) {
+            var titleText = title.text;
+            if (title.highlightWord && titleText.toLowerCase().includes(title.highlightWord.toLowerCase())) {
+                var idx = titleText.toLowerCase().indexOf(title.highlightWord.toLowerCase());
+                var before = titleText.substring(0, idx);
+                var hl = titleText.substring(idx, idx + title.highlightWord.length);
+                var after = titleText.substring(idx + title.highlightWord.length);
+                titleText = before + '{\\c&H00FFFF&}' + hl + '{\\c&HFFFFFF&}' + after;
             }
+            ass += 'Dialogue: 2,' + t0 + ',' + tEnd + ',Title,,0,0,0,,' + titleText + '\n';
         }
 
-        // Numbers and labels for each clip
-        for (var j = 0; j < clips.length; j++) {
-            var clip = clips[j];
-            var start = this.assTime(offsets[j]);
-            var end = this.assTime(offsets[j] + durations[j]);
+        // --- Numbers: always visible, change style when their clip plays ---
+        // For each number, we create multiple dialogue lines for different phases:
+        //   1. Before its clip plays: dim grey with just the number + dot
+        //   2. While its clip plays: bright yellow, active, label fades in
+        //   3. After its clip plays: stays yellow (revealed), label stays
 
-            // Number
-            if (clip.number) {
-                ass += 'Dialogue: 1,' + start + ',' + end + ',Number,,0,0,0,,' + clip.number + '\n';
+        // Build a lookup: number → { clipIndex, offset, duration }
+        var numberInfo = {};
+        for (var c = 0; c < clips.length; c++) {
+            numberInfo[clips[c].number] = {
+                clipIndex: c,
+                offset: offsets[c],
+                duration: durations[c],
+                label: clips[c].label || ''
+            };
+        }
+
+        for (var s = 0; s < sortedNumbers.length; s++) {
+            var num = sortedNumbers[s];
+            var y = numberYMap[num];
+            var info = numberInfo[num];
+            var clipStart = info.offset;
+            var clipEnd = info.offset + info.duration;
+            var numX = 50;
+            var labelX = numX + 80;
+
+            // Phase 1: Before clip plays — dim number
+            if (clipStart > 0.1) {
+                ass += 'Dialogue: 1,' + t0 + ',' + this.assTime(clipStart) + ',NumDim,,0,0,0,,{\\pos(' + numX + ',' + y + ')}' + num + '.\n';
             }
 
-            // Label
-            if (clip.label) {
-                ass += 'Dialogue: 1,' + start + ',' + end + ',Label,,0,0,0,,' + clip.label + '\n';
+            // Phase 2: While clip plays — active yellow number + label fade in
+            var fadeMs = 300;
+            ass += 'Dialogue: 3,' + this.assTime(clipStart) + ',' + this.assTime(clipEnd) + ',NumActive,,0,0,0,,{\\pos(' + numX + ',' + y + ')}' + num + '.\n';
+
+            // Label fades in
+            if (info.label) {
+                ass += 'Dialogue: 3,' + this.assTime(clipStart) + ',' + this.assTime(clipEnd) + ',Label,,0,0,0,,{\\pos(' + labelX + ',' + y + ')\\fad(' + fadeMs + ',0)}' + info.label + '\n';
+            }
+
+            // Phase 3: After clip plays — stays revealed (yellow-ish)
+            if (clipEnd < totalDuration - 0.1) {
+                ass += 'Dialogue: 1,' + this.assTime(clipEnd) + ',' + tEnd + ',NumDone,,0,0,0,,{\\pos(' + numX + ',' + y + ')}' + num + '.\n';
+                if (info.label) {
+                    ass += 'Dialogue: 1,' + this.assTime(clipEnd) + ',' + tEnd + ',Label,,0,0,0,,{\\pos(' + labelX + ',' + y + ')}' + info.label + '\n';
+                }
             }
         }
 
         fs.writeFileSync(outputPath, ass);
-        console.log('  ✓ ASS subtitle file generated (' + clips.length + ' clips, ' + totalDuration.toFixed(1) + 's)');
+        console.log('  ✓ ASS overlay generated (' + totalClips + ' numbers, ' + totalDuration.toFixed(1) + 's)');
     }
 
-    /**
-     * Convert seconds to ASS time format: H:MM:SS.CC
-     */
     assTime(seconds) {
         var h = Math.floor(seconds / 3600);
         var m = Math.floor((seconds % 3600) / 60);
@@ -244,25 +275,17 @@ class RankingAssembler {
         return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0') + '.' + String(cs).padStart(2, '0');
     }
 
-    /**
-     * Normalize a single clip to 1080x1920.
-     * - Scale to fill 1080px wide (crop excess height if needed)
-     * - Pad to 1080x1920 with black bars on top/bottom only
-     */
     async normalizeClip(inputPath, outputPath) {
         var filterStr = [
             'scale=1080:-2',
             'crop=1080:min(ih\\,1440):0:(ih-min(ih\\,1440))/2',
             'pad=1080:1920:0:(oh-ih)/2:black'
         ].join(',');
-
         await this.ffmpeg([
-            '-i', inputPath,
-            '-vf', filterStr,
+            '-i', inputPath, '-vf', filterStr,
             '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
             '-c:a', 'aac', '-b:a', '128k',
-            '-f', 'mpegts',
-            '-y', outputPath
+            '-f', 'mpegts', '-y', outputPath
         ]);
     }
 

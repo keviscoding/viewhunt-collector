@@ -110,6 +110,17 @@
         .drag-handle:active{cursor:grabbing}
         .clip-item.dragging{opacity:0.4}
 
+        /* Dashboard clip extras */
+        .dash-row{display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap}
+        .dash-label{flex:1;min-width:100px}
+        .dash-dur{width:70px}
+        .dash-dur input{width:100%;padding:0.3rem 0.4rem;border-radius:5px;border:1px solid var(--border);background:var(--surface-3);color:var(--text);font-size:0.8rem;text-align:center;font-family:inherit;font-variant-numeric:tabular-nums}
+        .dash-dur input:focus{outline:none;border-color:var(--accent)}
+        .dash-dur label{font-size:0.65rem;color:var(--text-dim);display:block;text-align:center;margin-top:0.15rem}
+        .clip-item .move-btns{display:flex;flex-direction:column;gap:2px}
+        .clip-item .move-btns button{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:0.7rem;padding:0 0.2rem;line-height:1}
+        .clip-item .move-btns button:hover{color:var(--text)}
+
         .hidden{display:none!important}
 
         @media(max-width:640px){
@@ -193,23 +204,35 @@
         </div>
     </div>
 
-    <!-- STEP 3: Title & Order -->
+    <!-- STEP 3: Dashboard — Title, Order, Duration -->
     <div id="screen-title" class="card hidden">
-        <div class="card-title">🎯 Title & Order</div>
-        <div class="card-desc">Set your video title and arrange the clip order. The last clip plays as the #1 reveal.</div>
+        <div class="card-title">🎯 Dashboard</div>
+        <div class="card-desc">Set your title, adjust clip durations, reorder clips, and edit labels. Numbers count down — last clip = #1 big reveal.</div>
 
-        <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:0.35rem">Video Title:</label>
-        <input type="text" class="title-input" id="title-text" placeholder="e.g. Ranking The Best Baby Moments" maxlength="60">
-
-        <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:0.35rem">Highlight word (shown in yellow):</label>
-        <input type="text" class="title-input" id="title-highlight" placeholder="e.g. Best" maxlength="20" style="margin-bottom:1rem">
+        <!-- Title section -->
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem">
+            <div style="flex:1;min-width:200px">
+                <label style="font-size:0.8rem;color:var(--text-dim);display:block;margin-bottom:0.3rem">Video Title</label>
+                <input type="text" class="title-input" id="title-text" placeholder="e.g. Ranking The Best Baby Moments" maxlength="60" style="margin-bottom:0">
+            </div>
+            <div style="width:160px">
+                <label style="font-size:0.8rem;color:var(--text-dim);display:block;margin-bottom:0.3rem">Highlight Word</label>
+                <input type="text" class="title-input" id="title-highlight" placeholder="e.g. Best" maxlength="20" style="margin-bottom:0">
+            </div>
+        </div>
 
         <div class="title-preview" id="title-preview">
             <h2>Your Title Here</h2>
         </div>
 
-        <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:0.5rem">Clip playback order (drag to reorder — last clip = #1 big reveal):</label>
+        <!-- Clip dashboard list -->
+        <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:0.5rem">Clips (drag ⠿ to reorder):</label>
         <div class="clip-list" id="order-list"></div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.75rem;font-size:0.8rem;color:var(--text-dim)">
+            <span>Total: <span id="total-duration" style="color:var(--text);font-weight:600">0.0s</span></span>
+            <span><span id="total-clips" style="color:var(--text);font-weight:600">0</span> clips</span>
+        </div>
 
         <div class="btn-row">
             <button class="btn btn-secondary" id="btn-back-trim">← Back to Trim</button>
@@ -236,6 +259,6 @@
     </div>
 </div>
 
-<script src="/studio/ranking-app.js?v=20260218c"></script>
+<script src="/studio/ranking-app.js?v=20260218e"></script>
 </body>
 </html>
