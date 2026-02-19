@@ -93,8 +93,9 @@ var formats = [
         tags: ['Educational', 'Science', 'Anatomy'],
         banner: '/studio/skeleton-anatomy-banner.png',
         emoji: '💀',
-        live: false,
-        maintenance: true
+        live: true,
+        maintenance: true,
+        url: '/studio/v2'
     },
     {
         id: 'ranking-countdown',
@@ -144,6 +145,7 @@ function getAuthToken() {
 }
 
 var hasPaidAccess = false;
+var isAdmin = false;
 
 (async function() {
     var token = getAuthToken();
@@ -159,6 +161,7 @@ var hasPaidAccess = false;
         var data = await res.json();
         var sub = data.subscription || {};
         hasPaidAccess = sub.type === 'admin' || sub.type === 'stripe' || sub.type === 'beta' || sub.type === 'invite';
+        isAdmin = sub.type === 'admin';
         if (sub.type === 'stripe' && !sub.hasAccess) hasPaidAccess = false;
     } catch (e) {
         console.warn('Auth check failed:', e);
@@ -199,16 +202,21 @@ function renderFormats() {
 function openFormat(id, isLive) {
     if (!isLive) return; // Coming soon — do nothing
     
+    var format = formats.find(function(f) { return f.id === id; });
+    
+    // Maintenance formats: admin only
+    if (format && format.maintenance && !isAdmin) {
+        alert('This format is under maintenance. We are upgrading our AI models — check back soon.');
+        return;
+    }
+    
     if (!hasPaidAccess) {
-        // Show upgrade prompt
         var banner = document.getElementById('upgrade-banner');
         banner.style.display = 'block';
         banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
     }
     
-    // Find the format and navigate
-    var format = formats.find(function(f) { return f.id === id; });
     if (format && format.url) {
         window.location.href = format.url;
     }
