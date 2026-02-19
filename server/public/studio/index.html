@@ -41,6 +41,7 @@
         .format-badge{position:absolute;top:10px;right:10px;padding:0.2rem 0.6rem;border-radius:6px;font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em}
         .badge-live{background:var(--green);color:#0e0e12}
         .badge-soon{background:var(--surface-3);color:var(--text-dim);border:1px solid var(--border)}
+        .badge-maintenance{background:var(--amber);color:#0e0e12}
         .format-info{padding:1.25rem}
         .format-name{font-size:1.05rem;font-weight:700;margin-bottom:0.25rem}
         .format-desc{font-size:0.82rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.75rem}
@@ -88,12 +89,12 @@ var formats = [
     {
         id: 'skeleton-anatomy',
         name: 'Skeleton Anatomy',
-        desc: 'Educational "what happens to your body" videos with skeleton/anatomy visuals on gradient backgrounds. Perfect for viral science content.',
+        desc: 'Educational "what happens to your body" videos with skeleton/anatomy visuals on gradient backgrounds. Currently under maintenance — we\'re upgrading the AI models for better quality and lower costs. Back soon.',
         tags: ['Educational', 'Science', 'Anatomy'],
         banner: '/studio/skeleton-anatomy-banner.png',
         emoji: '💀',
-        live: true,
-        url: '/studio/v2.html'
+        live: false,
+        maintenance: true
     },
     {
         id: 'ranking-countdown',
@@ -181,7 +182,9 @@ function renderFormats() {
         } else {
             html += f.emoji;
         }
-        html += '<span class="format-badge ' + (f.live ? 'badge-live' : 'badge-soon') + '">' + (f.live ? 'Live' : 'Coming Soon') + '</span>';
+        var badgeClass = f.maintenance ? 'badge-maintenance' : (f.live ? 'badge-live' : 'badge-soon');
+        var badgeText = f.maintenance ? 'Maintenance' : (f.live ? 'Live' : 'Coming Soon');
+        html += '<span class="format-badge ' + badgeClass + '">' + badgeText + '</span>';
         html += '</div>';
         html += '<div class="format-info">';
         html += '<div class="format-name">' + f.name + '</div>';
