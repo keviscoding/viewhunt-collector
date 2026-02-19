@@ -2,21 +2,6 @@
 <html lang="en">
 <head>
     <script>if(!localStorage.getItem("viewhunt_token"))window.location.replace("/");</script>
-    <script>
-    // Skeleton format is admin-only during maintenance
-    (async function(){
-        try {
-            var t = localStorage.getItem('viewhunt_token') || localStorage.getItem('token');
-            if (!t) return;
-            var r = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + t } });
-            if (!r.ok) return;
-            var d = await r.json();
-            if (!d.subscription || d.subscription.type !== 'admin') {
-                document.documentElement.innerHTML = '<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Under Maintenance</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#0e0e12;color:#e8e8ed;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:2rem}.wrap{max-width:420px}.icon{font-size:3rem;margin-bottom:1rem}h1{font-size:1.4rem;font-weight:700;margin-bottom:0.75rem}p{color:#8b8b9e;font-size:0.95rem;line-height:1.6;margin-bottom:1.5rem}a{display:inline-block;padding:0.6rem 1.2rem;background:#7c6aef;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem}a:hover{background:#6b58e0}</style></head><body><div class="wrap"><div class="icon">&#9888;&#65039;</div><h1>Skeleton Anatomy is Under Maintenance</h1><p>We are upgrading our AI models to deliver better quality at lower costs. This format will be back online soon. The Ranking format is still available.</p><a href="/studio">&larr; Back to Studio</a></div></body>';
-            }
-        } catch(e) {}
-    })();
-    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Studio — ViewHunt</title>
@@ -519,6 +504,6 @@
         </footer>
     </div>
 
-    <script src="/studio/v2-app.js?v=20260218a"></script>
+    <script src="/studio/v2-app.js?v=20260219a"></script>
 </body>
 </html>

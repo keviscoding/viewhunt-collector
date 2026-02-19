@@ -98,14 +98,10 @@ const requireAuth = (req, res, next) => {
     }
 };
 
-// Admin-only middleware — skeleton format is under maintenance
-const requireAdmin = (req, res, next) => {
-    if (req.user && req.user.email === process.env.ADMIN_EMAIL) return next();
-    return res.status(503).json({ error: 'This feature is under maintenance. Check back soon.' });
-};
+
 
 // Generate Script
-router.post('/generate/script', requireAuth, requireAdmin, studioGenerateLimiter, async (req, res) => {
+router.post('/generate/script', requireAuth, studioGenerateLimiter, async (req, res) => {
     try {
         const { format, topic, style } = req.body;
         
@@ -137,7 +133,7 @@ router.post('/generate/script', requireAuth, requireAdmin, studioGenerateLimiter
 });
 
 // Generate Images
-router.post('/generate/images', requireAuth, requireAdmin, studioGenerateLimiter, async (req, res) => {
+router.post('/generate/images', requireAuth, studioGenerateLimiter, async (req, res) => {
     try {
         const { format, script, style } = req.body;
         
@@ -169,7 +165,7 @@ router.post('/generate/images', requireAuth, requireAdmin, studioGenerateLimiter
 });
 
 // Generate Voice
-router.post('/generate/voice', requireAuth, requireAdmin, async (req, res) => {
+router.post('/generate/voice', requireAuth, async (req, res) => {
     try {
         const { format, script } = req.body;
         
@@ -226,7 +222,7 @@ router.get('/formats', (req, res) => {
 });
 
 // V2: Full video generation (script → scenes → images → videos)
-router.post('/generate/full', requireAuth, requireAdmin, async (req, res) => {
+router.post('/generate/full', requireAuth, async (req, res) => {
     try {
         const { format, script, skeletonStyle, gradientColors, generateVideos } = req.body;
         
@@ -269,7 +265,7 @@ router.post('/generate/full', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // V2: Streaming generation with real-time progress updates
-router.post('/generate/stream', requireAuth, requireAdmin, async (req, res) => {
+router.post('/generate/stream', requireAuth, async (req, res) => {
     try {
         const { format, script, skeletonStyle, gradientColors, generateVideos } = req.body;
         
@@ -342,7 +338,7 @@ router.post('/generate/stream', requireAuth, requireAdmin, async (req, res) => {
 // === DIRECTOR MODE ENDPOINTS ===
 
 // Step 1: Generate scene prompts only (no images/videos)
-router.post('/generate/scenes', requireAuth, requireAdmin, async (req, res) => {
+router.post('/generate/scenes', requireAuth, async (req, res) => {
     try {
         const { format, script, skeletonStyle, gradientColors } = req.body;
         if (!format || !script) return res.status(400).json({ error: 'Format and script are required' });
@@ -371,7 +367,7 @@ router.post('/generate/scenes', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // Step 2: Generate images for a single scene (supports multiple variants)
-router.post('/generate/scene-images', requireAuth, requireAdmin, studioGenerateLimiter, async (req, res) => {
+router.post('/generate/scene-images', requireAuth, studioGenerateLimiter, async (req, res) => {
     try {
         const { format, imagePrompt, sceneNumber, count } = req.body;
         if (!format || !imagePrompt) return res.status(400).json({ error: 'Format and imagePrompt are required' });
@@ -410,7 +406,7 @@ router.post('/generate/scene-images', requireAuth, requireAdmin, studioGenerateL
 });
 
 // Step 3: Generate video for a single scene with selected image
-router.post('/generate/scene-video', requireAuth, requireAdmin, studioGenerateLimiter, async (req, res) => {
+router.post('/generate/scene-video', requireAuth, studioGenerateLimiter, async (req, res) => {
     try {
         let { format, imageUrl, videoPrompt, sceneNumber } = req.body;
         if (!format || !imageUrl || !videoPrompt) return res.status(400).json({ error: 'format, imageUrl, and videoPrompt are required' });
@@ -452,7 +448,7 @@ router.post('/generate/scene-video', requireAuth, requireAdmin, studioGenerateLi
 });
 
 // Upload custom scene image
-router.post('/upload-scene-image', requireAuth, requireAdmin, upload.single('image'), (req, res) => {
+router.post('/upload-scene-image', requireAuth, upload.single('image'), (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: 'No image file provided' });
         
@@ -468,7 +464,7 @@ router.post('/upload-scene-image', requireAuth, requireAdmin, upload.single('ima
 // === VIDEO ASSEMBLY ENDPOINTS (Queue-based) ===
 
 // Submit assembly job — returns immediately with jobId
-router.post('/assemble', requireAuth, requireAdmin, studioAssemblyLimiter, async (req, res) => {
+router.post('/assemble', requireAuth, studioAssemblyLimiter, async (req, res) => {
     try {
         const { script, scenes, voiceName } = req.body;
         

@@ -1008,13 +1008,52 @@ Format your response as JSON:
                 });
                 
                 const videoResults = await Promise.all(videoPromises);
-                const videoSuccessCount = videoResults.filter(r => r.success).length;
+                let videoSuccessCount = videoResults.filter(r => r.success).length;
                 console.log(`\n✅ Batch complete: ${videoSuccessCount}/${scenesWithImages.length} videos generated successfully\n`);
-                
 
-                console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
+                // Retry pass: sequentially retry any failed videos
+                const failedScenes = scenesWithImages.filter(scene => !scene.videoUrl && scene.imageUrl);
+                if (failedScenes.length > 0) {
+                    console.log(`\n🔄 Retry pass: ${failedScenes.length} failed video(s) to retry sequentially...`);
+                    onProgress({
+                        step: 'videos',
+                        status: 'processing',
+                        message: `Retrying ${failedScenes.length} failed video(s)...`,
+                        total: scenesWithImages.length,
+                        completed: videosCompleted
+                    });
+
+                    for (const scene of failedScenes) {
+                        const sceneNumber = scenes.indexOf(scene) + 1;
+                        try {
+                            console.log(`🔄 Retrying video for scene ${sceneNumber}...`);
+                            scene.videoUrl = await this.generateVideo(
+                                scene.imageUrl,
+                                scene.videoPrompt,
+                                sceneNumber
+                            );
+                            scene.videoError = null;
+                            videoSuccessCount++;
+                            console.log(`✅ Scene ${sceneNumber} video retry succeeded`);
+
+                            onSceneComplete({
+                                sceneNumber: sceneNumber,
+                                videoUrl: scene.videoUrl,
+                                imageUrl: scene.imageUrl,
+                                imagePrompt: scene.imagePrompt,
+                                videoPrompt: scene.videoPrompt,
+                                scriptLine: scene.scriptLine
+                            });
+                        } catch (error) {
+                            console.error(`❌ Scene ${sceneNumber} video retry also failed:`, error.message);
+                        }
+                    }
+                    console.log(`\n✅ After retry: ${videoSuccessCount}/${scenesWithImages.length} videos total\n`);
+                }
+
+                console.log(`\n�💰 VIDEO GENERATION COST SUMMARY:`);
                 console.log(`   Videos generated: ${videoSuccessCount}`);
-                console.log(`   Provider: Kie.ai Kling 2.6`);
+                console.log(`   Provider: Atlas Cloud Wan-2.6 Flash`);
 
                 console.log(`\n`);
                 
@@ -1023,8 +1062,7 @@ Format your response as JSON:
                     status: 'completed',
                     message: `${videoSuccessCount}/${scenesWithImages.length} videos generated`,
                     total: scenesWithImages.length,
-                    completed: scenesWithImages.length,
-
+                    completed: scenesWithImages.length
                 });
             }
 

@@ -89,12 +89,11 @@ var formats = [
     {
         id: 'skeleton-anatomy',
         name: 'Skeleton Anatomy',
-        desc: 'Educational "what happens to your body" videos with skeleton/anatomy visuals on gradient backgrounds. Currently under maintenance — we\'re upgrading the AI models for better quality and lower costs. Back soon.',
+        desc: 'Educational "what happens to your body" videos with skeleton/anatomy visuals on gradient backgrounds. AI-generated scenes, voiceover, and effects.',
         tags: ['Educational', 'Science', 'Anatomy'],
         banner: '/studio/skeleton-anatomy-banner.png',
         emoji: '💀',
         live: true,
-        maintenance: true,
         url: '/studio/v2'
     },
     {
@@ -203,12 +202,6 @@ function openFormat(id, isLive) {
     if (!isLive) return; // Coming soon — do nothing
     
     var format = formats.find(function(f) { return f.id === id; });
-    
-    // Maintenance formats: admin only
-    if (format && format.maintenance && !isAdmin) {
-        alert('This format is under maintenance. We are upgrading our AI models — check back soon.');
-        return;
-    }
     
     if (!hasPaidAccess) {
         var banner = document.getElementById('upgrade-banner');
