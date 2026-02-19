@@ -11,9 +11,13 @@ class SkeletonGeneratorV2 {
             apiKey: process.env.ANTHROPIC_API_KEY
         });
         
-        // Kie.ai API configuration (for Kling 2.6 videos AND images)
+        // Kie.ai API configuration (for images — nano-banana-pro)
         this.kieApiKey = process.env.KIEAI_API_KEY;
         this.kieBaseUrl = 'https://api.kie.ai';
+        
+        // Atlas Cloud API configuration (for videos — Wan-2.6 Flash, much cheaper than Kling)
+        this.atlasApiKey = process.env.ATLASCLOUD_API_KEY;
+        this.atlasBaseUrl = 'https://api.atlascloud.ai';
         
         // Load master system prompt
         this.masterPrompt = this.loadMasterPrompt();
@@ -503,87 +507,89 @@ Format your response as JSON:
      * Includes retry logic (same pattern as image generation)
      */
     async generateVideo(imageUrl, videoPrompt, sceneNumber) {
-        console.log(`\n=== Generating video for scene ${sceneNumber} ===`);
-        console.log(`Image URL: ${imageUrl.substring(0, 80)}...`);
-        console.log(`Video Prompt: "${videoPrompt.substring(0, 120)}..."`);
-        console.log(`===\n`);
-        
-        const maxRetries = 3;
-        
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                console.log(`🎬 Kie.ai Kling 2.6 - Scene ${sceneNumber} (attempt ${attempt}/${maxRetries})`);
-                
-                const createResponse = await axios.post(
-                    `${this.kieBaseUrl}/api/v1/jobs/createTask`,
-                    {
-                        model: 'kling-2.6/image-to-video',
-                        input: {
-                            prompt: videoPrompt,
-                            image_urls: [imageUrl],
-                            sound: true,
-                            duration: '5'
-                        }
-                    },
-                    {
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${this.kieApiKey}`
-                        },
-                        timeout: 30000
-                    }
-                );
+            console.log(`\n=== Generating video for scene ${sceneNumber} (Atlas Cloud Wan-2.6 Flash) ===`);
+            console.log(`Image URL: ${imageUrl.substring(0, 80)}...`);
+            console.log(`Video Prompt: "${videoPrompt.substring(0, 120)}..."`);
+            console.log(`===\n`);
 
-                const taskId = createResponse.data?.data?.taskId
-                    || createResponse.data?.taskId;
-                
-                if (!taskId) {
-                    const code = createResponse.data?.code;
-                    const msg = createResponse.data?.msg || '';
-                    
-                    if (code === 402 || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('balance')) {
-                        throw new Error('Out of Kie.ai credits. Please top up your account.');
+            const maxRetries = 3;
+
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    console.log(`🎬 Atlas Cloud Wan-2.6 Flash - Scene ${sceneNumber} (attempt ${attempt}/${maxRetries})`);
+
+                    const createResponse = await axios.post(
+                        `${this.atlasBaseUrl}/api/v1/model/generateVideo`,
+                        {
+                            model: 'alibaba/wan-2.6/image-to-video-flash',
+                            image: imageUrl,
+                            prompt: videoPrompt,
+                            resolution: '720p',
+                            duration: 5,
+                            enable_prompt_expansion: false,
+                            shot_type: 'single',
+                            generate_audio: false,
+                            seed: -1
+                        },
+                        {
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${this.atlasApiKey}`
+                            },
+                            timeout: 30000
+                        }
+                    );
+
+                    // Atlas Cloud returns { code: 200, data: { id: "prediction_id" } }
+                    const respData = createResponse.data;
+                    const predictionId = respData?.data?.id || respData?.id;
+
+                    if (!predictionId) {
+                        const code = respData?.code;
+                        const msg = respData?.msg || respData?.message || '';
+
+                        if (code === 402 || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('balance')) {
+                            throw new Error('Out of Atlas Cloud credits. Please top up your account.');
+                        }
+
+                        console.warn(`Scene ${sceneNumber}: No prediction ID (attempt ${attempt}/${maxRetries}). Response: ${JSON.stringify(respData).substring(0, 300)}`);
+
+                        if (attempt < maxRetries) {
+                            const delay = attempt * 3000;
+                            console.log(`Retrying in ${delay / 1000}s...`);
+                            await new Promise(r => setTimeout(r, delay));
+                            continue;
+                        }
+                        throw new Error(`Atlas Cloud failed to create video task after ${maxRetries} attempts`);
                     }
-                    
-                    console.warn(`Scene ${sceneNumber}: No taskId (attempt ${attempt}/${maxRetries}). Code: ${code}, Msg: ${msg}`);
-                    
-                    if (attempt < maxRetries) {
+
+                    console.log(`Video task created: ${predictionId}`);
+
+                    const videoUrl = await this.pollAtlasTask(predictionId, 600000);
+                    console.log(`✅ Video ${sceneNumber} generated successfully (Wan-2.6 Flash)`);
+
+                    return videoUrl;
+
+                } catch (error) {
+                    if (error.message.includes('credit') || error.message.includes('balance') || error.message.includes('authentication')) {
+                        throw error;
+                    }
+
+                    const status = error.response?.status;
+                    const isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
+
+                    if (isRetryable && attempt < maxRetries) {
                         const delay = attempt * 3000;
-                        console.log(`Retrying in ${delay / 1000}s...`);
+                        console.warn(`Scene ${sceneNumber} video error (attempt ${attempt}/${maxRetries}): ${error.message}. Retrying in ${delay / 1000}s...`);
                         await new Promise(r => setTimeout(r, delay));
                         continue;
                     }
-                    throw new Error(`Kie.ai failed to create video task after ${maxRetries} attempts`);
-                }
 
-                console.log(`Video task created: ${taskId}`);
-                
-                // Reuse the same Kie.ai polling function (same API, same response format)
-                const videoUrl = await this.pollKieTaskForImage(taskId, 600000);
-                console.log(`✅ Video ${sceneNumber} generated successfully (Kling 2.6)`);
-                
-                return videoUrl;
-                
-            } catch (error) {
-                if (error.message.includes('credit') || error.message.includes('balance') || error.message.includes('authentication')) {
+                    console.error(`Error generating video ${sceneNumber}:`, error.response?.data || error.message);
                     throw error;
                 }
-                
-                const status = error.response?.status;
-                const isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
-                
-                if (isRetryable && attempt < maxRetries) {
-                    const delay = attempt * 3000;
-                    console.warn(`Scene ${sceneNumber} video error (attempt ${attempt}/${maxRetries}): ${error.message}. Retrying in ${delay / 1000}s...`);
-                    await new Promise(r => setTimeout(r, delay));
-                    continue;
-                }
-                
-                console.error(`Error generating video ${sceneNumber}:`, error.response?.data || error.message);
-                throw error;
             }
         }
-    }
 
     /**
      * Poll Kie.ai task for image generation
@@ -658,6 +664,75 @@ Format your response as JSON:
         }
         
         throw new Error(`Task timeout after ${Math.floor(timeout/1000)}s - Kie.ai servers may be overloaded. Try again later.`);
+    }
+
+    /**
+     * Poll Atlas Cloud for video task completion.
+     * GET /api/v1/model/prediction/{request_id}
+     * Returns when status is "completed"/"succeeded" or throws on "failed".
+     */
+    async pollAtlasTask(predictionId, timeout = 600000) {
+        const startTime = Date.now();
+        const pollInterval = 5000; // 5 seconds
+        let pollCount = 0;
+
+        const endpoint = `${this.atlasBaseUrl}/api/v1/model/prediction/${predictionId}`;
+
+        while (Date.now() - startTime < timeout) {
+            pollCount++;
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+
+            try {
+                const response = await axios.get(endpoint, {
+                    headers: {
+                        'Authorization': `Bearer ${this.atlasApiKey}`
+                    },
+                    timeout: 15000
+                });
+
+                const data = response.data?.data || response.data;
+                const status = (data.status || '').toLowerCase();
+
+                // Log progress every 30 seconds
+                if (pollCount % 6 === 0) {
+                    console.log(`Atlas task ${predictionId} status: ${status} (${elapsed}s elapsed)`);
+                }
+
+                if (status === 'completed' || status === 'succeeded') {
+                    const outputs = data.outputs || [];
+                    if (outputs.length === 0) {
+                        throw new Error('Atlas Cloud returned completed but no output URLs');
+                    }
+                    console.log(`✅ Atlas task completed in ${elapsed}s`);
+                    return outputs[0];
+                }
+
+                if (status === 'failed') {
+                    const errorMsg = data.error || data.message || 'Unknown error';
+                    throw new Error(`Atlas Cloud video generation failed: ${errorMsg}`);
+                }
+
+                // Still processing (created, processing, etc.) — wait and retry
+                await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+            } catch (error) {
+                if (error.response?.status === 401) {
+                    throw new Error('Atlas Cloud authentication failed. Check your API key.');
+                } else if (error.response?.status === 402) {
+                    throw new Error('Out of Atlas Cloud credits.');
+                } else if (error.response?.status === 429) {
+                    console.warn('Atlas Cloud rate limit, waiting 10s...');
+                    await new Promise(resolve => setTimeout(resolve, 10000));
+                } else if (error.message.includes('Atlas Cloud') || error.message.includes('failed')) {
+                    throw error;
+                } else {
+                    console.error('Atlas polling error:', error.message);
+                    await new Promise(resolve => setTimeout(resolve, pollInterval));
+                }
+            }
+        }
+
+        throw new Error(`Atlas Cloud task timeout after ${Math.floor(timeout/1000)}s. Try again later.`);
     }
 
     /**
