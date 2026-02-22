@@ -725,6 +725,19 @@ function handleComplete(data) {
     const assembleBtn = document.getElementById('auto-assemble-btn');
     if (assembleBtn && hasVideos) assembleBtn.style.display = 'inline-flex';
     
+    // Show "edit your video" prompt
+    if (hasVideos) {
+        var prompt = document.createElement('div');
+        prompt.id = 'edit-prompt-banner';
+        prompt.style.cssText = 'background:linear-gradient(135deg,#1a1a2e,#16213e);border:1px solid var(--accent);border-radius:12px;padding:1.5rem;text-align:center;margin:1.25rem 0;animation:fadeIn 0.3s ease';
+        prompt.innerHTML = '<div style="font-size:1.5rem;margin-bottom:0.5rem">✅</div>' +
+            '<div style="font-size:1.05rem;font-weight:700;margin-bottom:0.35rem">Finished generating</div>' +
+            '<div style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Your scenes are ready. Review, swap clips, then assemble.</div>' +
+            '<button class="btn btn-primary" onclick="document.getElementById(\'results-section\').scrollIntoView({behavior:\'smooth\',block:\'start\'});this.parentElement.remove()">🎬 Edit Your Video</button>';
+        var resultsSection = document.getElementById('results-section');
+        if (resultsSection) resultsSection.insertBefore(prompt, resultsSection.firstChild);
+    }
+    
     // Setup download all
     const dlBtn = document.getElementById('download-all-btn');
     if (dlBtn) {
