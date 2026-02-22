@@ -4,6 +4,8 @@ let selectedGradient = 'smooth blue to teal gradient background';
 let generationInProgress = false;
 let currentScenes = [];
 let directorMode = false;
+let isAdmin = false;
+let videoModel = 'wan';
 
 document.addEventListener('DOMContentLoaded', () => {
     initGradients();
@@ -392,7 +394,7 @@ async function generateSceneVideo(idx) {
         const res = await fetch('/api/studio/generate/scene-video', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
-            body: JSON.stringify({ format: 'skeleton-anatomy', imageUrl, videoPrompt, sceneNumber: scene.sceneNumber || idx + 1 })
+            body: JSON.stringify({ format: 'skeleton-anatomy', imageUrl, videoPrompt, sceneNumber: scene.sceneNumber || idx + 1, videoModel })
         });
         await handleCreditError(res);
         if (!res.ok) throw new Error(`Server error ${res.status}: ${await res.text()}`);
@@ -647,7 +649,7 @@ async function handleAutoGeneration(script, generateVideos) {
         const response = await fetch('/api/studio/generate/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
-            body: JSON.stringify({ format: 'skeleton-anatomy', script, gradientColors: selectedGradient, generateVideos })
+            body: JSON.stringify({ format: 'skeleton-anatomy', script, gradientColors: selectedGradient, generateVideos, videoModel })
         });
         
         if (!response.ok) throw new Error('Failed to start generation');
@@ -815,11 +817,47 @@ function getAuthToken() {
 
 function checkAuth() {
     if (!getAuthToken()) {
-        // No auth — redirect to app login
         window.location.href = '/app';
         return;
     }
-    // Verify token is valid by checking credit balance (will 401 if invalid)
+    // Check if admin — show model toggle if so
+    fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + getAuthToken() } })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+            if (d && d.subscription && d.subscription.type === 'admin') {
+                isAdmin = true;
+                showAdminModelToggle();
+            }
+        })
+        .catch(() => {});
+}
+
+function showAdminModelToggle() {
+    var container = document.getElementById('admin-model-toggle');
+    if (!container) return;
+    container.style.display = 'block';
+    container.innerHTML = '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px">' +
+        '<span style="font-size:0.8rem;color:var(--text-muted)">Video Model:</span>' +
+        '<button id="model-wan-btn" class="btn btn-sm" onclick="setVideoModel(\'wan\')" style="font-size:0.75rem;padding:0.3rem 0.7rem">Wan Flash · $0.02</button>' +
+        '<button id="model-kling-btn" class="btn btn-sm" onclick="setVideoModel(\'kling\')" style="font-size:0.75rem;padding:0.3rem 0.7rem">Kling 2.6 · $0.40</button>' +
+        '<span style="font-size:0.7rem;color:var(--text-dim)">(admin only)</span>' +
+        '</div>';
+    updateModelButtons();
+}
+
+function setVideoModel(model) {
+    videoModel = model;
+    updateModelButtons();
+}
+
+function updateModelButtons() {
+    var wan = document.getElementById('model-wan-btn');
+    var kling = document.getElementById('model-kling-btn');
+    if (!wan || !kling) return;
+    wan.style.background = videoModel === 'wan' ? 'var(--accent)' : 'var(--surface-3)';
+    wan.style.color = videoModel === 'wan' ? '#fff' : 'var(--text-muted)';
+    kling.style.background = videoModel === 'kling' ? 'var(--accent)' : 'var(--surface-3)';
+    kling.style.color = videoModel === 'kling' ? '#fff' : 'var(--text-muted)';
 }
 
 async function downloadFile(url, filename) {

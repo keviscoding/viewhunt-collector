@@ -506,7 +506,12 @@ Format your response as JSON:
      * Step 3: Generate video from image using Kie.ai Kling 2.6
      * Includes retry logic (same pattern as image generation)
      */
-    async generateVideo(imageUrl, videoPrompt, sceneNumber) {
+    async generateVideo(imageUrl, videoPrompt, sceneNumber, videoModel) {
+            // Route to the right provider
+            if (videoModel === 'kling') {
+                return this.generateVideoKling(imageUrl, videoPrompt, sceneNumber);
+            }
+            // Default: Atlas Cloud Wan-2.6 Flash
             console.log(`\n=== Generating video for scene ${sceneNumber} (Atlas Cloud Wan-2.6 Flash) ===`);
             console.log(`Image URL: ${imageUrl.substring(0, 80)}...`);
             console.log(`Video Prompt: "${videoPrompt.substring(0, 120)}..."`);
@@ -590,6 +595,163 @@ Format your response as JSON:
                 }
             }
         }
+
+    /**
+     * Generate video using Kie.ai Kling 2.6 (higher quality, more expensive)
+     * Admin-only option for quality comparison
+     */
+    async generateVideoKling(imageUrl, videoPrompt, sceneNumber) {
+        console.log(`\n=== Generating video for scene ${sceneNumber} (Kie.ai Kling 2.6) ===`);
+        console.log(`Image URL: ${imageUrl.substring(0, 80)}...`);
+        console.log(`Video Prompt: "${videoPrompt.substring(0, 120)}..."`);
+        console.log(`===\n`);
+
+        const maxRetries = 3;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`🎬 Kie.ai Kling 2.6 - Scene ${sceneNumber} (attempt ${attempt}/${maxRetries})`);
+
+                const createResponse = await axios.post(
+                    `${this.kieBaseUrl}/api/v1/jobs/createTask`,
+                    {
+                        model: 'kling-2.6',
+                        input: {
+                            imageUrl: imageUrl,
+                            prompt: videoPrompt,
+                            duration: 5,
+                            aspectRatio: '9:16'
+                        }
+                    },
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${this.kieApiKey}`
+                        },
+                        timeout: 30000
+                    }
+                );
+
+                const respData = createResponse.data;
+                const taskId = respData?.data?.taskId || respData?.taskId || respData?.data?.task_id || respData?.task_id;
+
+                if (!taskId) {
+                    const code = respData?.code || respData?.status;
+                    const msg = respData?.msg || respData?.message || '';
+
+                    if (code === 402 || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('quota')) {
+                        throw new Error('Out of Kie.ai credits. Please top up your account.');
+                    }
+
+                    console.warn(`Scene ${sceneNumber}: No taskId (attempt ${attempt}/${maxRetries}). Response: ${JSON.stringify(respData).substring(0, 300)}`);
+
+                    if (attempt < maxRetries) {
+                        const delay = attempt * 3000;
+                        console.log(`Retrying in ${delay / 1000}s...`);
+                        await new Promise(r => setTimeout(r, delay));
+                        continue;
+                    }
+                    throw new Error(`Kie.ai Kling failed to create video task after ${maxRetries} attempts`);
+                }
+
+                console.log(`Kling video task created: ${taskId}`);
+
+                // Poll using the same Kie.ai polling endpoint as images
+                const videoUrl = await this.pollKieTaskForVideo(taskId, 600000);
+                console.log(`✅ Video ${sceneNumber} generated successfully (Kling 2.6)`);
+
+                return videoUrl;
+
+            } catch (error) {
+                if (error.message.includes('credit') || error.message.includes('quota') || error.message.includes('authentication')) {
+                    throw error;
+                }
+
+                const status = error.response?.status;
+                const isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
+
+                if (isRetryable && attempt < maxRetries) {
+                    const delay = attempt * 3000;
+                    console.warn(`Scene ${sceneNumber} Kling video error (attempt ${attempt}/${maxRetries}): ${error.message}. Retrying in ${delay / 1000}s...`);
+                    await new Promise(r => setTimeout(r, delay));
+                    continue;
+                }
+
+                console.error(`Error generating Kling video ${sceneNumber}:`, error.response?.data || error.message);
+                throw error;
+            }
+        }
+    }
+
+    /**
+     * Poll Kie.ai task for video generation (same API, different result parsing)
+     */
+    async pollKieTaskForVideo(taskId, timeout = 600000) {
+        const startTime = Date.now();
+        const pollInterval = 5000;
+        let pollCount = 0;
+
+        const endpoint = `${this.kieBaseUrl}/api/v1/jobs/recordInfo`;
+
+        while (Date.now() - startTime < timeout) {
+            pollCount++;
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+
+            try {
+                const response = await axios.get(endpoint, {
+                    params: { taskId },
+                    headers: {
+                        'Authorization': `Bearer ${this.kieApiKey}`
+                    }
+                });
+
+                if (response.data.code !== 200) {
+                    throw new Error(`Kie.ai API error: ${response.data.msg}`);
+                }
+
+                const state = response.data.data.state;
+
+                if (pollCount % 6 === 0) {
+                    console.log(`Kling video task ${taskId} state: ${state} (${elapsed}s elapsed)`);
+                }
+
+                if (state === 'success') {
+                    const resultJson = JSON.parse(response.data.data.resultJson);
+                    const resultUrls = resultJson.resultUrls || resultJson.videoUrls || [];
+                    if (resultUrls.length === 0) {
+                        throw new Error('Kling returned success but no video URLs');
+                    }
+                    console.log(`✅ Kling video task completed in ${elapsed}s`);
+                    return resultUrls[0];
+                }
+
+                if (state === 'fail') {
+                    const errorMsg = response.data.data.failMsg || 'Unknown error';
+                    const errorCode = response.data.data.failCode || 'N/A';
+                    throw new Error(`Kling video generation failed (${errorCode}): ${errorMsg}`);
+                }
+
+                await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+            } catch (error) {
+                if (error.response?.status === 401) {
+                    throw new Error('Kie.ai authentication failed. Check your API key.');
+                } else if (error.response?.status === 402) {
+                    throw new Error('Out of Kie.ai credits.');
+                } else if (error.response?.status === 429) {
+                    console.warn('Kie.ai rate limit, waiting 10s...');
+                    await new Promise(resolve => setTimeout(resolve, 10000));
+                } else if (error.message.includes('Kie.ai') || error.message.includes('Kling') || error.message.includes('failed')) {
+                    throw error;
+                } else {
+                    console.error('Kling polling error:', error.message);
+                    await new Promise(resolve => setTimeout(resolve, pollInterval));
+                }
+            }
+        }
+
+        throw new Error(`Kling video task timeout after ${Math.floor(timeout/1000)}s. Try again later.`);
+    }
 
     /**
      * Poll Kie.ai task for image generation
@@ -742,7 +904,8 @@ Format your response as JSON:
         const {
             skeletonStyle = 'realistic translucent glass with ivory skeleton',
             gradientColors = 'smooth blue to teal gradient background',
-            generateVideos = true
+            generateVideos = true,
+            videoModel = 'wan'
         } = options;
 
         console.log(`\n🎬 Starting Skeleton Video Generation\n`);
@@ -804,7 +967,8 @@ Format your response as JSON:
                         scene.videoUrl = await this.generateVideo(
                             scene.imageUrl,
                             scene.videoPrompt,
-                            sceneNumber
+                            sceneNumber,
+                            videoModel
                         );
                         console.log(`✅ Scene ${sceneNumber} video complete`);
                         return { success: true, sceneNumber };
@@ -820,10 +984,10 @@ Format your response as JSON:
                 const videoSuccessCount = videoResults.filter(r => r.success).length;
                 console.log(`\n✅ Batch complete: ${videoSuccessCount}/${scenesWithImages.length} videos generated successfully\n`);
                 
-                // Cost summary (Kie.ai Kling 2.6)
+                // Cost summary
                 console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
                 console.log(`   Videos generated: ${videoSuccessCount}`);
-                console.log(`   Provider: Kie.ai Kling 2.6`);
+                console.log(`   Provider: ${videoModel === 'kling' ? 'Kie.ai Kling 2.6' : 'Atlas Cloud Wan-2.6 Flash'}`);
                 console.log(`\n`);
             }
 
@@ -850,6 +1014,7 @@ Format your response as JSON:
             skeletonStyle = 'realistic translucent glass with ivory skeleton',
             gradientColors = 'smooth blue to teal gradient background',
             generateVideos = true,
+            videoModel = 'wan',
             onProgress = () => {},
             onSceneComplete = () => {}
         } = options;
@@ -966,7 +1131,8 @@ Format your response as JSON:
                         scene.videoUrl = await this.generateVideo(
                             scene.imageUrl,
                             scene.videoPrompt,
-                            sceneNumber
+                            sceneNumber,
+                            videoModel
                         );
                         console.log(`✅ Scene ${sceneNumber} video complete`);
                         
@@ -1030,7 +1196,8 @@ Format your response as JSON:
                             scene.videoUrl = await this.generateVideo(
                                 scene.imageUrl,
                                 scene.videoPrompt,
-                                sceneNumber
+                                sceneNumber,
+                                videoModel
                             );
                             scene.videoError = null;
                             videoSuccessCount++;
@@ -1051,9 +1218,9 @@ Format your response as JSON:
                     console.log(`\n✅ After retry: ${videoSuccessCount}/${scenesWithImages.length} videos total\n`);
                 }
 
-                console.log(`\n�💰 VIDEO GENERATION COST SUMMARY:`);
+                console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
                 console.log(`   Videos generated: ${videoSuccessCount}`);
-                console.log(`   Provider: Atlas Cloud Wan-2.6 Flash`);
+                console.log(`   Provider: ${videoModel === 'kling' ? 'Kie.ai Kling 2.6' : 'Atlas Cloud Wan-2.6 Flash'}`);
 
                 console.log(`\n`);
                 

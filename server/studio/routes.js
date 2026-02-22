@@ -224,7 +224,7 @@ router.get('/formats', (req, res) => {
 // V2: Full video generation (script → scenes → images → videos)
 router.post('/generate/full', requireAuth, async (req, res) => {
     try {
-        const { format, script, skeletonStyle, gradientColors, generateVideos } = req.body;
+        const { format, script, skeletonStyle, gradientColors, generateVideos, videoModel } = req.body;
         
         if (!format || !script) {
             return res.status(400).json({ error: 'Format and script are required' });
@@ -244,10 +244,14 @@ router.post('/generate/full', requireAuth, async (req, res) => {
         
         console.log(`Full generation for format: ${format}`);
         
+        // Only admin can use kling model
+        const resolvedModel = (videoModel === 'kling' && req.user.email === process.env.ADMIN_EMAIL) ? 'kling' : 'wan';
+        
         const result = await generator.generate(script, {
             skeletonStyle,
             gradientColors,
-            generateVideos: generateVideos !== false // Default true
+            generateVideos: generateVideos !== false,
+            videoModel: resolvedModel
         });
         
         res.json({ 
@@ -267,7 +271,7 @@ router.post('/generate/full', requireAuth, async (req, res) => {
 // V2: Streaming generation with real-time progress updates
 router.post('/generate/stream', requireAuth, async (req, res) => {
     try {
-        const { format, script, skeletonStyle, gradientColors, generateVideos } = req.body;
+        const { format, script, skeletonStyle, gradientColors, generateVideos, videoModel } = req.body;
         
         if (!format || !script) {
             return res.status(400).json({ error: 'Format and script are required' });
@@ -304,11 +308,15 @@ router.post('/generate/stream', requireAuth, async (req, res) => {
         console.log(`Streaming generation for format: ${format}`);
         
         try {
+            // Only admin can use kling model (expensive)
+            const resolvedModel = (videoModel === 'kling' && req.user.email === process.env.ADMIN_EMAIL) ? 'kling' : 'wan';
+            
             // Generate with progress callbacks
             const result = await generator.generateWithProgress(script, {
                 skeletonStyle,
                 gradientColors,
                 generateVideos: generateVideos !== false,
+                videoModel: resolvedModel,
                 onProgress: (progress) => {
                     sendEvent('progress', progress);
                 },
@@ -408,7 +416,7 @@ router.post('/generate/scene-images', requireAuth, studioGenerateLimiter, async 
 // Step 3: Generate video for a single scene with selected image
 router.post('/generate/scene-video', requireAuth, studioGenerateLimiter, async (req, res) => {
     try {
-        let { format, imageUrl, videoPrompt, sceneNumber } = req.body;
+        let { format, imageUrl, videoPrompt, sceneNumber, videoModel } = req.body;
         if (!format || !imageUrl || !videoPrompt) return res.status(400).json({ error: 'format, imageUrl, and videoPrompt are required' });
         
         // Credit check: video_generation = 5 credits per scene
@@ -436,7 +444,10 @@ router.post('/generate/scene-video', requireAuth, studioGenerateLimiter, async (
         // Deduct credits upfront — video generation costs us money even if it fails
         await credits.deductCredits(userId, 'video_generation', 1, 'Video for scene ' + sceneNumber);
         
-        const videoUrl = await generator.generateVideo(imageUrl, videoPrompt, sceneNumber);
+        // Only admin can use kling model
+        const resolvedModel = (videoModel === 'kling' && req.user.email === process.env.ADMIN_EMAIL) ? 'kling' : 'wan';
+        
+        const videoUrl = await generator.generateVideo(imageUrl, videoPrompt, sceneNumber, resolvedModel);
         
         console.log(`Director mode: video for scene ${sceneNumber} complete: ${videoUrl.substring(0, 80)}...`);
         res.json({ success: true, sceneNumber, videoUrl });
