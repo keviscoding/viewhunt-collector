@@ -100,100 +100,16 @@ const requireAuth = (req, res, next) => {
 
 
 
-// Generate Script
-router.post('/generate/script', requireAuth, studioGenerateLimiter, async (req, res) => {
-    try {
-        const { format, topic, style } = req.body;
-        
-        if (!format || !topic) {
-            return res.status(400).json({ error: 'Format and topic are required' });
-        }
-        
-        const generator = getGenerator(format);
-        if (!generator) {
-            return res.status(400).json({ error: 'Invalid format' });
-        }
-        
-        console.log(`Generating script for format: ${format}, topic: ${topic}`);
-        
-        const script = await generator.generateScript(topic, style);
-        
-        res.json({ 
-            success: true,
-            script: script 
-        });
-        
-    } catch (error) {
-        console.error('Script generation error:', error);
-        res.status(500).json({ 
-            error: 'Failed to generate script',
-            details: error.message 
-        });
-    }
+// V1 routes DISABLED — these called OpenAI/Replicate with ZERO credit charging.
+// Keeping the endpoints alive but returning 410 Gone so nothing breaks silently.
+router.post('/generate/script', requireAuth, (req, res) => {
+    res.status(410).json({ error: 'V1 endpoints are disabled. Use the V2 studio at /studio/v2' });
 });
-
-// Generate Images
-router.post('/generate/images', requireAuth, studioGenerateLimiter, async (req, res) => {
-    try {
-        const { format, script, style } = req.body;
-        
-        if (!format || !script) {
-            return res.status(400).json({ error: 'Format and script are required' });
-        }
-        
-        const generator = getGenerator(format);
-        if (!generator) {
-            return res.status(400).json({ error: 'Invalid format' });
-        }
-        
-        console.log(`Generating images for format: ${format}`);
-        
-        const images = await generator.generateImages(script, style);
-        
-        res.json({ 
-            success: true,
-            images: images 
-        });
-        
-    } catch (error) {
-        console.error('Image generation error:', error);
-        res.status(500).json({ 
-            error: 'Failed to generate images',
-            details: error.message 
-        });
-    }
+router.post('/generate/images', requireAuth, (req, res) => {
+    res.status(410).json({ error: 'V1 endpoints are disabled. Use the V2 studio at /studio/v2' });
 });
-
-// Generate Voice
-router.post('/generate/voice', requireAuth, async (req, res) => {
-    try {
-        const { format, script } = req.body;
-        
-        if (!format || !script) {
-            return res.status(400).json({ error: 'Format and script are required' });
-        }
-        
-        const generator = getGenerator(format);
-        if (!generator) {
-            return res.status(400).json({ error: 'Invalid format' });
-        }
-        
-        console.log(`Generating voice for format: ${format}`);
-        
-        const audioUrl = await generator.generateVoice(script);
-        
-        res.json({ 
-            success: true,
-            audioUrl: audioUrl 
-        });
-        
-    } catch (error) {
-        console.error('Voice generation error:', error);
-        res.status(500).json({ 
-            error: 'Failed to generate voice',
-            details: error.message 
-        });
-    }
+router.post('/generate/voice', requireAuth, (req, res) => {
+    res.status(410).json({ error: 'V1 endpoints are disabled. Use the V2 studio at /studio/v2' });
 });
 
 // Get available formats
@@ -230,12 +146,28 @@ router.post('/generate/full', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Format and script are required' });
         }
         
-        // Credit check: at least enough for script generation
+        // Estimate total cost upfront: script(5) + ~12 images(0.5 each = 6) + ~12 videos(5 each = 60) = ~71
         const userId = String(req.user.userId);
-        const check = await credits.checkCredits(userId, 'script_generation', 1);
-        if (!check.allowed) {
-            return res.status(402).json({ error: 'Not enough credits', ...check });
+        const estimatedScenes = 12;
+        var estimatedCost = credits.COSTS.script_generation;
+        estimatedCost += credits.COSTS.image_generation * estimatedScenes;
+        if (generateVideos !== false) estimatedCost += credits.COSTS.video_generation * estimatedScenes;
+        
+        // Check if user has enough for the full estimated cost
+        const bal = await credits.getBalance(userId);
+        const totalAvailable = (bal.balance || 0) + (bal.topUpBalance || 0);
+        if (totalAvailable < estimatedCost) {
+            return res.status(402).json({ 
+                error: 'Not enough credits for full generation',
+                balance: bal.balance,
+                topUpBalance: bal.topUpBalance || 0,
+                totalAvailable,
+                estimatedCost
+            });
         }
+        
+        // Deduct script generation credits upfront
+        await credits.deductCredits(userId, 'script_generation', 1, 'Auto mode script generation');
         
         const generator = getGenerator(format, 'v2');
         if (!generator) {
@@ -244,7 +176,6 @@ router.post('/generate/full', requireAuth, async (req, res) => {
         
         console.log(`Full generation for format: ${format}`);
         
-        // Only admin can use kling model
         const resolvedModel = (videoModel === 'kling' && req.user.email === process.env.ADMIN_EMAIL) ? 'kling' : 'wan';
         
         const result = await generator.generate(script, {
@@ -253,6 +184,20 @@ router.post('/generate/full', requireAuth, async (req, res) => {
             generateVideos: generateVideos !== false,
             videoModel: resolvedModel
         });
+        
+        // Deduct credits for actual scenes generated
+        const actualScenes = result.scenes || [];
+        const imagesGenerated = actualScenes.filter(s => s.imageUrl).length;
+        const videosGenerated = actualScenes.filter(s => s.videoUrl).length;
+        
+        if (imagesGenerated > 0) {
+            await credits.deductCredits(userId, 'image_generation', imagesGenerated, 'Auto mode: ' + imagesGenerated + ' images');
+        }
+        if (videosGenerated > 0) {
+            await credits.deductCredits(userId, 'video_generation', videosGenerated, 'Auto mode: ' + videosGenerated + ' videos');
+        }
+        
+        console.log(`💳 Full mode charged: script(5) + ${imagesGenerated} images(${imagesGenerated * 0.5}) + ${videosGenerated} videos(${videosGenerated * 5}) = ${5 + imagesGenerated * 0.5 + videosGenerated * 5} credits`);
         
         res.json({ 
             success: true,
@@ -277,18 +222,28 @@ router.post('/generate/stream', requireAuth, async (req, res) => {
             return res.status(400).json({ error: 'Format and script are required' });
         }
         
-        // Estimate credit cost for auto mode (script + ~12 scenes images + ~12 scenes videos + assembly)
-        // Rough estimate: 5 + 12*3 + 12*8 + 10 = 147 credits
+        // Estimate total cost upfront and verify user can afford it
+        // script(5) + ~12 images(0.5 each = 6) + ~12 videos(5 each = 60) = ~71 credits
         const userId = String(req.user.userId);
         const estimatedScenes = 12;
-        var totalCost = credits.COSTS.script_generation;
-        totalCost += credits.COSTS.image_generation * estimatedScenes;
-        if (generateVideos !== false) totalCost += credits.COSTS.video_generation * estimatedScenes;
-        const check = await credits.checkCredits(userId, 'script_generation', 1);
-        // Check if they have at least enough for the script generation to start
-        if (!check.allowed) {
-            return res.status(402).json({ error: 'Not enough credits', ...check });
+        var estimatedCost = credits.COSTS.script_generation;
+        estimatedCost += credits.COSTS.image_generation * estimatedScenes;
+        if (generateVideos !== false) estimatedCost += credits.COSTS.video_generation * estimatedScenes;
+        
+        const bal = await credits.getBalance(userId);
+        const totalAvailable = (bal.balance || 0) + (bal.topUpBalance || 0);
+        if (totalAvailable < estimatedCost) {
+            return res.status(402).json({ 
+                error: 'Not enough credits for auto mode. Need ~' + Math.ceil(estimatedCost) + ' credits.',
+                balance: bal.balance,
+                topUpBalance: bal.topUpBalance || 0,
+                totalAvailable,
+                estimatedCost: Math.ceil(estimatedCost)
+            });
         }
+        
+        // Deduct script generation credits upfront
+        await credits.deductCredits(userId, 'script_generation', 1, 'Auto mode script generation');
         
         const generator = getGenerator(format, 'v2');
         if (!generator) {
@@ -307,23 +262,55 @@ router.post('/generate/stream', requireAuth, async (req, res) => {
         
         console.log(`Streaming generation for format: ${format}`);
         
+        // Track what we charge as scenes complete
+        let imagesCharged = 0;
+        let videosCharged = 0;
+        
         try {
-            // Only admin can use kling model (expensive)
             const resolvedModel = (videoModel === 'kling' && req.user.email === process.env.ADMIN_EMAIL) ? 'kling' : 'wan';
             
-            // Generate with progress callbacks
             const result = await generator.generateWithProgress(script, {
                 skeletonStyle,
                 gradientColors,
                 generateVideos: generateVideos !== false,
                 videoModel: resolvedModel,
-                onProgress: (progress) => {
+                onProgress: async (progress) => {
                     sendEvent('progress', progress);
+                    
+                    // Charge for images when image step completes
+                    if (progress.step === 'images' && progress.status === 'completed' && progress.completed > 0) {
+                        try {
+                            const count = progress.completed;
+                            await credits.deductCredits(userId, 'image_generation', count, 'Auto mode: ' + count + ' images');
+                            imagesCharged = count;
+                            console.log(`💳 Auto mode: charged ${count} images (${count * credits.COSTS.image_generation} credits)`);
+                        } catch (e) {
+                            console.error('Auto mode image credit deduction failed:', e.message);
+                        }
+                    }
+                    
+                    // Charge for videos when video step completes
+                    if (progress.step === 'videos' && progress.status === 'completed') {
+                        try {
+                            // Count actual successful videos from the message (e.g. "8/12 videos generated")
+                            const match = progress.message && progress.message.match(/^(\d+)\//);
+                            const count = match ? parseInt(match[1]) : (progress.completed || 0);
+                            if (count > 0) {
+                                await credits.deductCredits(userId, 'video_generation', count, 'Auto mode: ' + count + ' videos');
+                                videosCharged = count;
+                                console.log(`💳 Auto mode: charged ${count} videos (${count * credits.COSTS.video_generation} credits)`);
+                            }
+                        } catch (e) {
+                            console.error('Auto mode video credit deduction failed:', e.message);
+                        }
+                    }
                 },
                 onSceneComplete: (scene) => {
                     sendEvent('scene', scene);
                 }
             });
+            
+            console.log(`💳 Auto mode total: script(5) + ${imagesCharged} images(${imagesCharged * 0.5}) + ${videosCharged} videos(${videosCharged * 5}) = ${5 + imagesCharged * 0.5 + videosCharged * 5} credits`);
             
             sendEvent('complete', { success: true, ...result });
             res.end();
@@ -380,9 +367,11 @@ router.post('/generate/scene-images', requireAuth, studioGenerateLimiter, async 
         const { format, imagePrompt, sceneNumber, count } = req.body;
         if (!format || !imagePrompt) return res.status(400).json({ error: 'Format and imagePrompt are required' });
         
-        // Credit check: image_generation = 0.5 credits per scene
+        const numImages = Math.min(count || 2, 4); // Max 4 variants
+        
+        // Credit check: charge per actual image requested (0.5 credits each)
         const userId = String(req.user.userId);
-        const check = await credits.checkCredits(userId, 'image_generation', 1);
+        const check = await credits.checkCredits(userId, 'image_generation', numImages);
         if (!check.allowed) {
             return res.status(402).json({ error: 'Not enough credits', ...check });
         }
@@ -390,11 +379,10 @@ router.post('/generate/scene-images', requireAuth, studioGenerateLimiter, async 
         const generator = getGenerator(format, 'v2');
         if (!generator) return res.status(400).json({ error: 'Invalid format' });
         
-        const numImages = Math.min(count || 2, 4); // Max 4 variants
         console.log(`Director mode: generating ${numImages} image(s) for scene ${sceneNumber}`);
         
-        // Deduct credits upfront — image generation costs us money even if it fails
-        await credits.deductCredits(userId, 'image_generation', 1, 'Images for scene ' + sceneNumber);
+        // Deduct credits for ALL requested images upfront (costs us money per image)
+        await credits.deductCredits(userId, 'image_generation', numImages, numImages + ' images for scene ' + sceneNumber);
         
         const imagePromises = [];
         for (let i = 0; i < numImages; i++) {

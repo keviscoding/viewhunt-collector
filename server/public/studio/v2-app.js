@@ -226,7 +226,7 @@ function createDirectorCard(scene, index) {
         </div>
         
         <div class="scene-controls">
-            <button class="btn btn-secondary btn-sm" onclick="generateSceneImages(${index}, 4)">↻ More Images · 0.5 💎</button>
+            <button class="btn btn-secondary btn-sm" onclick="generateSceneImages(${index}, 4)">↻ More Images · 2 💎</button>
             <button class="btn-upload" id="upload-btn-${index}" onclick="triggerUpload(${index})" title="Upload your own image">+ Upload</button>
             <button class="btn btn-green btn-sm" onclick="generateSceneVideo(${index})" id="video-btn-${index}" disabled>🎥 Generate Video · 5 💎</button>
         </div>
