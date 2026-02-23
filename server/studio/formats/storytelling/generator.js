@@ -49,22 +49,13 @@ CRITICAL RULES FOR SCENE BREAKDOWN:
 CHARACTER CONSISTENCY:
 - Identify ALL characters that appear in 2+ scenes
 - Assign each a SPECIFIC, FIXED appearance: outfit color, hair style/color, build, age range, distinguishing features
-- This description must be included in EVERY scene prompt where that character appears
 - Be specific: "wearing a dark green flannel shirt, brown cargo pants, short brown hair, mid-30s, athletic build" — not just "a man"
 
-POV CAMERA STYLE:
-- Default: "Handheld iPhone rear-camera POV, slightly shaky, natural phone sway, no subject visible, realistic mobile footage. Viewer's perspective only."
-- Use selfie POV ONLY if the protagonist is speaking directly to camera (rare): "Handheld iPhone selfie recording, slightly shaky, natural phone sway, realistic mobile footage."
-- The POV style means the camera holder is NOT visible — we see what they see
+POV TYPE:
+- Default is "rear" (camera holder films what they see — they are NOT visible)
+- Use "selfie" ONLY if the protagonist is speaking directly to camera (rare)
 
-PROMPT STRUCTURE FOR EACH SCENE:
-Each scene's video prompt must follow this exact structure:
-"This is the full story: (Handheld iPhone rear-camera POV, slightly shaky, natural phone sway, no subject visible, realistic mobile footage. Viewer's perspective only): [FULL SCRIPT HERE]
-
-Generate JUST THIS part of the story: (Handheld iPhone rear-camera POV, slightly shaky, natural phone sway, no subject visible, realistic mobile footage. Viewer's perspective only.)
-<[THE SPECIFIC EXCERPT FOR THIS SCENE]>"
-
-IMPORTANT: Include the FULL script in every prompt for context. Only the excerpt in angle brackets changes per scene.
+DO NOT build any video prompts. Just return the excerpt and metadata. The video prompt wrapper is applied by the backend.
 
 Return JSON:
 {
@@ -78,8 +69,7 @@ Return JSON:
   "scenes": [
     {
       "sceneNumber": 1,
-      "excerpt": "The exact text from the script for this scene",
-      "videoPrompt": "The full wrapped prompt ready to send to Sora 2",
+      "excerpt": "The exact text from the script for this scene — copy it verbatim",
       "povType": "rear",
       "description": "Brief description of what happens visually"
     }
@@ -93,11 +83,10 @@ ${script}
 
 Remember:
 - Each scene = ~10 seconds of video
-- Include the FULL script in every videoPrompt for context
-- Wrap each with the POV camera template
+- Return the EXACT excerpt text from the script for each scene (verbatim, do not rephrase)
 - Identify recurring characters and assign fixed appearances
-- Include character descriptions in the videoPrompt for scenes where they appear
-- Do NOT include CTA/subscribe lines`;
+- Do NOT include CTA/subscribe lines
+- Do NOT build videoPrompt — just return excerpt, povType, description`;
 
         try {
             const response = await axios.post(
@@ -142,7 +131,38 @@ Remember:
                 throw new Error('Invalid response: missing scenes array');
             }
 
-            console.log(`✅ Generated ${data.scenes.length} scenes`);
+            // Build character lookup for scene appearances
+            const charsByScene = {};
+            if (data.characters && Array.isArray(data.characters)) {
+                data.characters.forEach(function(c) {
+                    if (c.sceneAppearances) {
+                        c.sceneAppearances.forEach(function(sn) {
+                            if (!charsByScene[sn]) charsByScene[sn] = [];
+                            charsByScene[sn].push(c.name + ': ' + c.description);
+                        });
+                    }
+                });
+            }
+
+            // HARDCODE the video prompt wrapper for each scene
+            // Claude only gave us excerpt + povType — we build the actual Sora 2 prompt here
+            data.scenes.forEach(function(scene) {
+                var sn = scene.sceneNumber;
+                var povRear = 'Handheld iPhone rear-camera POV, slightly shaky, natural phone sway, no subject visible, realistic mobile footage. Viewer\'s perspective only.';
+                var povSelfie = 'Handheld iPhone selfie recording, slightly shaky, natural phone sway, realistic mobile footage.';
+                var pov = scene.povType === 'selfie' ? povSelfie : povRear;
+
+                // Build character descriptions for this scene
+                var charBlock = '';
+                if (charsByScene[sn] && charsByScene[sn].length > 0) {
+                    charBlock = '\n\nCharacters in this scene:\n' + charsByScene[sn].join('\n');
+                }
+
+                scene.videoPrompt = 'This is the full story: (' + pov + '): ' + script + charBlock +
+                    '\n\nGenerate JUST THIS part of the story: (' + pov + ')\n<' + scene.excerpt + '>';
+            });
+
+            console.log(`✅ Generated ${data.scenes.length} scenes (prompts hardcoded)`);
             if (data.characters && data.characters.length > 0) {
                 console.log(`👤 Characters identified: ${data.characters.map(c => c.name).join(', ')}`);
             }
