@@ -615,12 +615,12 @@ Format your response as JSON:
                 const createResponse = await axios.post(
                     `${this.kieBaseUrl}/api/v1/jobs/createTask`,
                     {
-                        model: 'kling-2.6',
+                        model: 'kling-2.6/image-to-video',
                         input: {
-                            imageUrl: imageUrl,
+                            image_urls: [imageUrl],
                             prompt: videoPrompt,
-                            duration: 5,
-                            aspectRatio: '9:16'
+                            sound: false,
+                            duration: '5'
                         }
                     },
                     {
