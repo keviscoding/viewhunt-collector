@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>if(!localStorage.getItem("viewhunt_token"))window.location.replace("/");</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Storytelling — ViewHunt Studio</title>
+    <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+    <link rel="icon" type="image/png" href="/images/viewhunt_logo.png">
+    <link rel="apple-touch-icon" href="/images/viewhunt_logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+        html{overflow-y:scroll;height:auto}
+        :root{
+            --bg:#0e0e12;--surface:#18181f;--surface-2:#1f1f28;--surface-3:#262631;
+            --border:#2a2a36;--border-hover:#3a3a4a;
+            --text:#e8e8ed;--text-muted:#8b8b9e;--text-dim:#5c5c6e;
+            --accent:#7c6aef;--accent-hover:#6b58e0;--accent-glow:rgba(124,106,239,0.15);
+            --green:#34d399;--green-dim:rgba(52,211,153,0.12);
+            --amber:#fbbf24;--amber-dim:rgba(251,191,36,0.12);
+            --red:#f87171;
+        }
+        body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+        .app{max-width:900px;margin:0 auto;padding:1.5rem 1.25rem 4rem}
+        .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem}
+        .header-left{display:flex;align-items:center;gap:0.75rem}
+        .back-btn{color:var(--text-muted);text-decoration:none;font-size:0.85rem;padding:0.4rem 0.75rem;border-radius:6px;border:1px solid var(--border);transition:all 0.15s}
+        .back-btn:hover{color:var(--text);border-color:var(--border-hover);background:var(--surface)}
+        .logo{font-size:1rem;font-weight:700;letter-spacing:-0.02em}
+        .logo span{color:var(--accent)}
+        .credit-badge{font-size:0.8rem;padding:0.35rem 0.75rem;border-radius:8px;background:var(--surface);border:1px solid var(--border);color:var(--text-muted)}
+        .section{margin-bottom:1.5rem}
+        .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:1.5rem}
+        .card-title{font-size:1rem;font-weight:700;margin-bottom:0.75rem}
+        textarea{width:100%;min-height:180px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:1rem;color:var(--text);font-family:inherit;font-size:0.9rem;resize:vertical;line-height:1.6}
+        textarea:focus{outline:none;border-color:var(--accent)}
+        textarea::placeholder{color:var(--text-dim)}
+        .btn{display:inline-flex;align-items:center;justify-content:center;gap:0.4rem;padding:0.6rem 1.1rem;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer;border:none;transition:all 0.15s;font-family:inherit;text-decoration:none}
+        .btn-primary{background:var(--accent);color:white}
+        .btn-primary:hover{background:var(--accent-hover)}
+        .btn-green{background:var(--green);color:#0e0e12}
+        .btn-green:hover{background:#2bc48a}
+        .btn-secondary{background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border)}
+        .btn-secondary:hover{color:var(--text);border-color:var(--border-hover)}
+        .btn-sm{font-size:0.78rem;padding:0.4rem 0.8rem}
+        .btn-lg{width:100%;padding:0.85rem;font-size:0.95rem;margin-top:1rem}
+        .btn:disabled{opacity:0.5;cursor:not-allowed}
+        .hint{font-size:0.78rem;color:var(--text-dim);margin-top:0.5rem}
+        .word-count{font-size:0.75rem;color:var(--text-dim);text-align:right;margin-top:0.25rem}
+        .scenes-grid{display:flex;flex-direction:column;gap:1rem}
+        .scene-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.25rem;transition:border-color 0.15s}
+        .scene-card:hover{border-color:var(--border-hover)}
+        .scene-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem}
+        .scene-num{font-weight:700;font-size:0.9rem}
+        .scene-pov{font-size:0.7rem;padding:0.15rem 0.5rem;border-radius:4px;background:var(--surface-2);color:var(--text-dim);border:1px solid var(--border)}
+        .scene-excerpt{font-size:0.85rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.75rem;font-style:italic;border-left:2px solid var(--accent);padding-left:0.75rem}
+        .scene-desc{font-size:0.8rem;color:var(--text-dim);margin-bottom:0.75rem}
+        .scene-controls{display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center}
+        .scene-result{margin-top:0.75rem}
+        .video-preview{width:100%;max-width:280px;border-radius:8px;background:#000}
+        .characters-panel{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem}
+        .char-tag{display:inline-flex;align-items:center;gap:0.4rem;padding:0.3rem 0.7rem;border-radius:6px;background:var(--surface-3);border:1px solid var(--border);font-size:0.78rem;margin:0.25rem}
+        .action-bar{display:flex;gap:0.75rem;flex-wrap:wrap;padding:1rem 0}
+        .cost-estimate{font-size:0.8rem;color:var(--amber);margin-top:0.5rem}
+        .generation-warning{display:none;background:var(--amber-dim);border:1px solid rgba(251,191,36,0.3);border-radius:10px;padding:0.75rem 1rem;font-size:0.82rem;color:var(--amber);margin-bottom:1rem}
+        @media(max-width:640px){.app{padding:1rem 0.75rem 3rem}.scene-controls{flex-direction:column;align-items:stretch}}
+    </style>
+</head>
+<body>
+<div class="app">
+    <header class="header">
+        <div class="header-left">
+            <a href="/studio" class="back-btn">← Studio</a>
+            <div class="logo">AI <span>Storytelling</span></div>
+        </div>
+        <div class="credit-badge" id="credit-balance">-- credits</div>
+    </header>
+
+    <!-- Step 1: Script Input -->
+    <section id="config-section" class="section">
+        <div class="card">
+            <div class="card-title">Paste Your Story Script</div>
+            <textarea id="script" placeholder="Paste your full story script here... (survival stories, animal encounters, dramatic narratives)
+
+Example: A lemur jumped through a man's window, escaping a fauca. The man drove away, saving the little one..."></textarea>
+            <div class="word-count" id="word-count">0 words</div>
+            <p class="hint">Tip: Don't include CTA/subscribe lines. The AI will break your script into ~10-second scene chunks and wrap each with POV camera prompts.</p>
+
+            <button id="generate-scenes-btn" class="btn btn-primary btn-lg">
+                <span class="btn-text">Break Into Scenes · 5 credits</span>
+            </button>
+        </div>
+    </section>
+
+    <!-- Step 2: Scenes Review -->
+    <section id="scenes-section" class="section" style="display:none">
+        <div id="characters-panel" class="characters-panel" style="display:none">
+            <div style="font-size:0.85rem;font-weight:700;margin-bottom:0.5rem">Recurring Characters</div>
+            <div id="characters-list"></div>
+        </div>
+
+        <div class="action-bar">
+            <button class="btn btn-green" onclick="generateAllVideos()" id="generate-all-btn">Generate All Videos</button>
+            <button class="btn btn-secondary" onclick="downloadAllVideos()" id="download-all-btn" style="display:none">Download All Videos</button>
+            <button class="btn btn-secondary" onclick="resetToScript()">← Start Over</button>
+        </div>
+        <div class="cost-estimate" id="cost-estimate"></div>
+
+        <div id="generation-warning" class="generation-warning">
+            Do not close this tab while videos are generating. This may take several minutes.
+        </div>
+
+        <div class="scenes-grid" id="scenes-grid"></div>
+    </section>
+</div>
+
+<script src="/studio/storytelling-app.js?v=20260219a"></script>
+</body>
+</html>

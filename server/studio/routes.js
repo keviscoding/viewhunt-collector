@@ -734,6 +734,73 @@ router.post('/credits/admin-grant', requireAuth, async (req, res) => {
     }
 });
 
+// === AI STORYTELLING FORMAT ENDPOINTS ===
+
+const StorytellingGenerator = require('./formats/storytelling/generator');
+const storytellingGenerators = {};
+function getStorytellingGenerator() {
+    if (!storytellingGenerators.default) {
+        storytellingGenerators.default = new StorytellingGenerator();
+    }
+    return storytellingGenerators.default;
+}
+
+// Step 1: Break script into scenes (Claude)
+router.post('/storytelling/scenes', requireAuth, async (req, res) => {
+    try {
+        const { script } = req.body;
+        if (!script) return res.status(400).json({ error: 'Script is required' });
+
+        // Credit check: script generation = 5 credits
+        const userId = String(req.user.userId);
+        const check = await credits.checkCredits(userId, 'script_generation', 1);
+        if (!check.allowed) {
+            return res.status(402).json({ error: 'Not enough credits', ...check });
+        }
+
+        const generator = getStorytellingGenerator();
+        console.log('Storytelling: breaking script into scenes...');
+        const data = await generator.generateScenePrompts(script);
+
+        // Deduct credits on success
+        await credits.deductCredits(userId, 'script_generation', 1, 'Storytelling scene breakdown');
+
+        res.json({ success: true, scenes: data.scenes, characters: data.characters || [] });
+    } catch (error) {
+        console.error('Storytelling scene breakdown error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Step 2: Generate video for a single scene (Sora 2)
+router.post('/storytelling/generate-video', requireAuth, studioGenerateLimiter, async (req, res) => {
+    try {
+        const { videoPrompt, sceneNumber } = req.body;
+        if (!videoPrompt) return res.status(400).json({ error: 'videoPrompt is required' });
+
+        // Credit check: video_generation = 5 credits
+        const userId = String(req.user.userId);
+        const check = await credits.checkCredits(userId, 'video_generation', 1);
+        if (!check.allowed) {
+            return res.status(402).json({ error: 'Not enough credits', ...check });
+        }
+
+        const generator = getStorytellingGenerator();
+
+        // Deduct credits upfront — Sora 2 costs us money even on failure
+        await credits.deductCredits(userId, 'video_generation', 1, 'Storytelling video scene ' + (sceneNumber || '?'));
+
+        const videoUrl = await generator.generateVideo(videoPrompt, sceneNumber || 1);
+
+        console.log(`Storytelling: scene ${sceneNumber} video complete`);
+        res.json({ success: true, sceneNumber, videoUrl });
+    } catch (error) {
+        console.error('Storytelling video generation error:', error.message);
+        // No refund — Sora 2 costs us money via Kie.ai even on failure
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // === RANKING FORMAT ENDPOINTS ===
 
 // Multer for ranking video uploads (up to 50MB per clip)
