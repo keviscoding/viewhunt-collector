@@ -46,7 +46,6 @@
         <p>Find viral niches with ViewHunt. Create scroll-stopping videos with Content Studio. One subscription, everything included.</p>
     </div>
     <div id="plans"></div>
-    <div id="topups"></div>
     <div id="features"></div>
 </div>
 </body>
@@ -160,27 +159,6 @@ function getAuthToken(){
     });
     h+='</div>';
     document.getElementById('plans').innerHTML=h;
-
-    // === TOP-UPS ===
-    var packs=[
-        {id:'small',credits:'200',videos:'~36 scene clips',was:'$30',now:'$19.99',discount:'-33%',per:'$0.10/credit',best:false},
-        {id:'medium',credits:'500',videos:'~90 scene clips',was:'$70',now:'$49.99',discount:'-29%',per:'$0.10/credit',best:false},
-        {id:'large',credits:'1,200',videos:'~218 scene clips',was:'$140',now:'$99.99',discount:'-29%',per:'$0.083/credit',best:true}
-    ];
-
-    var t='<div class="topup-section"><h2>🔋 Need more credits?</h2><p>Buy a top-up pack anytime. Top-up credits never expire.</p><div class="topup-grid">';
-    packs.forEach(function(p){
-        t+='<div class="topup-card'+(p.best?' best':'')+'">';
-        if(p.best) t+='<div class="topup-badge">Best Value</div>';
-        t+='<div class="topup-credits">'+p.credits+' Credits</div>';
-        t+='<div class="topup-videos">'+p.videos+'</div>';
-        t+='<div class="topup-price"><span class="topup-discount">'+p.discount+'</span> <span class="topup-was">'+p.was+'</span> <span class="topup-now">'+p.now+'</span></div>';
-        t+='<div class="topup-per">'+p.per+'</div>';
-        t+='<button class="topup-btn" onclick="buyPack(\''+p.id+'\')">Purchase</button>';
-        t+='</div>';
-    });
-    t+='</div></div>';
-    document.getElementById('topups').innerHTML=t;
 
     // === FEATURES ===
     var f='<div class="features-section"><h2>Everything you need to go viral</h2><p>ViewHunt finds the niches. Content Studio creates the videos. You post and grow.</p>';
