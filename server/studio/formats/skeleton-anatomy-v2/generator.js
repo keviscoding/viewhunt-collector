@@ -410,17 +410,160 @@ Format your response as JSON:
 
     /**
      * Step 2: Generate images using Kie.ai Nano Banana Pro
-     * Includes retry logic for transient API failures (missing taskId, 5xx, timeouts)
+     * Primary: Atlas Cloud nano-banana-pro ($0.15/pic)
+     * Fallback: Kie.ai nano-banana-pro (if Atlas Cloud fails)
      */
     async generateImage(imagePrompt, sceneNumber) {
         console.log(`\n=== Generating image for scene ${sceneNumber} ===`);
         console.log(`Image Prompt (first 120 chars): "${imagePrompt.substring(0, 120)}..."`);
         console.log(`===\n`);
         
+        // Try Atlas Cloud first (more reliable)
+        try {
+            return await this.generateImageAtlasCloud(imagePrompt, sceneNumber);
+        } catch (atlasErr) {
+            console.warn(`Atlas Cloud image failed for scene ${sceneNumber}: ${atlasErr.message}`);
+            console.log(`Falling back to Kie.ai for scene ${sceneNumber}...`);
+        }
+        
+        // Fallback: Kie.ai
+        return await this.generateImageKieAi(imagePrompt, sceneNumber);
+    }
+
+    /**
+     * Generate image via Atlas Cloud nano-banana-pro
+     */
+    async generateImageAtlasCloud(imagePrompt, sceneNumber) {
         const maxRetries = 3;
         
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
+                console.log(`🖼️ Atlas Cloud image - Scene ${sceneNumber} (attempt ${attempt}/${maxRetries})`);
+                
+                const createResponse = await axios.post(
+                    `${this.atlasBaseUrl}/api/v1/model/generateImage`,
+                    {
+                        model: 'google/nano-banana-pro/text-to-image-ultra',
+                        prompt: imagePrompt,
+                        aspect_ratio: '9:16',
+                        resolution: '4k',
+                        output_format: 'png',
+                        enable_sync_mode: false
+                    },
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${this.atlasApiKey}`
+                        },
+                        timeout: 30000
+                    }
+                );
+
+                const respData = createResponse.data;
+                const predictionId = respData?.data?.id || respData?.id;
+                
+                if (!predictionId) {
+                    const msg = respData?.message || respData?.msg || JSON.stringify(respData).substring(0, 200);
+                    console.warn(`Scene ${sceneNumber}: No prediction ID from Atlas Cloud (attempt ${attempt}/${maxRetries}). Response: ${msg}`);
+                    
+                    if (attempt < maxRetries) {
+                        await new Promise(r => setTimeout(r, attempt * 3000));
+                        continue;
+                    }
+                    throw new Error(`Atlas Cloud image failed after ${maxRetries} attempts: ${msg}`);
+                }
+
+                console.log(`Atlas Cloud image task created: ${predictionId}`);
+                
+                // Poll for completion
+                const imageUrl = await this.pollAtlasCloudImage(predictionId, 300000);
+                console.log(`✅ Image ${sceneNumber} generated via Atlas Cloud`);
+                return imageUrl;
+                
+            } catch (error) {
+                if (error.message.includes('authentication') || error.message.includes('API key')) {
+                    throw error;
+                }
+                
+                const status = error.response?.status;
+                const isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
+                
+                if (isRetryable && attempt < maxRetries) {
+                    const delay = attempt * 3000;
+                    console.warn(`Scene ${sceneNumber} Atlas Cloud image error (attempt ${attempt}/${maxRetries}): ${error.message}. Retrying in ${delay / 1000}s...`);
+                    await new Promise(r => setTimeout(r, delay));
+                    continue;
+                }
+                
+                throw error;
+            }
+        }
+    }
+
+    /**
+     * Poll Atlas Cloud for image completion
+     */
+    async pollAtlasCloudImage(predictionId, timeout = 300000) {
+        const startTime = Date.now();
+        const pollInterval = 4000;
+        let pollCount = 0;
+
+        while (Date.now() - startTime < timeout) {
+            pollCount++;
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+
+            try {
+                const response = await axios.get(
+                    `${this.atlasBaseUrl}/api/v1/model/prediction/${predictionId}`,
+                    {
+                        headers: { 'Authorization': `Bearer ${this.atlasApiKey}` },
+                        timeout: 15000
+                    }
+                );
+
+                const data = response.data?.data || response.data;
+                const status = data.status;
+
+                if (pollCount % 5 === 0) {
+                    console.log(`Atlas Cloud image ${predictionId}: ${status} (${elapsed}s)`);
+                }
+
+                if (status === 'completed' || status === 'succeeded') {
+                    const outputs = data.outputs;
+                    if (outputs && outputs.length > 0) {
+                        console.log(`✅ Atlas Cloud image completed in ${elapsed}s`);
+                        return outputs[0];
+                    }
+                    throw new Error('Atlas Cloud returned completed but no output URLs');
+                }
+
+                if (status === 'failed') {
+                    throw new Error('Atlas Cloud image generation failed: ' + (data.error || 'unknown'));
+                }
+
+                await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+            } catch (error) {
+                if (error.message.includes('Atlas Cloud')) throw error;
+                if (error.response?.status === 401) throw new Error('Atlas Cloud authentication failed');
+                console.error('Atlas Cloud image poll error:', error.message);
+                await new Promise(resolve => setTimeout(resolve, pollInterval));
+            }
+        }
+
+        throw new Error(`Atlas Cloud image timeout after ${Math.floor(timeout / 1000)}s`);
+    }
+
+    /**
+     * Generate image via Kie.ai nano-banana-pro (fallback)
+     */
+    async generateImageKieAi(imagePrompt, sceneNumber) {
+        const maxRetries = 3;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`🖼️ Kie.ai image (fallback) - Scene ${sceneNumber} (attempt ${attempt}/${maxRetries})`);
+                
                 const createResponse = await axios.post(
                     `${this.kieBaseUrl}/api/v1/jobs/createTask`,
                     {
@@ -437,51 +580,39 @@ Format your response as JSON:
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${this.kieApiKey}`
                         },
-                        timeout: 30000 // 30s timeout for task creation
+                        timeout: 30000
                     }
                 );
 
-                // Handle various response shapes from Kie.ai
                 const respData = createResponse.data;
-                
-                // Try multiple paths to find the taskId
                 const taskId = respData?.data?.taskId 
                     || respData?.taskId 
                     || respData?.data?.task_id 
                     || respData?.task_id;
                 
                 if (!taskId) {
-                    // Check if it's a rate limit or quota issue
                     const code = respData?.code || respData?.status;
                     const msg = respData?.msg || respData?.message || '';
                     
-                    if (code === 429 || msg.toLowerCase().includes('rate')) {
-                        console.warn(`Scene ${sceneNumber}: Rate limited (attempt ${attempt}/${maxRetries})`);
-                    } else if (code === 402 || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('quota')) {
-                        throw new Error('Out of Kie.ai credits. Please top up your account.');
-                    } else {
-                        console.warn(`Scene ${sceneNumber}: No taskId in response (attempt ${attempt}/${maxRetries}). Code: ${code}, Msg: ${msg}`);
-                        console.warn('Full response:', JSON.stringify(respData).substring(0, 300));
+                    if (code === 402 || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('quota')) {
+                        throw new Error('Out of Kie.ai credits.');
                     }
                     
+                    console.warn(`Scene ${sceneNumber}: No taskId from Kie.ai (attempt ${attempt}/${maxRetries}). Code: ${code}, Msg: ${msg}`);
+                    
                     if (attempt < maxRetries) {
-                        const delay = attempt * 3000; // 3s, 6s backoff
-                        console.log(`Retrying in ${delay / 1000}s...`);
-                        await new Promise(r => setTimeout(r, delay));
+                        await new Promise(r => setTimeout(r, attempt * 3000));
                         continue;
                     }
-                    throw new Error(`Kie.ai failed to create task after ${maxRetries} attempts. Last response: ${JSON.stringify(respData).substring(0, 200)}`);
+                    throw new Error(`Kie.ai image failed after ${maxRetries} attempts`);
                 }
 
-                console.log(`Image task created: ${taskId} (attempt ${attempt})`);
-                
+                console.log(`Kie.ai image task created: ${taskId}`);
                 const imageUrl = await this.pollKieTaskForImage(taskId, 600000);
-                console.log(`✅ Image ${sceneNumber} generated successfully`);
-                
+                console.log(`✅ Image ${sceneNumber} generated via Kie.ai (fallback)`);
                 return imageUrl;
                 
             } catch (error) {
-                // Don't retry on auth/credit errors
                 if (error.message.includes('credit') || error.message.includes('quota') || error.message.includes('authentication')) {
                     throw error;
                 }
@@ -490,13 +621,10 @@ Format your response as JSON:
                 const isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
                 
                 if (isRetryable && attempt < maxRetries) {
-                    const delay = attempt * 3000;
-                    console.warn(`Scene ${sceneNumber} image error (attempt ${attempt}/${maxRetries}): ${error.message}. Retrying in ${delay / 1000}s...`);
-                    await new Promise(r => setTimeout(r, delay));
+                    await new Promise(r => setTimeout(r, attempt * 3000));
                     continue;
                 }
                 
-                console.error(`Error generating image ${sceneNumber}:`, error.response?.data || error.message);
                 throw error;
             }
         }
