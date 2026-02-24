@@ -381,9 +381,6 @@ router.post('/generate/scene-images', requireAuth, studioGenerateLimiter, async 
         
         console.log(`Director mode: generating ${numImages} image(s) for scene ${sceneNumber}`);
         
-        // Deduct credits for ALL requested images upfront (costs us money per image)
-        await credits.deductCredits(userId, 'image_generation', numImages, numImages + ' images for scene ' + sceneNumber);
-        
         const imagePromises = [];
         for (let i = 0; i < numImages; i++) {
             imagePromises.push(
@@ -394,10 +391,23 @@ router.post('/generate/scene-images', requireAuth, studioGenerateLimiter, async 
         const results = await Promise.all(imagePromises);
         const images = results.map((r, i) => typeof r === 'string' ? { url: r, index: i } : { error: r.error, index: i });
         
+        // Only charge for successful images
+        const successCount = images.filter(img => img.url).length;
+        const failCount = images.filter(img => img.error).length;
+        
+        if (successCount > 0) {
+            await credits.deductCredits(userId, 'image_generation', successCount, successCount + ' images for scene ' + sceneNumber);
+            console.log(`💳 Charged ${successCount} images (${successCount * credits.COSTS.image_generation} credits)`);
+        }
+        
+        if (failCount > 0) {
+            console.log(`⚠️ ${failCount} image(s) failed — no credits charged for failures`);
+        }
+        
         res.json({ success: true, sceneNumber, images });
     } catch (error) {
         console.error('Scene image generation error:', error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Generation failed — no credits deducted. If this persists, please try again in an hour.' });
     }
 });
 
@@ -429,20 +439,19 @@ router.post('/generate/scene-video', requireAuth, studioGenerateLimiter, async (
         console.log(`  Image URL: ${imageUrl.substring(0, 80)}...`);
         console.log(`  Video Prompt: ${videoPrompt.substring(0, 100)}...`);
         
-        // Deduct credits upfront — video generation costs us money even if it fails
-        await credits.deductCredits(userId, 'video_generation', 1, 'Video for scene ' + sceneNumber);
-        
         // Only admin can use kling model
         const resolvedModel = (videoModel === 'kling' && req.user.email === process.env.ADMIN_EMAIL) ? 'kling' : 'wan';
         
         const videoUrl = await generator.generateVideo(imageUrl, videoPrompt, sceneNumber, resolvedModel);
         
+        // Charge only on success
+        await credits.deductCredits(userId, 'video_generation', 1, 'Video for scene ' + sceneNumber);
+        
         console.log(`Director mode: video for scene ${sceneNumber} complete: ${videoUrl.substring(0, 80)}...`);
         res.json({ success: true, sceneNumber, videoUrl });
     } catch (error) {
         console.error('Scene video generation error:', error.message);
-        // No refund — video generation costs us money via external API even on failure
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Generation failed — no credits deducted. If this persists, please try again in an hour.' });
     }
 });
 
@@ -717,17 +726,29 @@ router.post('/credits/admin-grant', requireAuth, async (req, res) => {
         if (req.user.email !== process.env.ADMIN_EMAIL) {
             return res.status(403).json({ error: 'Admin access required' });
         }
-        const { amount, plan } = req.body;
+        const { amount, plan, email } = req.body;
         if (!amount || amount < 1) return res.status(400).json({ error: 'Amount required' });
         
-        var userId = String(req.user.userId);
+        var userId;
+        
+        // If email is provided, find that user and grant to them
+        if (email) {
+            const db = await getDb();
+            const targetUser = await db.collection('users').findOne({ email: email });
+            if (!targetUser) return res.status(404).json({ error: 'User not found: ' + email });
+            userId = String(targetUser._id);
+            console.log(`Admin granting ${amount} credits to ${email} (${userId})`);
+        } else {
+            userId = String(req.user.userId);
+        }
+        
         if (plan) {
             await credits.adminSetCredits(userId, amount, plan);
         } else {
             await credits.addTopUpCredits(userId, amount, 'admin-grant-' + Date.now());
         }
         var bal = await credits.getBalance(userId);
-        res.json({ success: true, ...bal, totalAvailable: (bal.balance || 0) + (bal.topUpBalance || 0) });
+        res.json({ success: true, email: email || req.user.email, ...bal, totalAvailable: (bal.balance || 0) + (bal.topUpBalance || 0) });
     } catch (err) {
         console.error('Admin grant error:', err);
         res.status(500).json({ error: err.message });
@@ -787,17 +808,16 @@ router.post('/storytelling/generate-video', requireAuth, studioGenerateLimiter, 
 
         const generator = getStorytellingGenerator();
 
-        // Deduct credits upfront — Sora 2 costs us money even on failure
-        await credits.deductCredits(userId, 'video_generation', 1, 'Storytelling video scene ' + (sceneNumber || '?'));
-
         const videoUrl = await generator.generateVideo(videoPrompt, sceneNumber || 1);
+
+        // Charge only on success
+        await credits.deductCredits(userId, 'video_generation', 1, 'Storytelling video scene ' + (sceneNumber || '?'));
 
         console.log(`Storytelling: scene ${sceneNumber} video complete`);
         res.json({ success: true, sceneNumber, videoUrl });
     } catch (error) {
         console.error('Storytelling video generation error:', error.message);
-        // No refund — Sora 2 costs us money via Kie.ai even on failure
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Generation failed — no credits deducted. If this persists, please try again in an hour.' });
     }
 });
 
