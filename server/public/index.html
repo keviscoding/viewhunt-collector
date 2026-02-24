@@ -3,764 +3,574 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
-    <meta name="theme-color" content="#0A0F1D">
+    <meta name="theme-color" content="#08080c">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="description" content="ViewHunt - Find untapped YouTube Shorts niches and create scroll-stopping videos with AI. Niche discovery + Content Studio in one platform.">
-    <meta name="keywords" content="YouTube Shorts, niche research, YouTube growth, content creator tools, AI video generation, content studio">
+    <meta name="description" content="ViewHunt — Find viral AI niches and create scroll-stopping YouTube Shorts automatically. Niche discovery + AI Content Studio in one platform. Users have generated over $100K.">
+    <meta name="keywords" content="YouTube Shorts, AI video generation, niche research, content creator tools, viral content, faceless YouTube">
     <meta name="robots" content="index, follow">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>ViewHunt - Find Niches & Create Viral YouTube Shorts with AI</title>
-    <link rel="stylesheet" href="/styles.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <title>ViewHunt — Enter Trending Niches. Make Videos with AI. Go Viral.</title>
     <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
     <link rel="icon" type="image/png" href="/images/viewhunt_logo.png">
     <link rel="apple-touch-icon" href="/images/viewhunt_logo.png">
-    <link rel="stylesheet" href="/css/mobile-responsive-premium.css">
-    <link rel="stylesheet" href="/css/mobile-sticky-cta.css">
-    <link rel="stylesheet" href="/css/fix-mobile-bugs.css">
-    <link rel="stylesheet" href="/css/mobile-logo-restore.css">
-    <link rel="stylesheet" href="/css/hero-text-fix.css">
-    <link rel="stylesheet" href="/css/desktop-hero-fixes.css">
-    <link rel="stylesheet" href="/css/desktop-problem-section-fix.css">
-    <link rel="stylesheet" href="/css/landing-pricing-fix.css">
-    <link rel="stylesheet" href="/css/viewmastery-modal.css">
-    <link rel="stylesheet" href="/css/fix-checkmarks.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+    --bg:#08080c;--bg2:#0d0d14;--surface:#12121a;--surface2:#181822;--surface3:#1e1e2a;
+    --border:#1f1f2e;--border2:#2a2a3c;
+    --text:#eaeaf0;--text2:#a0a0b8;--text3:#6a6a82;
+    --accent:#7c5cfc;--accent2:#9b7dff;--accent-glow:rgba(124,92,252,0.15);
+    --green:#22c55e;--green2:#16a34a;--green-glow:rgba(34,197,94,0.12);
+    --amber:#f59e0b;--red:#ef4444;
+    --radius:12px;--radius-lg:20px;
+}
+html{scroll-behavior:smooth;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+.container{max-width:1120px;margin:0 auto;padding:0 1.5rem}
+</style>
 </head>
 <body>
-    <!-- Shooting stars container -->
-    <div id="shooting-stars-container"></div>
-    
-    <!-- Static stars background -->
-    <div class="stars-background"></div>
+<style>
+/* ── NAV ── */
+.nav-bar{position:fixed;top:0;left:0;right:0;z-index:100;padding:1rem 0;transition:background 0.3s,box-shadow 0.3s}
+.nav-bar.scrolled{background:rgba(8,8,12,0.92);backdrop-filter:blur(16px);box-shadow:0 1px 0 var(--border)}
+.nav-inner{display:flex;align-items:center;justify-content:space-between}
+.nav-logo{display:flex;align-items:center;gap:0.5rem;font-weight:800;font-size:1.15rem;letter-spacing:-0.03em}
+.nav-logo img{height:28px;width:28px;border-radius:6px}
+.nav-logo span{color:var(--accent2)}
+.nav-links{display:flex;align-items:center;gap:2rem}
+.nav-links a{font-size:0.88rem;color:var(--text2);font-weight:500;transition:color 0.15s}
+.nav-links a:hover{color:var(--text)}
+.nav-cta{padding:0.5rem 1.2rem;border-radius:8px;background:var(--accent);color:#fff;font-weight:600;font-size:0.85rem;transition:all 0.2s}
+.nav-cta:hover{background:var(--accent2);transform:translateY(-1px)}
+.mobile-menu-btn{display:none;background:none;border:none;color:var(--text);font-size:1.5rem;cursor:pointer}
 
-    <header>
-        <div class="container header-container">
-            <a href="/" class="logo">
-                <img src="/images/viewhunt_logo.png" alt="ViewHunt" class="logo-image">
-            </a>
-            
-            <nav class="nav">
-                <a href="#features" class="nav-link">Features</a>
-                <a href="#content-studio" class="nav-link">Content Studio</a>
-                <a href="/pricing" class="nav-link">Pricing</a>
-                <a href="/app" class="btn">Sign In</a>
-            </nav>
+/* ── HERO ── */
+.hero{padding:8rem 0 4rem;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:800px;background:radial-gradient(circle,rgba(124,92,252,0.08) 0%,transparent 70%);pointer-events:none}
+.hero-inner{text-align:center;max-width:780px;margin:0 auto;position:relative;z-index:1}
+.hero-badge{display:inline-flex;align-items:center;gap:0.5rem;padding:0.4rem 1rem;border-radius:100px;background:var(--green-glow);border:1px solid rgba(34,197,94,0.2);font-size:0.8rem;font-weight:600;color:var(--green);margin-bottom:1.5rem;animation:fadeInDown 0.6s ease}
+.hero-badge .pulse-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+.hero h1{font-size:3.5rem;font-weight:900;letter-spacing:-0.04em;line-height:1.1;margin-bottom:1.25rem;animation:fadeInUp 0.7s ease}
+.hero h1 .gradient{background:linear-gradient(135deg,var(--accent2),#c084fc,var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-sub{font-size:1.15rem;color:var(--text2);max-width:600px;margin:0 auto 2rem;line-height:1.7;animation:fadeInUp 0.8s ease}
+.hero-buttons{display:flex;gap:0.75rem;justify-content:center;flex-wrap:wrap;animation:fadeInUp 0.9s ease}
+.btn-hero{padding:0.85rem 2rem;border-radius:10px;font-weight:700;font-size:0.95rem;transition:all 0.2s;border:none;cursor:pointer;font-family:inherit}
+.btn-hero-primary{background:linear-gradient(135deg,var(--accent),#6d4aed);color:#fff;box-shadow:0 4px 24px rgba(124,92,252,0.3)}
+.btn-hero-primary:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(124,92,252,0.4)}
+.btn-hero-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border2)}
+.btn-hero-secondary:hover{border-color:var(--accent);background:var(--surface3)}
+.hero-note{font-size:0.78rem;color:var(--text3);margin-top:1rem;animation:fadeInUp 1s ease}
+</style>
+<style>
+/* ── MOCK UI PREVIEW ── */
+.hero-preview{margin-top:3.5rem;position:relative;animation:fadeInUp 1.1s ease}
+.preview-glow{position:absolute;inset:-2px;border-radius:var(--radius-lg);background:linear-gradient(135deg,var(--accent),#c084fc,var(--accent));opacity:0.15;filter:blur(1px)}
+.preview-frame{position:relative;background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);overflow:hidden;padding:1.5rem}
+.preview-topbar{display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem}
+.preview-dot{width:10px;height:10px;border-radius:50%;background:var(--surface3);border:1px solid var(--border2)}
+.preview-dot:nth-child(1){background:#ef4444}
+.preview-dot:nth-child(2){background:#f59e0b}
+.preview-dot:nth-child(3){background:#22c55e}
+.preview-url{flex:1;text-align:center;font-size:0.72rem;color:var(--text3);background:var(--bg2);padding:0.3rem 0.75rem;border-radius:6px;margin:0 2rem}
+.preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.preview-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:1rem}
+.preview-card-title{font-size:0.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.75rem}
+.niche-row{display:flex;align-items:center;gap:0.6rem;padding:0.45rem 0;border-bottom:1px solid var(--border)}
+.niche-row:last-child{border:none}
+.niche-rank{font-size:0.7rem;color:var(--text3);width:18px;font-weight:700}
+.niche-name{flex:1;font-size:0.8rem;font-weight:600}
+.niche-stat{font-size:0.75rem;color:var(--green);font-weight:600}
+.revenue-big{font-size:2rem;font-weight:900;letter-spacing:-0.03em;margin-bottom:0.25rem}
+.revenue-big .dollar{color:var(--green)}
+.revenue-label{font-size:0.75rem;color:var(--text3)}
+.revenue-bar{height:4px;border-radius:2px;background:var(--surface3);margin-top:0.75rem;overflow:hidden}
+.revenue-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--green),var(--green2));animation:fillBar 2s ease 1.5s both}
+.mini-chart{display:flex;align-items:flex-end;gap:3px;height:40px;margin-top:0.5rem}
+.mini-bar{flex:1;border-radius:2px 2px 0 0;background:var(--accent);opacity:0.6;animation:growBar 1s ease both}
+.mini-bar:nth-child(odd){background:var(--accent2)}
+
+/* ── STATS BAR ── */
+.stats-bar{padding:3rem 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg2)}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1.5rem;text-align:center}
+.stat-num{font-size:1.8rem;font-weight:900;letter-spacing:-0.03em;margin-bottom:0.15rem}
+.stat-num.green{color:var(--green)}
+.stat-num.accent{color:var(--accent2)}
+.stat-label{font-size:0.8rem;color:var(--text3)}
+</style>
+<style>
+/* ── HOW IT WORKS ── */
+.section{padding:5rem 0}
+.section-tag{display:inline-block;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--accent2);margin-bottom:0.75rem}
+.section-title{font-size:2.2rem;font-weight:900;letter-spacing:-0.03em;margin-bottom:0.75rem;line-height:1.15}
+.section-sub{font-size:1rem;color:var(--text2);max-width:560px;line-height:1.7}
+.section-header{margin-bottom:3rem}
+.section-header.center{text-align:center}
+.section-header.center .section-sub{margin:0 auto}
+.steps-row{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem}
+.step-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:2rem 1.5rem;position:relative;transition:all 0.25s}
+.step-card:hover{border-color:var(--accent);transform:translateY(-4px);box-shadow:0 12px 40px rgba(124,92,252,0.08)}
+.step-num{width:36px;height:36px;border-radius:10px;background:var(--accent-glow);border:1px solid rgba(124,92,252,0.2);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.85rem;color:var(--accent2);margin-bottom:1rem}
+.step-card h3{font-size:1.05rem;font-weight:700;margin-bottom:0.5rem}
+.step-card p{font-size:0.88rem;color:var(--text2);line-height:1.6}
+
+/* ── CONTENT STUDIO ── */
+.studio-section{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.studio-grid{display:grid;grid-template-columns:1fr 1fr;gap:3rem;align-items:center}
+.studio-features{display:flex;flex-direction:column;gap:1rem}
+.studio-feat{display:flex;gap:0.75rem;padding:1rem;border-radius:var(--radius);background:var(--surface);border:1px solid var(--border);transition:border-color 0.2s}
+.studio-feat:hover{border-color:var(--accent)}
+.studio-feat-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0}
+.studio-feat h4{font-size:0.9rem;font-weight:700;margin-bottom:0.2rem}
+.studio-feat p{font-size:0.8rem;color:var(--text3);line-height:1.5}
+.studio-mock{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem;position:relative}
+.studio-mock-header{display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;font-size:0.75rem;color:var(--text3)}
+.studio-scene{display:flex;gap:0.75rem;padding:0.6rem 0;border-bottom:1px solid var(--border)}
+.studio-scene:last-child{border:none}
+.scene-thumb{width:48px;height:48px;border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;color:var(--text3)}
+.scene-info{flex:1}
+.scene-info h5{font-size:0.78rem;font-weight:600;margin-bottom:0.15rem}
+.scene-info p{font-size:0.7rem;color:var(--text3)}
+.scene-status{font-size:0.65rem;padding:0.15rem 0.5rem;border-radius:4px;font-weight:600;align-self:center}
+.scene-status.done{background:var(--green-glow);color:var(--green)}
+.scene-status.gen{background:var(--accent-glow);color:var(--accent2)}
+</style>
+<style>
+/* ── REVENUE / SOCIAL PROOF ── */
+.proof-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem}
+.proof-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:2rem;text-align:center;transition:all 0.25s}
+.proof-card:hover{border-color:var(--green);transform:translateY(-3px)}
+.proof-icon{font-size:2rem;margin-bottom:0.75rem}
+.proof-num{font-size:2rem;font-weight:900;letter-spacing:-0.03em;margin-bottom:0.25rem}
+.proof-num.green{color:var(--green)}
+.proof-label{font-size:0.82rem;color:var(--text3);line-height:1.5}
+
+/* ── FREE GUIDE ── */
+.guide-banner{background:linear-gradient(135deg,var(--surface),var(--surface2));border:1px solid var(--border2);border-radius:var(--radius-lg);padding:3rem;display:flex;align-items:center;gap:2.5rem}
+.guide-icon{font-size:3.5rem;flex-shrink:0}
+.guide-text h3{font-size:1.3rem;font-weight:800;margin-bottom:0.5rem}
+.guide-text p{font-size:0.92rem;color:var(--text2);line-height:1.6;margin-bottom:1rem}
+.btn-green{padding:0.7rem 1.5rem;border-radius:8px;background:var(--green);color:#0a0a0a;font-weight:700;font-size:0.88rem;border:none;cursor:pointer;font-family:inherit;transition:all 0.2s}
+.btn-green:hover{background:var(--green2);transform:translateY(-1px)}
+
+/* ── PRICING ── */
+.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem}
+.price-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:2rem;position:relative;transition:all 0.25s}
+.price-card:hover{border-color:var(--accent);transform:translateY(-4px);box-shadow:0 12px 40px rgba(124,92,252,0.08)}
+.price-card.pop{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.price-pop-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);padding:0.25rem 1rem;border-radius:100px;background:var(--accent);color:#fff;font-size:0.7rem;font-weight:700;white-space:nowrap}
+.price-name{font-size:0.85rem;font-weight:700;color:var(--text2);margin-bottom:0.5rem}
+.price-amount{font-size:2.5rem;font-weight:900;letter-spacing:-0.04em;margin-bottom:0.15rem}
+.price-amount span{font-size:0.9rem;font-weight:500;color:var(--text3)}
+.price-credits{font-size:0.85rem;color:var(--accent2);font-weight:600;margin-bottom:0.15rem}
+.price-videos{font-size:0.78rem;color:var(--text3);margin-bottom:1.25rem}
+.price-features{list-style:none;margin-bottom:1.5rem}
+.price-features li{font-size:0.82rem;color:var(--text2);padding:0.35rem 0;display:flex;align-items:center;gap:0.5rem}
+.price-features li::before{content:'';width:16px;height:16px;border-radius:50%;background:var(--green-glow);flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.btn-price{display:block;width:100%;padding:0.75rem;border-radius:8px;font-weight:700;font-size:0.88rem;text-align:center;border:none;cursor:pointer;font-family:inherit;transition:all 0.2s}
+.btn-price-primary{background:var(--accent);color:#fff}
+.btn-price-primary:hover{background:var(--accent2)}
+.btn-price-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border2)}
+.btn-price-secondary:hover{border-color:var(--accent)}
+
+/* ── FINAL CTA ── */
+.final-cta{text-align:center;padding:6rem 0;position:relative}
+.final-cta::before{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:600px;height:400px;background:radial-gradient(circle,rgba(124,92,252,0.06) 0%,transparent 70%);pointer-events:none}
+.final-cta h2{font-size:2.5rem;font-weight:900;letter-spacing:-0.03em;margin-bottom:0.75rem;line-height:1.15}
+.final-cta p{font-size:1.05rem;color:var(--text2);max-width:500px;margin:0 auto 2rem;line-height:1.7}
+
+/* ── FOOTER ── */
+.site-footer{border-top:1px solid var(--border);padding:3rem 0 2rem;background:var(--bg2)}
+.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:2rem;margin-bottom:2rem}
+.footer-brand p{font-size:0.82rem;color:var(--text3);line-height:1.6;margin-top:0.75rem}
+.footer-col h4{font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text2);margin-bottom:0.75rem}
+.footer-col a{display:block;font-size:0.82rem;color:var(--text3);padding:0.25rem 0;transition:color 0.15s}
+.footer-col a:hover{color:var(--text)}
+.footer-bottom{text-align:center;font-size:0.75rem;color:var(--text3);padding-top:1.5rem;border-top:1px solid var(--border)}
+</style>
+<style>
+/* ── ANIMATIONS ── */
+@keyframes fadeInUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeInDown{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+@keyframes fillBar{from{width:0}to{width:78%}}
+@keyframes growBar{from{height:0}to{height:var(--h)}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+.fade-up{opacity:0;transform:translateY(24px);transition:opacity 0.6s ease,transform 0.6s ease}
+.fade-up.visible{opacity:1;transform:translateY(0)}
+
+/* ── RESPONSIVE ── */
+@media(max-width:900px){
+    .hero h1{font-size:2.4rem}
+    .preview-grid{grid-template-columns:1fr}
+    .stats-grid{grid-template-columns:repeat(2,1fr)}
+    .steps-row{grid-template-columns:1fr}
+    .studio-grid{grid-template-columns:1fr}
+    .proof-grid{grid-template-columns:1fr}
+    .pricing-grid{grid-template-columns:1fr;max-width:400px;margin:0 auto}
+    .guide-banner{flex-direction:column;text-align:center;padding:2rem}
+    .footer-grid{grid-template-columns:1fr 1fr}
+    .final-cta h2{font-size:1.8rem}
+}
+@media(max-width:640px){
+    .hero{padding:6rem 0 3rem}
+    .hero h1{font-size:2rem}
+    .hero-sub{font-size:1rem}
+    .nav-links{display:none}
+    .mobile-menu-btn{display:block}
+    .section{padding:3.5rem 0}
+    .section-title{font-size:1.6rem}
+    .stats-grid{grid-template-columns:repeat(2,1fr);gap:1rem}
+    .stat-num{font-size:1.4rem}
+    .footer-grid{grid-template-columns:1fr}
+}
+</style>
+
+<!-- ═══════════════════ NAV ═══════════════════ -->
+<nav class="nav-bar" id="navbar">
+    <div class="container nav-inner">
+        <a href="/" class="nav-logo">
+            <img src="/images/viewhunt_logo.png" alt="ViewHunt">
+            View<span>Hunt</span>
+        </a>
+        <div class="nav-links">
+            <a href="#how">How It Works</a>
+            <a href="#studio">Content Studio</a>
+            <a href="#pricing">Pricing</a>
+            <a href="/app">Sign In</a>
+            <a href="/app" class="nav-cta">Get Started Free</a>
         </div>
-    </header>
+        <button class="mobile-menu-btn" onclick="document.querySelector('.nav-links').classList.toggle('show')" aria-label="Menu">&#9776;</button>
+    </div>
+</nav>
+<!-- ═══════════════════ HERO ═══════════════════ -->
+<section class="hero">
+    <div class="container">
+        <div class="hero-inner">
+            <div class="hero-badge"><span class="pulse-dot"></span> Users have generated over $100K in revenue</div>
+            <h1>Enter Trending Niches.<br>Make Videos with AI.<br><span class="gradient">Go Viral.</span></h1>
+            <p class="hero-sub">AI can make the videos now. Find what's blowing up, generate scroll-stopping Shorts in minutes, and start monetizing. No excuses left.</p>
+            <div class="hero-buttons">
+                <a href="/app" class="btn-hero btn-hero-primary">Start Free — Find Your Niche</a>
+                <a href="#studio" class="btn-hero btn-hero-secondary">See Content Studio</a>
+            </div>
+            <p class="hero-note">No credit card required · Free niche discovery included</p>
+        </div>
 
-    <section class="hero">
-        <div class="container">
-            <div class="hero-grid">
-                <div class="hero-content fade-in">
-                    <h1 class="hero-title">Find Viral Niches & Create Scroll-Stopping YouTube Shorts — All in One Platform</h1>
-                    <p class="hero-subtitle">ViewHunt analyzes 250,000+ channels to find untapped niches, then our AI Content Studio turns your scripts into fully produced videos with voiceover, captions, and effects.</p>
-                    
-                    <div class="hero-buttons">
-                        <a href="/app" class="btn btn-lg pulse">Start Free</a>
-                        <a href="#content-studio" class="btn btn-lg btn-outline">See Content Studio</a>
-                    </div>
+        <!-- Mock UI Preview -->
+        <div class="hero-preview">
+            <div class="preview-glow"></div>
+            <div class="preview-frame">
+                <div class="preview-topbar">
+                    <div class="preview-dot"></div>
+                    <div class="preview-dot"></div>
+                    <div class="preview-dot"></div>
+                    <div class="preview-url">viewhunt.com/app</div>
                 </div>
-                
-                <div class="hero-image fade-in-right">
-                    <div class="channel-list-container">
-                        <div class="channel-list">
-                            <div class="channel-list-inner">
-                                <!-- Channel 1 -->
-                                <div class="channel-item">
-                                    <div class="channel-rank">1</div>
-                                    <div class="channel-avatar">
-                                        <img src="https://picsum.photos/55/55?random=1" alt="Grandfather">
-                                    </div>
-                                    <div class="channel-info">
-                                        <div class="channel-name">Grandfather</div>
-                                    </div>
-                                    <div class="channel-growth">
-                                        <div class="growth-indicator">
-                                            <span class="growth-arrow">↑</span>
-                                            <span>+187K</span>
-                                            <span class="growth-period">(24h)</span>
-                                        </div>
-                                    </div>
-                                    <div class="channel-stats">
-                                        <div class="stat">
-                                            <div class="stat-label">Avg Views:</div>
-                                            <div class="stat-value">4.4M</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Subs:</div>
-                                            <div class="stat-value">38.4K</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Views/Sub:</div>
-                                            <div class="stat-value views-sub-value">113.9</div>
-                                        </div>
-                                    </div>
-                                    <div class="bookmark-icon">⭐</div>
-                                </div>
-                                
-                                <!-- Channel 2 -->
-                                <div class="channel-item">
-                                    <div class="channel-rank">2</div>
-                                    <div class="channel-avatar">
-                                        <img src="https://picsum.photos/55/55?random=2" alt="DIY Tools">
-                                    </div>
-                                    <div class="channel-info">
-                                        <div class="channel-name">DIY Tools</div>
-                                    </div>
-                                    <div class="channel-growth">
-                                        <div class="growth-indicator">
-                                            <span class="growth-arrow">↑</span>
-                                            <span>+72K</span>
-                                            <span class="growth-period">(24h)</span>
-                                        </div>
-                                    </div>
-                                    <div class="channel-stats">
-                                        <div class="stat">
-                                            <div class="stat-label">Avg Views:</div>
-                                            <div class="stat-value">1.7M</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Subs:</div>
-                                            <div class="stat-value">29.0K</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Views/Sub:</div>
-                                            <div class="stat-value views-sub-value">59.1</div>
-                                        </div>
-                                    </div>
-                                    <div class="bookmark-icon">⭐</div>
-                                </div>
-                                
-                                <!-- Channel 3 -->
-                                <div class="channel-item">
-                                    <div class="channel-rank">3</div>
-                                    <div class="channel-avatar">
-                                        <img src="https://picsum.photos/55/55?random=3" alt="physicslifesttt">
-                                    </div>
-                                    <div class="channel-info">
-                                        <div class="channel-name">physicslifesttt</div>
-                                    </div>
-                                    <div class="channel-growth">
-                                        <div class="growth-indicator">
-                                            <span class="growth-arrow">↑</span>
-                                            <span>+105K</span>
-                                            <span class="growth-period">(24h)</span>
-                                        </div>
-                                    </div>
-                                    <div class="channel-stats">
-                                        <div class="stat">
-                                            <div class="stat-label">Avg Views:</div>
-                                            <div class="stat-value">2.0M</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Subs:</div>
-                                            <div class="stat-value">36.1K</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Views/Sub:</div>
-                                            <div class="stat-value views-sub-value">56.6</div>
-                                        </div>
-                                    </div>
-                                    <div class="bookmark-icon">⭐</div>
-                                </div>
-                                
-                                <!-- Channel 4 -->
-                                <div class="channel-item">
-                                    <div class="channel-rank">4</div>
-                                    <div class="channel-avatar">
-                                        <img src="https://picsum.photos/55/55?random=4" alt="Japu South Max">
-                                    </div>
-                                    <div class="channel-info">
-                                        <div class="channel-name">Japu South Max</div>
-                                    </div>
-                                    <div class="channel-growth">
-                                        <div class="growth-indicator">
-                                            <span class="growth-arrow">↑</span>
-                                            <span>+230K</span>
-                                            <span class="growth-period">(24h)</span>
-                                        </div>
-                                    </div>
-                                    <div class="channel-stats">
-                                        <div class="stat">
-                                            <div class="stat-label">Avg Views:</div>
-                                            <div class="stat-value">5.5M</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Subs:</div>
-                                            <div class="stat-value">188.0K</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Views/Sub:</div>
-                                            <div class="stat-value views-sub-value">29.1</div>
-                                        </div>
-                                    </div>
-                                    <div class="bookmark-icon">⭐</div>
-                                </div>
-                                
-                                <!-- Channel 5 -->
-                                <div class="channel-item">
-                                    <div class="channel-rank">5</div>
-                                    <div class="channel-avatar">
-                                        <img src="https://picsum.photos/55/55?random=5" alt="ITZ GUDDO">
-                                    </div>
-                                    <div class="channel-info">
-                                        <div class="channel-name">ITZ GUDDO</div>
-                                    </div>
-                                    <div class="channel-growth">
-                                        <div class="growth-indicator">
-                                            <span class="growth-arrow">↑</span>
-                                            <span>+195K</span>
-                                            <span class="growth-period">(24h)</span>
-                                        </div>
-                                    </div>
-                                    <div class="channel-stats">
-                                        <div class="stat">
-                                            <div class="stat-label">Avg Views:</div>
-                                            <div class="stat-value">8.9M</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Subs:</div>
-                                            <div class="stat-value">415.0K</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Views/Sub:</div>
-                                            <div class="stat-value views-sub-value">21.5</div>
-                                        </div>
-                                    </div>
-                                    <div class="bookmark-icon">⭐</div>
-                                </div>
-                                
-                                <!-- Channel 6 -->
-                                <div class="channel-item">
-                                    <div class="channel-rank">6</div>
-                                    <div class="channel-avatar">
-                                        <img src="https://picsum.photos/55/55?random=6" alt="DG Viral">
-                                    </div>
-                                    <div class="channel-info">
-                                        <div class="channel-name">DG Viral</div>
-                                    </div>
-                                    <div class="channel-growth">
-                                        <div class="growth-indicator">
-                                            <span class="growth-arrow">↑</span>
-                                            <span>+1.0M</span>
-                                            <span class="growth-period">(24h)</span>
-                                        </div>
-                                    </div>
-                                    <div class="channel-stats">
-                                        <div class="stat">
-                                            <div class="stat-label">Avg Views:</div>
-                                            <div class="stat-value">1.2M</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Subs:</div>
-                                            <div class="stat-value">74.9K</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Views/Sub:</div>
-                                            <div class="stat-value views-sub-value">15.5</div>
-                                        </div>
-                                    </div>
-                                    <div class="bookmark-icon">⭐</div>
-                                </div>
-                                
-                                <!-- Channel 7 -->
-                                <div class="channel-item">
-                                    <div class="channel-rank">7</div>
-                                    <div class="channel-avatar">
-                                        <img src="https://picsum.photos/55/55?random=7" alt="HappyPetArt">
-                                    </div>
-                                    <div class="channel-info">
-                                        <div class="channel-name">HappyPetArt</div>
-                                    </div>
-                                    <div class="channel-growth">
-                                        <div class="growth-indicator">
-                                            <span class="growth-arrow">↑</span>
-                                            <span>+162K</span>
-                                            <span class="growth-period">(24h)</span>
-                                        </div>
-                                    </div>
-                                    <div class="channel-stats">
-                                        <div class="stat">
-                                            <div class="stat-label">Avg Views:</div>
-                                            <div class="stat-value">6.3M</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Subs:</div>
-                                            <div class="stat-value">449.0K</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Views/Sub:</div>
-                                            <div class="stat-value views-sub-value">14.1</div>
-                                        </div>
-                                    </div>
-                                    <div class="bookmark-icon">⭐</div>
-                                </div>
-                                
-                                <!-- Channel 8 -->
-                                <div class="channel-item">
-                                    <div class="channel-rank">8</div>
-                                    <div class="channel-avatar">
-                                        <img src="https://picsum.photos/55/55?random=8" alt="Tani Duck">
-                                    </div>
-                                    <div class="channel-info">
-                                        <div class="channel-name">Tani Duck</div>
-                                    </div>
-                                    <div class="channel-growth">
-                                        <div class="growth-indicator">
-                                            <span class="growth-arrow">↑</span>
-                                            <span>+512K</span>
-                                            <span class="growth-period">(24h)</span>
-                                        </div>
-                                    </div>
-                                    <div class="channel-stats">
-                                        <div class="stat">
-                                            <div class="stat-label">Avg Views:</div>
-                                            <div class="stat-value">18.7M</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Subs:</div>
-                                            <div class="stat-value">1.5M</div>
-                                        </div>
-                                        <div class="stat">
-                                            <div class="stat-label">Views/Sub:</div>
-                                            <div class="stat-value views-sub-value">12.7</div>
-                                        </div>
-                                    </div>
-                                    <div class="bookmark-icon">⭐</div>
-                                </div>
-                            </div>
+                <div class="preview-grid">
+                    <div class="preview-card">
+                        <div class="preview-card-title">Trending Niches</div>
+                        <div class="niche-row"><span class="niche-rank">1</span><span class="niche-name">Skeleton Anatomy</span><span class="niche-stat">+187K/day</span></div>
+                        <div class="niche-row"><span class="niche-rank">2</span><span class="niche-name">AI Survival Stories</span><span class="niche-stat">+142K/day</span></div>
+                        <div class="niche-row"><span class="niche-rank">3</span><span class="niche-name">Animal Encounters</span><span class="niche-stat">+105K/day</span></div>
+                        <div class="niche-row"><span class="niche-rank">4</span><span class="niche-name">DIY Science</span><span class="niche-stat">+89K/day</span></div>
+                        <div class="niche-row"><span class="niche-rank">5</span><span class="niche-name">History What-Ifs</span><span class="niche-stat">+72K/day</span></div>
+                    </div>
+                    <div class="preview-card">
+                        <div class="preview-card-title">User Revenue This Month</div>
+                        <div class="revenue-big"><span class="dollar">$</span>14,280</div>
+                        <div class="revenue-label">Combined user earnings from AI-generated content</div>
+                        <div class="revenue-bar"><div class="revenue-fill"></div></div>
+                        <div class="mini-chart">
+                            <div class="mini-bar" style="--h:15px;animation-delay:0.2s"></div>
+                            <div class="mini-bar" style="--h:22px;animation-delay:0.3s"></div>
+                            <div class="mini-bar" style="--h:18px;animation-delay:0.4s"></div>
+                            <div class="mini-bar" style="--h:30px;animation-delay:0.5s"></div>
+                            <div class="mini-bar" style="--h:25px;animation-delay:0.6s"></div>
+                            <div class="mini-bar" style="--h:35px;animation-delay:0.7s"></div>
+                            <div class="mini-bar" style="--h:28px;animation-delay:0.8s"></div>
+                            <div class="mini-bar" style="--h:40px;animation-delay:0.9s"></div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-        
-        <div class="container">
-            <div class="stats-bar fade-in">
-                <div class="stats-grid stagger-container">
-                    <div class="stat-item stagger-item">
-                        <h3>250,000+</h3>
-                        <p>Channels Analyzed</p>
-                    </div>
-                    
-                    <div class="stat-item stagger-item">
-                        <h3>7.2</h3>
-                        <p>View/Sub Ratio</p>
-                    </div>
-                    
-                    <div class="stat-item stagger-item">
-                        <h3>3.4M+</h3>
-                        <p>Average Views</p>
-                    </div>
-                </div>
+    </div>
+</section>
+<!-- ═══════════════════ STATS BAR ═══════════════════ -->
+<div class="stats-bar">
+    <div class="container">
+        <div class="stats-grid">
+            <div class="fade-up"><div class="stat-num green">$100K+</div><div class="stat-label">Generated by Users</div></div>
+            <div class="fade-up"><div class="stat-num accent">250,000+</div><div class="stat-label">Channels Analyzed</div></div>
+            <div class="fade-up"><div class="stat-num">2B+</div><div class="stat-label">Shorts Views Tracked</div></div>
+            <div class="fade-up"><div class="stat-num green">3 min</div><div class="stat-label">Script to Video</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════ HOW IT WORKS ═══════════════════ -->
+<section class="section" id="how">
+    <div class="container">
+        <div class="section-header center fade-up">
+            <div class="section-tag">How It Works</div>
+            <h2 class="section-title">It's never been easier to print with content</h2>
+            <p class="section-sub">AI handles the hard part. You pick the niche, write the script, and let the machine do the rest. Three steps to your first viral Short.</p>
+        </div>
+        <div class="steps-row">
+            <div class="step-card fade-up">
+                <div class="step-num">1</div>
+                <h3>Find What's Blowing Up</h3>
+                <p>Browse 250,000+ channels. Filter by views, growth, niche. Spot trends before they saturate. Our data shows you exactly what's working right now.</p>
+            </div>
+            <div class="step-card fade-up">
+                <div class="step-num">2</div>
+                <h3>Generate Videos with AI</h3>
+                <p>Paste your script into Content Studio. AI generates images, video clips, voiceover, word-by-word captions, SFX, and music. One click to assemble.</p>
+            </div>
+            <div class="step-card fade-up">
+                <div class="step-num">3</div>
+                <h3>Post, Monetize, Repeat</h3>
+                <p>Download your finished Short and upload to YouTube. Rinse and repeat across niches. Users are printing $5K-$15K/month with this exact workflow.</p>
             </div>
         </div>
-    </section>
-
-    <section class="how-it-works" id="content-studio">
-        <div class="container">
-            <div class="section-header fade-in">
-                <h2 class="section-title">🎬 Content Studio — Script to Video in Minutes</h2>
-                <p class="section-subtitle">Stop outsourcing. Write a script, pick your visuals, and let AI produce a fully assembled video with voiceover, word-by-word captions, SFX, and background music.</p>
-            </div>
-            
-            <div class="fade-in" style="margin:2rem auto 2.5rem;max-width:900px;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.08)">
-                <img src="/studio-landing-banner.png" alt="ViewHunt Content Studio — Generate viral AI videos" style="width:100%;display:block" loading="lazy">
-            </div>
-            
-            <div class="steps stagger-container">
-                <div class="step fade-in stagger-item">
-                    <div class="step-number">1</div>
-                    <h3 class="step-title">Write Your Script</h3>
-                    <p class="step-description">Paste your script and our AI breaks it into scenes with image prompts and video directions.</p>
-                </div>
-                
-                <div class="step fade-in stagger-item">
-                    <div class="step-number">2</div>
-                    <h3 class="step-title">Pick Your Visuals</h3>
-                    <p class="step-description">Choose from AI-generated images for each scene, or upload your own. Director Mode gives you full control.</p>
-                </div>
-                
-                <div class="step fade-in stagger-item">
-                    <div class="step-number">3</div>
-                    <h3 class="step-title">Generate Videos</h3>
-                    <p class="step-description">Each scene becomes a short video clip. AI handles the motion, transitions, and timing.</p>
-                </div>
-                
-                <div class="step fade-in stagger-item">
-                    <div class="step-number">4</div>
-                    <h3 class="step-title">One-Click Assembly</h3>
-                    <p class="step-description">Voiceover, word-by-word captions, SFX, background music — all assembled into a ready-to-post video.</p>
-                </div>
-            </div>
-            
-            <div style="text-align:center;margin-top:2rem;" class="fade-in">
-                <p style="color:rgba(255,255,255,0.6);font-size:0.95rem;margin-bottom:1rem;">Currently available: <strong style="color:rgba(255,255,255,0.9);">Skeleton Anatomy</strong> format · More formats coming soon</p>
-                <a href="/pricing" class="btn btn-lg pulse">View Plans & Pricing</a>
-                <a href="/app" class="btn btn-lg" style="margin-left:0.75rem;background:linear-gradient(135deg,#22c55e,#16a34a);border:none;">Start Free</a>
-            </div>
-        </div>
-    </section>
-
-    <section id="problem-section" class="problem">
-        <div class="container">
-            <div class="problem-grid">
-                <div class="problem-content fade-in-left">
-                    <h2 class="section-title">The Endless Scroll Ends Here</h2>
-                    <p class="section-subtitle">You know how frustrating YouTube Shorts niche research is...</p>
-                    
-                    <div class="problem-list stagger-container">
-                        <div class="problem-item stagger-item">
-                            <div class="problem-icon">⏱️</div>
-                            <div class="problem-text">
-                                <h3>Hours Wasted Scrolling</h3>
-                                <p>You spend countless hours manually scrolling through YouTube, hoping to stumble upon a profitable niche by luck.</p>
-                            </div>
-                        </div>
-                        
-                        <div class="problem-item stagger-item">
-                            <div class="problem-icon">🔍</div>
-                            <div class="problem-text">
-                                <h3>Missing Hidden Opportunities</h3>
-                                <p>The best niches aren't obvious. By the time most creators find them, they're already saturated.</p>
-                            </div>
-                        </div>
-                        
-                        <div class="problem-item stagger-item">
-                            <div class="problem-icon">😰</div>
-                            <div class="problem-text">
-                                <h3>Niche Scarcity Panic</h3>
-                                <p>After hours of searching, you jump on the first decent niche you find, usually missing better opportunities.</p>
-                            </div>
-                        </div>
+    </div>
+</section>
+<!-- ═══════════════════ CONTENT STUDIO ═══════════════════ -->
+<section class="section studio-section" id="studio">
+    <div class="container">
+        <div class="studio-grid">
+            <div class="fade-up">
+                <div class="section-tag">Content Studio</div>
+                <h2 class="section-title">Stop watching from the sidelines</h2>
+                <p class="section-sub" style="margin-bottom:1.5rem">AI has gotten so good you need to take advantage of this. Write a script, and the AI makes the entire video. Voiceover, captions, effects, music — done.</p>
+                <div class="studio-features">
+                    <div class="studio-feat">
+                        <div class="studio-feat-icon" style="background:rgba(124,92,252,0.12)">🎬</div>
+                        <div><h4>Script to Video</h4><p>Paste your script. AI breaks it into scenes, generates visuals, and assembles the final video.</p></div>
+                    </div>
+                    <div class="studio-feat">
+                        <div class="studio-feat-icon" style="background:rgba(34,197,94,0.12)">🎙</div>
+                        <div><h4>Auto Voiceover & Captions</h4><p>AI-generated voiceover synced with word-by-word captions. No recording needed.</p></div>
+                    </div>
+                    <div class="studio-feat">
+                        <div class="studio-feat-icon" style="background:rgba(245,158,11,0.12)">🎥</div>
+                        <div><h4>Multiple Formats</h4><p>Skeleton Anatomy, AI Storytelling, Ranking videos — pick a format and go.</p></div>
+                    </div>
+                    <div class="studio-feat">
+                        <div class="studio-feat-icon" style="background:rgba(239,68,68,0.12)">⚡</div>
+                        <div><h4>Director or Auto Mode</h4><p>Full control over every scene, or let AI handle everything automatically.</p></div>
                     </div>
                 </div>
-                
-                <div class="problem-image fade-in-right">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" class="frustrated-creator-svg">
-                        <!-- Background with shadow effect -->
-                        <rect x="50" y="50" width="500" height="300" rx="12" fill="#ffffff" filter="url(#shadow)" />
-                        
-                        <!-- Computer monitor -->
-                        <rect x="220" y="150" width="160" height="120" rx="4" fill="#2c3e50" />
-                        <rect x="230" y="160" width="140" height="90" rx="2" fill="#34495e" />
-                        
-                        <!-- Colored content blocks in monitor -->
-                        <rect x="240" y="170" width="40" height="20" rx="2" fill="#e74c3c" />
-                        <rect x="290" y="170" width="30" height="20" rx="2" fill="#2ecc71" />
-                        <rect x="240" y="200" width="30" height="20" rx="2" fill="#f1c40f" />
-                        <rect x="280" y="200" width="40" height="20" rx="2" fill="#3498db" />
-                        
-                        <!-- Desk -->
-                        <rect x="150" y="270" width="300" height="10" rx="2" fill="#ecf0f1" />
-                        
-                        <!-- Character -->
-                        <circle cx="300" cy="110" r="30" fill="#f1c40f" /> <!-- Head -->
-                        <path d="M285 115 Q300 105 315 115" stroke="#34495e" stroke-width="2" fill="none" /> <!-- Mouth sad -->
-                        <ellipse cx="290" cy="105" rx="3" ry="5" fill="#34495e" /> <!-- Eye left -->
-                        <ellipse cx="310" cy="105" rx="3" ry="5" fill="#34495e" /> <!-- Eye right -->
-                        <rect x="275" y="140" width="50" height="70" rx="4" fill="#3498db" /> <!-- Body -->
-                        <rect x="285" y="210" width="10" height="60" rx="2" fill="#7f8c8d" /> <!-- Left leg -->
-                        <rect x="305" y="210" width="10" height="60" rx="2" fill="#7f8c8d" /> <!-- Right leg -->
-                        
-                        <!-- Text lines -->
-                        <rect x="120" y="150" width="70" height="6" rx="1" fill="#bdc3c7" />
-                        <rect x="120" y="165" width="60" height="6" rx="1" fill="#bdc3c7" />
-                        <rect x="120" y="180" width="65" height="6" rx="1" fill="#bdc3c7" />
-                        
-                        <rect x="410" y="150" width="70" height="6" rx="1" fill="#bdc3c7" />
-                        <rect x="410" y="165" width="60" height="6" rx="1" fill="#bdc3c7" />
-                        <rect x="410" y="180" width="65" height="6" rx="1" fill="#bdc3c7" />
-                        
-                        <!-- Clock -->
-                        <circle cx="460" cy="100" r="25" fill="none" stroke="#95a5a6" stroke-width="2" />
-                        <line x1="460" y1="100" x2="460" y2="85" stroke="#95a5a6" stroke-width="2" />
-                        <line x1="460" y1="100" x2="470" y2="105" stroke="#95a5a6" stroke-width="2" />
-                        
-                        <!-- Stress marks -->
-                        <path d="M350 80 L360 90" stroke="#e74c3c" stroke-width="3" />
-                        <path d="M350 90 L360 80" stroke="#e74c3c" stroke-width="3" />
-                        
-                        <path d="M370 90 L380 100" stroke="#e74c3c" stroke-width="3" />
-                        <path d="M370 100 L380 90" stroke="#e74c3c" stroke-width="3" />
-                        
-                        <path d="M240 80 L250 90" stroke="#e74c3c" stroke-width="3" />
-                        <path d="M240 90 L250 80" stroke="#e74c3c" stroke-width="3" />
-                        
-                        <!-- Filters and effects -->
-                        <defs>
-                            <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
-                                <feDropShadow dx="0" dy="10" stdDeviation="15" flood-opacity="0.1" />
-                            </filter>
-                        </defs>
-                    </svg>
+            </div>
+            <div class="fade-up">
+                <div class="studio-mock">
+                    <div class="studio-mock-header">
+                        <span style="color:var(--accent2)">●</span> Content Studio — Skeleton Anatomy
+                    </div>
+                    <div class="studio-scene">
+                        <div class="scene-thumb" style="background:linear-gradient(135deg,#1a1a2e,#16213e)">S1</div>
+                        <div class="scene-info"><h5>What happens if you only eat sugar</h5><p>Scene 1 · Hook — 5s clip</p></div>
+                        <div class="scene-status done">Done</div>
+                    </div>
+                    <div class="studio-scene">
+                        <div class="scene-thumb" style="background:linear-gradient(135deg,#1a1a2e,#16213e)">S2</div>
+                        <div class="scene-info"><h5>Your teeth start dissolving</h5><p>Scene 2 · Body — 5s clip</p></div>
+                        <div class="scene-status done">Done</div>
+                    </div>
+                    <div class="studio-scene">
+                        <div class="scene-thumb" style="background:linear-gradient(135deg,#1a1a2e,#16213e)">S3</div>
+                        <div class="scene-info"><h5>Insulin spikes crash your energy</h5><p>Scene 3 · Body — 5s clip</p></div>
+                        <div class="scene-status gen">Generating</div>
+                    </div>
+                    <div class="studio-scene">
+                        <div class="scene-thumb" style="background:linear-gradient(135deg,#1a1a2e,#16213e)">S4</div>
+                        <div class="scene-info"><h5>Your liver turns to fat</h5><p>Scene 4 · Body — 5s clip</p></div>
+                        <div class="scene-status" style="color:var(--text3)">Queued</div>
+                    </div>
+                    <div style="margin-top:1rem;padding:0.75rem;background:var(--bg2);border-radius:8px;text-align:center">
+                        <div style="font-size:0.72rem;color:var(--text3);margin-bottom:0.35rem">Assembly ready in</div>
+                        <div style="font-size:1.1rem;font-weight:800;color:var(--green)">~2 minutes</div>
+                    </div>
                 </div>
             </div>
         </div>
-    </section>
-
-    <section class="features" id="features">
-        <div class="container">
-            <div class="section-header fade-in">
-                <h2 class="section-title">Transform Your YouTube Strategy</h2>
-                <p class="section-subtitle">While others waste hours guessing, you'll identify winning niches with data-backed confidence in minutes</p>
+    </div>
+</section>
+<!-- ═══════════════════ SOCIAL PROOF / REVENUE ═══════════════════ -->
+<section class="section">
+    <div class="container">
+        <div class="section-header center fade-up">
+            <div class="section-tag">Results</div>
+            <h2 class="section-title">This isn't theory. People are printing.</h2>
+            <p class="section-sub">ViewHunt users are building real channels with real revenue. The wave is happening right now.</p>
+        </div>
+        <div class="proof-grid">
+            <div class="proof-card fade-up">
+                <div class="proof-icon">💰</div>
+                <div class="proof-num green">$100K+</div>
+                <div class="proof-label">Total revenue generated by ViewHunt users since launch</div>
             </div>
-            
-            <div class="features-grid stagger-container">
-                <div class="feature-card fade-in stagger-item">
-                    <div class="feature-icon">📊</div>
-                    <h3 class="feature-title">Niche Viability Score™</h3>
-                    <p class="feature-description">Our proprietary algorithm analyzes multiple data points to predict which niches will be most profitable before they saturate.</p>
-                </div>
-                
-                <div class="feature-card fade-in stagger-item">
-                    <div class="feature-icon">🎭</div>
-                    <h3 class="feature-title">Faceless Channel Finder</h3>
-                    <p class="feature-description">Specifically target faceless channel opportunities that require no on-camera presence, perfect for creators who prefer to stay anonymous.</p>
-                </div>
-                
-                <div class="feature-card fade-in stagger-item">
-                    <div class="feature-icon">🤖</div>
-                    <h3 class="feature-title">AI-Powered Recommendations</h3>
-                    <p class="feature-description">Can't decide? Let our smart recommendation engine pick the perfect channel niche for you based on current market trends.</p>
-                </div>
-                
-                <div class="feature-card fade-in stagger-item">
-                    <div class="feature-icon">💰</div>
-                    <h3 class="feature-title">Revenue Potential Analyzer</h3>
-                    <p class="feature-description">See estimated monthly earnings for each niche based on view patterns, advertisers, and monetization opportunities.</p>
-                </div>
-                
-                <div class="feature-card fade-in stagger-item">
-                    <div class="feature-icon">🔍</div>
-                    <h3 class="feature-title">Advanced Filtering</h3>
-                    <p class="feature-description">Fine-tune your search with detailed filters for subscriber count, view metrics, shorts percentage, language, and channel age.</p>
-                </div>
-                
-                <div class="feature-card fade-in stagger-item">
-                    <div class="feature-icon">🌎</div>
-                    <h3 class="feature-title">Multi-Language Support</h3>
-                    <p class="feature-description">Discover opportunities across different markets with our multi-language channel tracking and analysis system.</p>
-                </div>
+            <div class="proof-card fade-up">
+                <div class="proof-icon">📈</div>
+                <div class="proof-num accent">12+</div>
+                <div class="proof-label">Successful monetized channels built using ViewHunt niches</div>
+            </div>
+            <div class="proof-card fade-up">
+                <div class="proof-icon">🎬</div>
+                <div class="proof-num">1,000+</div>
+                <div class="proof-label">AI-generated videos created in Content Studio</div>
             </div>
         </div>
-    </section>
+    </div>
+</section>
 
-    <section class="how-it-works" id="how-it-works">
-        <div class="container">
-            <div class="section-header fade-in">
-                <h2 class="section-title">Find Your Winning Niche in 4 Simple Steps</h2>
-                <p class="section-subtitle">Our niche discovery engine gives you actionable results in minutes, not hours</p>
-            </div>
-            
-            <div class="steps stagger-container">
-                <div class="step fade-in stagger-item">
-                    <div class="step-number">1</div>
-                    <h3 class="step-title">Browse Niches</h3>
-                    <p class="step-description">Explore trending niches or use our advanced filters to find specific opportunities.</p>
-                </div>
-                
-                <div class="step fade-in stagger-item">
-                    <div class="step-number">2</div>
-                    <h3 class="step-title">Analyze Metrics</h3>
-                    <p class="step-description">Review view counts, growth trends, and engagement metrics to identify winners.</p>
-                </div>
-                
-                <div class="step fade-in stagger-item">
-                    <div class="step-number">3</div>
-                    <h3 class="step-title">Pick Your Niche</h3>
-                    <p class="step-description">Choose the perfect niche based on data-driven insights or let AI decide for you.</p>
-                </div>
-                
-                <div class="step fade-in stagger-item">
-                    <div class="step-number">4</div>
-                    <h3 class="step-title">Launch & Grow</h3>
-                    <p class="step-description">Start your channel with confidence knowing you're in a profitable niche.</p>
-                </div>
+<!-- ═══════════════════ FREE GUIDE ═══════════════════ -->
+<section class="section" style="padding-top:0">
+    <div class="container">
+        <div class="guide-banner fade-up">
+            <div class="guide-icon">📘</div>
+            <div class="guide-text">
+                <h3>Free Short-Form Content Guide Included</h3>
+                <p>Every account gets our guide to going viral with AI-generated Shorts. Niche selection, scripting frameworks, posting schedules, and monetization strategies — all included free.</p>
+                <a href="/app" class="btn-green">Get Free Access</a>
             </div>
         </div>
-    </section>
-
-    <section class="video-demo">
-        <div class="container">
-            <div class="section-header fade-in">
-                <h2 class="section-title">See How Easy It Is To Find Winning Niches</h2>
-                <p class="section-subtitle">Our intuitive platform helps you discover profitable opportunities in minutes</p>
+    </div>
+</section>
+<!-- ═══════════════════ PRICING ═══════════════════ -->
+<section class="section" id="pricing" style="background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+    <div class="container">
+        <div class="section-header center fade-up">
+            <div class="section-tag">Pricing</div>
+            <h2 class="section-title">Start free. Scale when you're ready.</h2>
+            <p class="section-sub">Free niche discovery for everyone. Upgrade to unlock Content Studio and start generating videos.</p>
+        </div>
+        <div class="pricing-grid">
+            <div class="price-card fade-up">
+                <div class="price-name">Starter</div>
+                <div class="price-amount">$29 <span>/mo</span></div>
+                <div class="price-credits">300 credits/month</div>
+                <div class="price-videos">~54 scene clips/month</div>
+                <ul class="price-features">
+                    <li>ViewHunt Niche Database (unlimited)</li>
+                    <li>300 video credits per month</li>
+                    <li>All video formats & styles</li>
+                    <li>Word-by-word captions</li>
+                </ul>
+                <a href="/app" class="btn-price btn-price-secondary">Get Started</a>
             </div>
-            
-            <div class="demo-video-container fade-in">
-                <video width="100%" height="auto" loop muted playsinline class="demo-video" id="demoVideo">
-                    <source src="/videos/finding-a-niche.mp4" type="video/mp4">
-                    Your browser does not support the video tag.
-                </video>
+            <div class="price-card pop fade-up">
+                <div class="price-pop-badge">Most Popular</div>
+                <div class="price-name">Creator</div>
+                <div class="price-amount">$59 <span>/mo</span></div>
+                <div class="price-credits">600 credits/month</div>
+                <div class="price-videos">~109 scene clips/month</div>
+                <ul class="price-features">
+                    <li>ViewHunt Niche Database (unlimited)</li>
+                    <li>600 video credits per month</li>
+                    <li>All video formats & styles</li>
+                    <li>Word-by-word captions</li>
+                    <li>Priority generation queue</li>
+                </ul>
+                <a href="/app" class="btn-price btn-price-primary">Get Started</a>
+            </div>
+            <div class="price-card fade-up">
+                <div class="price-name">Studio</div>
+                <div class="price-amount">$119 <span>/mo</span></div>
+                <div class="price-credits">1,200 credits/month</div>
+                <div class="price-videos">~218 scene clips/month</div>
+                <ul class="price-features">
+                    <li>ViewHunt Niche Database (unlimited)</li>
+                    <li>1,200 video credits per month</li>
+                    <li>All video formats & styles</li>
+                    <li>Word-by-word captions</li>
+                    <li>Priority generation queue</li>
+                </ul>
+                <a href="/app" class="btn-price btn-price-secondary">Get Started</a>
             </div>
         </div>
-    </section>
-
-    <section class="creators" id="creators">
-        <div class="container">
-            <div class="section-header fade-in">
-                <h2 class="section-title">Creator-Built & Battle-Tested</h2>
-                <p class="section-subtitle">Developed by YouTube creators who've generated over $100K in channel revenue</p>
-            </div>
-            
-            <div class="creator-stats-grid stagger-container">
-                <div class="creator-stat-card scale-in stagger-item">
-                    <div class="stat-icon">💰</div>
-                    <div class="stat-number">$100K+</div>
-                    <div class="stat-label">YouTube Revenue</div>
-                </div>
-                
-                <div class="creator-stat-card scale-in stagger-item">
-                    <div class="stat-icon">📈</div>
-                    <div class="stat-number">12+</div>
-                    <div class="stat-label">Successful Channels</div>
-                </div>
-                
-                <div class="creator-stat-card scale-in stagger-item">
-                    <div class="stat-icon">⏱️</div>
-                    <div class="stat-number">5+</div>
-                    <div class="stat-label">Years Creator Experience</div>
-                </div>
+        <p style="text-align:center;margin-top:1.5rem;font-size:0.82rem;color:var(--text3)">All plans include free niche discovery. <a href="/pricing" style="color:var(--accent2)">See full pricing details & top-up packs</a></p>
+    </div>
+</section>
+<!-- ═══════════════════ FINAL CTA ═══════════════════ -->
+<section class="final-cta">
+    <div class="container">
+        <div class="fade-up">
+            <h2>The wave is here.<br>Stop scrolling. Start creating.</h2>
+            <p>AI makes the videos. You pick the niche. The money follows. Join the creators already printing with ViewHunt.</p>
+            <div class="hero-buttons">
+                <a href="/app" class="btn-hero btn-hero-primary">Start Free Today</a>
+                <a href="#pricing" class="btn-hero btn-hero-secondary">View Pricing</a>
             </div>
         </div>
-    </section>
+    </div>
+</section>
 
-    <section class="results">
-        <div class="container">
-            <div class="section-header fade-in">
-                <h2 class="section-title">Built For Serious YouTube Growth</h2>
-                <p class="section-subtitle">Our platform is designed to give you the competitive edge in today's saturated market</p>
+<!-- ═══════════════════ FOOTER ═══════════════════ -->
+<footer class="site-footer">
+    <div class="container">
+        <div class="footer-grid">
+            <div class="footer-brand">
+                <a href="/" class="nav-logo" style="margin-bottom:0.5rem;display:inline-flex">
+                    <img src="/images/viewhunt_logo.png" alt="ViewHunt">
+                    View<span>Hunt</span>
+                </a>
+                <p>Find viral AI niches and create scroll-stopping YouTube Shorts. Niche discovery + AI Content Studio in one platform.</p>
             </div>
-            
-            <div class="results-grid stagger-container">
-                <div class="result-card scale-in stagger-item">
-                    <div class="result-number">10x</div>
-                    <p class="result-text">Faster research than manual scrolling</p>
-                </div>
-                
-                <div class="result-card scale-in stagger-item">
-                    <div class="result-number">89%</div>
-                    <p class="result-text">Of niches with 7+ View/Sub ratio show sustained growth</p>
-                </div>
-                
-                <div class="result-card scale-in stagger-item">
-                    <div class="result-number">30+</div>
-                    <p class="result-text">Days head start on emerging niches</p>
-                </div>
+            <div class="footer-col">
+                <h4>Product</h4>
+                <a href="/app">Launch App</a>
+                <a href="#studio">Content Studio</a>
+                <a href="/pricing">Pricing</a>
+                <a href="/app">Sign In</a>
+            </div>
+            <div class="footer-col">
+                <h4>Resources</h4>
+                <a href="/app">Free Viral Guide</a>
+                <a href="/app">Growth Strategies</a>
+                <a href="/app">Creator Community</a>
+            </div>
+            <div class="footer-col">
+                <h4>Company</h4>
+                <a href="/privacy-policy">Privacy Policy</a>
+                <a href="/terms-of-service">Terms of Service</a>
             </div>
         </div>
-    </section>
+        <div class="footer-bottom">&copy; 2026 ViewHunt. All rights reserved.</div>
+    </div>
+</footer>
 
-    <section class="access" id="access">
-        <div class="container">
-            <div class="section-header fade-in">
-                <h2 class="section-title">Ready to Find Your Niche & Create Content?</h2>
-                <p class="section-subtitle">Start free with niche discovery. Upgrade to unlock Content Studio and create scroll-stopping videos from scratch.</p>
-            </div>
-            
-            <div class="access-content fade-in" style="text-align: center; padding: 60px 0;">
-                <div class="access-card" style="max-width: 500px; margin: 0 auto; padding: 40px; background: rgba(255, 255, 255, 0.05); border-radius: 16px; backdrop-filter: blur(10px);">
-                    <div class="access-icon" style="font-size: 64px; margin-bottom: 24px;">🚀</div>
-                    <h3 style="font-size: 28px; margin-bottom: 16px; color: white;">Get Started Free</h3>
-                    <p style="font-size: 18px; margin-bottom: 32px; color: rgba(255, 255, 255, 0.8);">Browse niches for free. Upgrade when you're ready to create videos and unlock unlimited access.</p>
-                    <a href="/app" class="btn btn-lg pulse" style="font-size: 18px; padding: 16px 32px;">Create Free Account</a>
-                </div>
-                
-                <div style="text-align: center; margin-top: 40px; padding: 0 20px;">
-                    <p style="font-size: 14px; color: rgba(255, 255, 255, 0.6); line-height: 1.5;">
-                        Free tier includes 10 niche discoveries per day · 
-                        <a href="/pricing" style="color: rgba(255, 255, 255, 0.8); text-decoration: underline;">See pricing</a> for unlimited access + Content Studio
-                    </p>
-                </div>
-            </div>
-        </div>
-    </section>
+<!-- ═══════════════════ JS ═══════════════════ -->
+<script>
+// Navbar scroll effect
+var navbar = document.getElementById('navbar');
+window.addEventListener('scroll', function() {
+    if (window.scrollY > 40) navbar.classList.add('scrolled');
+    else navbar.classList.remove('scrolled');
+});
 
-    <section class="cta">
-        <div class="container">
-            <div class="cta-content fade-in">
-                <h2 class="section-title">Find Niches. Create Videos. Grow Your Channel.</h2>
-                <p class="section-subtitle">Join thousands of creators using ViewHunt to discover profitable niches and produce content faster than ever.</p>
-                
-                <a href="/app" class="btn btn-lg pulse">Start Free Today</a>
-                
-            </div>
-        </div>
-    </section>
-
-    <footer>
-        <div class="container">
-            <div class="footer-grid">
-                <div class="footer-column fade-in">
-                    <a href="/" class="footer-logo">
-                        <img src="/images/viewhunt_logo.png" alt="ViewHunt" class="footer-logo-image">
-                    </a>
-                    <p class="footer-description">Find winning YouTube Shorts niches and create scroll-stopping videos with AI-powered Content Studio.</p>
-                </div>
-                
-                <div class="footer-column fade-in-right">
-                    <h3>Product</h3>
-                    <ul class="footer-links">
-                        <li class="footer-link"><a href="/app">Launch App</a></li>
-                        <li class="footer-link"><a href="#content-studio">Content Studio</a></li>
-                        <li class="footer-link"><a href="/pricing">Pricing</a></li>
-                        <li class="footer-link"><a href="/app">Sign In</a></li>
-                    </ul>
-                </div>
-                
-                <div class="footer-column fade-in-right">
-                    <h3>Resources</h3>
-                    <ul class="footer-links">
-                        <li class="footer-link"><a href="#">Blog</a></li>
-                        <li class="footer-link"><a href="#">Growth Guides</a></li>
-                        <li class="footer-link"><a href="#">YouTube Academy</a></li>
-                        <li class="footer-link"><a href="#">Creator Community</a></li>
-                    </ul>
-                </div>
-                
-                <div class="footer-column fade-in-right">
-                    <h3>Company</h3>
-                    <ul class="footer-links">
-                        <li class="footer-link"><a href="#">About Us</a></li>
-                        <li class="footer-link"><a href="/privacy-policy">Privacy Policy</a></li>
-                        <li class="footer-link"><a href="/terms-of-service">Terms of Service</a></li>
-                        <li class="footer-link"><a href="#">Contact</a></li>
-                    </ul>
-                </div>
-            </div>
-            
-            <div class="footer-bottom fade-in">
-                <p>&copy; 2026 ViewHunt. All rights reserved.</p>
-            </div>
-        </div>
-    </footer>
-
-    <script src="/js/script.js"></script>
-    <script src="/js/channel-list.js"></script>
-    <script src="/js/shooting-stars.js"></script>
-<script src="/js/enhanced-mobile-menu.js"></script>
-<script src="/js/mobile-animations.js"></script>
-<script src="/js/mobile-progress-bar.js"></script>
-<script src="/js/fix-progress-bar.js"></script>
-<script src="/js/viewmastery-modal.js?v=2"></script>
-<script src="/js/scroll-play-video.js"></script>
-  <script>
-    document.addEventListener("DOMContentLoaded", function() {
-      // ViewMastery Modal Function (keeping for existing functionality)
-      window.showViewMasteryModal = function() {
-        console.log("showViewMasteryModal called");
-        const viewmasteryModal = document.getElementById("viewmasteryModal");
-        if (viewmasteryModal) {
-          viewmasteryModal.classList.add("active");
-        } else {
-          console.error("ViewMastery modal not found");
+// Scroll reveal
+var fadeEls = document.querySelectorAll('.fade-up');
+var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+            observer.unobserve(entry.target);
         }
-      };
     });
-  </script>
+}, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+fadeEls.forEach(function(el) { observer.observe(el); });
+
+// Mobile menu
+var style = document.createElement('style');
+style.textContent = '.nav-links.show{display:flex!important;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(8,8,12,0.97);flex-direction:column;align-items:center;justify-content:center;gap:1.5rem;z-index:200;backdrop-filter:blur(20px)}.nav-links.show a{font-size:1.2rem;color:var(--text)}.nav-links.show .nav-cta{font-size:1rem;padding:0.75rem 2rem}';
+document.head.appendChild(style);
+</script>
 </body>
-</html> 
+</html>
