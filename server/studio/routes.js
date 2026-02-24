@@ -542,7 +542,7 @@ router.post('/upload-sfx', requireAuth, sfxUpload.single('sfx'), async (req, res
     try {
         // Admin only — SFX are global, don't let users overwrite them
         if (req.user.email !== process.env.ADMIN_EMAIL) {
-            return res.status(403).json({ error: 'Only admins can upload sound effects' });
+            return res.status(403).json({ error: 'Custom sound effects are coming soon. For now, the preset SFX are used for all videos.' });
         }
         if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
         // Extract SFX name from filename (e.g. "hook.mp3" → "hook")
