@@ -580,6 +580,7 @@ async function assembleAutoVideo() {
     show('generation-warning');
     var rd = document.getElementById('auto-assembly-result');
     rd.innerHTML = '<div class="assembly-progress">🎬 Submitting job...</div>';
+    rd.scrollIntoView({ behavior: 'smooth', block: 'end' });
     try {
         var jobId = await submitAssemblyJob(scenes, 'videoUrl');
         if (!jobId) return;
@@ -734,8 +735,9 @@ function handleComplete(data) {
         prompt.style.cssText = 'background:linear-gradient(135deg,#1a1a2e,#16213e);border:1px solid var(--accent);border-radius:12px;padding:1.5rem;text-align:center;margin:1.25rem 0;animation:fadeIn 0.3s ease';
         prompt.innerHTML = '<div style="font-size:1.5rem;margin-bottom:0.5rem">✅</div>' +
             '<div style="font-size:1.05rem;font-weight:700;margin-bottom:0.35rem">Finished generating</div>' +
-            '<div style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Your scenes are ready. Review, swap clips, then assemble.</div>' +
-            '<button class="btn btn-primary" onclick="document.getElementById(\'results-section\').scrollIntoView({behavior:\'smooth\',block:\'start\'});this.parentElement.remove()">🎬 Edit Your Video</button>';
+            '<div style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem">Your scenes are ready. Click below to assemble your final video with voiceover, captions, and effects.</div>' +
+            '<button class="btn btn-primary" onclick="this.parentElement.remove();assembleAutoVideo();">🎬 Assemble Final Video · 2 💎</button>' +
+            '<div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.5rem">Or scroll down to review individual scenes first</div>';
         var resultsSection = document.getElementById('results-section');
         if (resultsSection) resultsSection.insertBefore(prompt, resultsSection.firstChild);
         
