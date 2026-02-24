@@ -671,7 +671,7 @@ Format your response as JSON:
                             duration: 5,
                             enable_prompt_expansion: false,
                             shot_type: 'single',
-                            generate_audio: false,
+                            generate_audio: true,
                             seed: -1
                         },
                         {
@@ -757,7 +757,7 @@ Format your response as JSON:
                         input: {
                             image_urls: [imageUrl],
                             prompt: videoPrompt,
-                            sound: false,
+                            sound: true,
                             duration: '5'
                         }
                     },
