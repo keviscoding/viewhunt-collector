@@ -410,24 +410,24 @@ Format your response as JSON:
 
     /**
      * Step 2: Generate images using Kie.ai Nano Banana Pro
-     * Primary: Atlas Cloud nano-banana-pro ($0.15/pic)
-     * Fallback: Kie.ai nano-banana-pro (if Atlas Cloud fails)
+     * Primary: Kie.ai nano-banana-pro
+     * Fallback: Atlas Cloud nano-banana-pro ($0.15/pic)
      */
     async generateImage(imagePrompt, sceneNumber) {
         console.log(`\n=== Generating image for scene ${sceneNumber} ===`);
         console.log(`Image Prompt (first 120 chars): "${imagePrompt.substring(0, 120)}..."`);
         console.log(`===\n`);
         
-        // Try Atlas Cloud first (more reliable)
+        // Try Kie.ai first
         try {
-            return await this.generateImageAtlasCloud(imagePrompt, sceneNumber);
-        } catch (atlasErr) {
-            console.warn(`Atlas Cloud image failed for scene ${sceneNumber}: ${atlasErr.message}`);
-            console.log(`Falling back to Kie.ai for scene ${sceneNumber}...`);
+            return await this.generateImageKieAi(imagePrompt, sceneNumber);
+        } catch (kieErr) {
+            console.warn(`Kie.ai image failed for scene ${sceneNumber}: ${kieErr.message}`);
+            console.log(`Falling back to Atlas Cloud for scene ${sceneNumber}...`);
         }
         
-        // Fallback: Kie.ai
-        return await this.generateImageKieAi(imagePrompt, sceneNumber);
+        // Fallback: Atlas Cloud
+        return await this.generateImageAtlasCloud(imagePrompt, sceneNumber);
     }
 
     /**
@@ -572,7 +572,7 @@ Format your response as JSON:
         
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                console.log(`🖼️ Kie.ai image (fallback) - Scene ${sceneNumber} (attempt ${attempt}/${maxRetries})`);
+                console.log(`🖼️ Kie.ai image - Scene ${sceneNumber} (attempt ${attempt}/${maxRetries})`);
                 
                 const createResponse = await axios.post(
                     `${this.kieBaseUrl}/api/v1/jobs/createTask`,
@@ -580,6 +580,7 @@ Format your response as JSON:
                         model: 'nano-banana-pro',
                         input: {
                             prompt: imagePrompt,
+                            image_input: [],
                             aspect_ratio: '9:16',
                             resolution: '2K',
                             output_format: 'png'
@@ -595,10 +596,9 @@ Format your response as JSON:
                 );
 
                 const respData = createResponse.data;
-                const taskId = respData?.data?.taskId 
-                    || respData?.taskId 
-                    || respData?.data?.task_id 
-                    || respData?.task_id;
+                console.log(`Kie.ai create response: code=${respData?.code}, msg=${respData?.msg}, taskId=${respData?.data?.taskId || 'NONE'}`);
+                
+                const taskId = respData?.data?.taskId;
                 
                 if (!taskId) {
                     const code = respData?.code || respData?.status;
@@ -619,7 +619,7 @@ Format your response as JSON:
 
                 console.log(`Kie.ai image task created: ${taskId}`);
                 const imageUrl = await this.pollKieTaskForImage(taskId, 600000);
-                console.log(`✅ Image ${sceneNumber} generated via Kie.ai (fallback)`);
+                console.log(`✅ Image ${sceneNumber} generated via Kie.ai`);
                 return imageUrl;
                 
             } catch (error) {
