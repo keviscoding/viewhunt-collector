@@ -67,6 +67,11 @@ img{max-width:100%;display:block}
 .hero-note{font-size:0.78rem;color:var(--text3);margin-top:1rem;animation:fadeInUp 1s ease}
 /* ── HERO PREVIEW ── */
 .hero-preview{margin-top:3.5rem;position:relative;animation:fadeInUp 1.1s ease}
+.showcase-fade{position:relative;overflow:hidden}
+.showcase-fade img{width:100%;display:block}
+.showcase-fade::before,.showcase-fade::after{content:'';position:absolute;top:0;bottom:0;width:15%;z-index:1;pointer-events:none}
+.showcase-fade::before{left:0;background:linear-gradient(to right,var(--bg),transparent)}
+.showcase-fade::after{right:0;background:linear-gradient(to left,var(--bg),transparent)}
 .preview-glow{position:absolute;inset:-2px;border-radius:var(--radius-lg);background:linear-gradient(135deg,var(--accent),#c084fc,var(--accent));opacity:0.15;filter:blur(1px)}
 .preview-frame{position:relative;background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);overflow:hidden;padding:1.5rem}
 .preview-topbar{display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem}
@@ -259,7 +264,9 @@ img{max-width:100%;display:block}
         </div>
         <!-- Viral Shorts Showcase -->
         <div class="hero-preview">
-            <img src="/images/viral-shorts-showcase.jpg" alt="Viral YouTube Shorts made with AI — millions of views" style="width:100%;border-radius:var(--radius-lg);display:block">
+            <div class="showcase-fade">
+                <img src="/images/viral-shorts-showcase.jpg" alt="Viral YouTube Shorts made with AI — millions of views" loading="lazy">
+            </div>
         </div>
     </div>
 </section>
