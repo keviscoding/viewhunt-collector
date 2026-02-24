@@ -460,6 +460,7 @@ Format your response as JSON:
                 );
 
                 const respData = createResponse.data;
+                console.log(`Atlas Cloud create response: ${JSON.stringify(respData).substring(0, 400)}`);
                 const predictionId = respData?.data?.id || respData?.id;
                 
                 if (!predictionId) {
@@ -508,37 +509,41 @@ Format your response as JSON:
         const pollInterval = 4000;
         let pollCount = 0;
 
+        const endpoint = `${this.atlasBaseUrl}/api/v1/model/prediction/${predictionId}`;
+
         while (Date.now() - startTime < timeout) {
             pollCount++;
             const elapsed = Math.floor((Date.now() - startTime) / 1000);
 
             try {
-                const response = await axios.get(
-                    `${this.atlasBaseUrl}/api/v1/model/prediction/${predictionId}`,
-                    {
-                        headers: { 'Authorization': `Bearer ${this.atlasApiKey}` },
-                        timeout: 15000
-                    }
-                );
+                const response = await axios.get(endpoint, {
+                    headers: { 'Authorization': `Bearer ${this.atlasApiKey}` },
+                    timeout: 15000
+                });
+
+                // Log raw response on first poll to debug
+                if (pollCount === 1) {
+                    console.log(`Atlas Cloud image poll raw response: ${JSON.stringify(response.data).substring(0, 500)}`);
+                }
 
                 const data = response.data?.data || response.data;
-                const status = data.status;
+                const status = (data.status || '').toLowerCase();
 
                 if (pollCount % 5 === 0) {
                     console.log(`Atlas Cloud image ${predictionId}: ${status} (${elapsed}s)`);
                 }
 
                 if (status === 'completed' || status === 'succeeded') {
-                    const outputs = data.outputs;
-                    if (outputs && outputs.length > 0) {
-                        console.log(`✅ Atlas Cloud image completed in ${elapsed}s`);
+                    const outputs = data.outputs || [];
+                    if (outputs.length > 0) {
+                        console.log(`✅ Atlas Cloud image completed in ${elapsed}s — URL: ${outputs[0].substring(0, 100)}`);
                         return outputs[0];
                     }
                     throw new Error('Atlas Cloud returned completed but no output URLs');
                 }
 
                 if (status === 'failed') {
-                    throw new Error('Atlas Cloud image generation failed: ' + (data.error || 'unknown'));
+                    throw new Error('Atlas Cloud image generation failed: ' + (data.error || data.message || 'unknown'));
                 }
 
                 await new Promise(resolve => setTimeout(resolve, pollInterval));
@@ -546,8 +551,13 @@ Format your response as JSON:
             } catch (error) {
                 if (error.message.includes('Atlas Cloud')) throw error;
                 if (error.response?.status === 401) throw new Error('Atlas Cloud authentication failed');
-                console.error('Atlas Cloud image poll error:', error.message);
-                await new Promise(resolve => setTimeout(resolve, pollInterval));
+                if (error.response?.status === 429) {
+                    console.warn('Atlas Cloud rate limit, waiting 10s...');
+                    await new Promise(resolve => setTimeout(resolve, 10000));
+                } else {
+                    console.error('Atlas Cloud image poll error:', error.message);
+                    await new Promise(resolve => setTimeout(resolve, pollInterval));
+                }
             }
         }
 
