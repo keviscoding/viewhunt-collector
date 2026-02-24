@@ -738,6 +738,11 @@ function handleComplete(data) {
             '<button class="btn btn-primary" onclick="document.getElementById(\'results-section\').scrollIntoView({behavior:\'smooth\',block:\'start\'});this.parentElement.remove()">🎬 Edit Your Video</button>';
         var resultsSection = document.getElementById('results-section');
         if (resultsSection) resultsSection.insertBefore(prompt, resultsSection.firstChild);
+        
+        // Auto-scroll to the top so user sees the "Edit Your Video" banner
+        setTimeout(function() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }, 400);
     }
     
     // Setup download all
