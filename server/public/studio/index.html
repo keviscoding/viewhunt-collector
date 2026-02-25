@@ -283,10 +283,12 @@ function renderTasks(tasks) {
         if (p.totalScenes > 0) {
             if (p.step === 'complete' || t.status === 'completed') {
                 pct = 100;
+            } else if (p.step === 'assembly') {
+                pct = 90;
             } else if (p.step === 'videos') {
-                pct = 50 + Math.round((p.videosCompleted / p.totalScenes) * 50);
+                pct = 40 + Math.round((p.videosCompleted / p.totalScenes) * 45);
             } else if (p.step === 'images') {
-                pct = 10 + Math.round((p.imagesCompleted / p.totalScenes) * 40);
+                pct = 8 + Math.round((p.imagesCompleted / p.totalScenes) * 30);
             } else if (p.step === 'claude') {
                 pct = 5;
             }
@@ -298,8 +300,10 @@ function renderTasks(tasks) {
         html += '<div style="font-size:0.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(t.scriptPreview || 'Generation task') + '</div>';
         html += '</div>';
         var statusLabel = t.status;
-        if (t.status === 'completed') {
-            statusLabel = (t.progress && t.progress.videosCompleted > 0) ? 'Ready' : 'Images Only';
+        if (t.status === 'running' && p.step === 'assembly') {
+            statusLabel = 'Assembling';
+        } else if (t.status === 'completed') {
+            statusLabel = t.assemblyVideoUrl ? 'Done' : ((p.videosCompleted > 0) ? 'Ready' : 'Images Only');
         }
         html += '<span class="task-status ' + t.status + '">' + statusLabel + '</span>';
         html += '</div>';
@@ -377,8 +381,10 @@ function renderTaskDetail(task) {
     // Status + progress
     html += '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;">';
     var detailStatusLabel = task.status;
-    if (task.status === 'completed') {
-        detailStatusLabel = (p.videosCompleted > 0) ? 'Ready to assemble' : 'Images generated';
+    if (task.status === 'running' && p.step === 'assembly') {
+        detailStatusLabel = 'Assembling final video...';
+    } else if (task.status === 'completed') {
+        detailStatusLabel = task.assemblyVideoUrl ? 'Final video ready' : ((p.videosCompleted > 0) ? 'Ready to assemble' : 'Images generated');
     }
     html += '<span class="task-status ' + task.status + '" style="font-size:0.8rem;">' + detailStatusLabel + '</span>';
     html += '<span style="font-size:0.82rem;color:var(--text-muted);">' + escHtml(p.message || '') + '</span>';
@@ -387,8 +393,9 @@ function renderTaskDetail(task) {
     if (task.status === 'running' || task.status === 'pending') {
         var pct = 0;
         if (p.totalScenes > 0) {
-            if (p.step === 'videos') pct = 50 + Math.round((p.videosCompleted / p.totalScenes) * 50);
-            else if (p.step === 'images') pct = 10 + Math.round((p.imagesCompleted / p.totalScenes) * 40);
+            if (p.step === 'assembly') pct = 90;
+            else if (p.step === 'videos') pct = 40 + Math.round((p.videosCompleted / p.totalScenes) * 45);
+            else if (p.step === 'images') pct = 8 + Math.round((p.imagesCompleted / p.totalScenes) * 30);
             else if (p.step === 'claude') pct = 5;
         }
         html += '<div class="task-progress-bar" style="height:6px;margin-bottom:1rem;"><div class="task-progress-fill" style="width:' + pct + '%"></div></div>';
@@ -405,6 +412,18 @@ function renderTaskDetail(task) {
     if (p.videosCompleted) html += '<span>Videos: ' + p.videosCompleted + (p.videosFailed ? ' (' + p.videosFailed + ' failed)' : '') + '</span>';
     if (task.creditsCharged) html += '<span>💎 ' + task.creditsCharged + ' credits</span>';
     html += '</div>';
+
+    // Final assembled video (if available)
+    if (task.assemblyVideoUrl && task.status === 'completed') {
+        var bustUrl = task.assemblyVideoUrl + (task.assemblyVideoUrl.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
+        html += '<div style="background:var(--surface);border:1px solid var(--green);border-radius:12px;padding:1.25rem;margin-bottom:1rem;text-align:center;">';
+        html += '<div style="font-size:0.88rem;font-weight:700;color:var(--green);margin-bottom:0.75rem;">✅ Final Video Ready</div>';
+        html += '<video src="' + bustUrl + '" controls muted loop style="width:100%;max-width:320px;border-radius:10px;margin:0 auto;display:block;"></video>';
+        html += '<div style="display:flex;gap:0.5rem;justify-content:center;margin-top:0.75rem;">';
+        html += '<a href="' + task.assemblyVideoUrl + '" download="final-video.mp4" target="_blank" class="task-btn" style="background:var(--green);color:#0e0e12;border-color:var(--green);text-decoration:none;">📥 Download Final Video</a>';
+        html += '<button class="task-btn" onclick="assembleFromTask(\'' + task.id + '\')">↻ Re-assemble · 2 💎</button>';
+        html += '</div></div>';
+    }
 
     // Scene grid
     var scenes = task.scenes || [];
@@ -437,8 +456,8 @@ function renderTaskDetail(task) {
             if (imagesAvailable.length > 0) {
                 html += '<button class="task-btn" onclick="downloadTaskImages(\'' + task.id + '\')">📥 Download ' + imagesAvailable.length + ' Images</button>';
             }
-            // Assemble button — only if we have at least 2 videos
-            if (videosAvailable.length >= 2) {
+            // Assemble button — only if we have at least 2 videos and no assembly yet
+            if (videosAvailable.length >= 2 && !task.assemblyVideoUrl) {
                 html += '<button class="task-btn" onclick="assembleFromTask(\'' + task.id + '\')" style="background:var(--green);color:#0e0e12;border-color:var(--green);">🎬 Assemble Final Video · 2 💎</button>';
             }
             // If videos were expected but missing, show retry button
@@ -575,6 +594,12 @@ async function assembleFromTask(taskId) {
                     var r = pollData.result;
                     var dur = r.duration ? r.duration.toFixed(1) : '?';
                     var bustUrl = r.videoUrl + (r.videoUrl.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
+                    // Save assembly URL to task document
+                    fetch('/api/studio/tasks/' + taskId + '/assembly', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                        body: JSON.stringify({ assemblyVideoUrl: r.videoUrl })
+                    }).catch(function() {});
                     content.innerHTML = '<div style="text-align:center;">' +
                         '<div style="font-size:1.2rem;margin-bottom:0.5rem;">✅ Final video ready (' + dur + 's)</div>' +
                         '<video src="' + bustUrl + '" controls autoplay muted loop style="width:100%;max-width:360px;border-radius:12px;margin:0.75rem auto;display:block;"></video>' +
@@ -582,6 +607,7 @@ async function assembleFromTask(taskId) {
                             '<a href="' + r.videoUrl + '" download="final-video.mp4" target="_blank" class="task-btn" style="background:var(--green);color:#0e0e12;border-color:var(--green);text-decoration:none;">📥 Download</a>' +
                             '<button class="task-btn" onclick="assembleFromTask(\'' + taskId + '\')">↻ Re-assemble</button>' +
                         '</div></div>';
+                    loadTasks();
                     break;
                 }
                 if (pollData.status === 'failed') throw new Error(pollData.error || 'Assembly failed');

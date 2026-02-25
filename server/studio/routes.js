@@ -1230,6 +1230,7 @@ router.get('/tasks', requireAuth, async (req, res) => {
             progress: t.progress,
             scenesCount: (t.scenes || []).length,
             creditsCharged: t.creditsCharged || 0,
+            assemblyVideoUrl: t.assemblyVideoUrl || null,
             createdAt: t.createdAt,
             completedAt: t.completedAt,
             error: t.error,
@@ -1261,6 +1262,7 @@ router.get('/tasks/:id', requireAuth, async (req, res) => {
                 progress: task.progress,
                 scenes: task.scenes || [],
                 creditsCharged: task.creditsCharged || 0,
+                assemblyVideoUrl: task.assemblyVideoUrl || null,
                 createdAt: task.createdAt,
                 startedAt: task.startedAt,
                 completedAt: task.completedAt,
@@ -1269,6 +1271,26 @@ router.get('/tasks/:id', requireAuth, async (req, res) => {
         });
     } catch (error) {
         console.error('Task detail error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Save assembly video URL to a task (manual re-assembly)
+router.patch('/tasks/:id/assembly', requireAuth, async (req, res) => {
+    try {
+        const userId = String(req.user.userId);
+        const task = await taskManager.getTask(req.params.id, userId);
+        if (!task) return res.status(404).json({ error: 'Task not found' });
+        const { assemblyVideoUrl } = req.body;
+        if (!assemblyVideoUrl) return res.status(400).json({ error: 'assemblyVideoUrl is required' });
+        const db = await getDb();
+        await db.collection('generation_tasks').updateOne(
+            { _id: new ObjectId(req.params.id) },
+            { $set: { assemblyVideoUrl, updatedAt: new Date() } }
+        );
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Task assembly update error:', error);
         res.status(500).json({ error: error.message });
     }
 });

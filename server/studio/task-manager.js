@@ -19,6 +19,7 @@
 const { getDb } = require('./db');
 const { ObjectId } = require('mongodb');
 const credits = require('./credits');
+const assemblyQueue = require('./editor/job-queue');
 
 const COLLECTION = 'generation_tasks';
 
@@ -471,9 +472,97 @@ async function _executeTask(taskId, generator, userId, signal) {
             }
         }
 
+        // Step 4: Auto-assemble if we have at least 2 videos
+        if (config.generateVideos && videosCompleted >= 2) {
+            if (signal.aborted) throw new Error('Task cancelled');
+
+            await updateProgress(taskId, {
+                step: 'assembly', message: 'Submitting assembly job...',
+                totalScenes: scenes.length, imagesCompleted, videosCompleted, imagesFailed: 0, videosFailed: 0
+            });
+
+            console.log(`📋 Task ${taskId}: auto-assembling ${videosCompleted} videos...`);
+
+            try {
+                // Build payload for assembly queue
+                const assemblyScenes = scenes
+                    .filter(s => s.videoUrl)
+                    .map((s, i) => ({
+                        sceneNumber: i + 1,
+                        scriptLine: s.scriptLine || '',
+                        imagePrompt: s.imagePrompt || '',
+                        videoPrompt: s.videoPrompt || '',
+                        videoUrl: s.videoUrl
+                    }));
+
+                // Charge assembly credits upfront (refund on failure)
+                await credits.deductCredits(userId, 'assembly', 1, 'Background task: auto-assembly');
+                totalCreditsCharged += credits.COSTS.assembly;
+
+                const jobId = assemblyQueue.submit(config.script, assemblyScenes, 'Charon', userId);
+
+                // Poll assembly queue until done
+                const ASSEMBLY_POLL_INTERVAL = 3000;
+                const ASSEMBLY_TIMEOUT = 10 * 60 * 1000; // 10 min max
+                const assemblyStart = Date.now();
+                let assemblyDone = false;
+
+                const statusMsgs = {
+                    queued: 'Waiting in assembly queue...',
+                    generating_voiceover: 'Generating voiceover...',
+                    analyzing_edit_points: 'Analyzing edit points...',
+                    assembling_video: 'Assembling video...'
+                };
+
+                while (!assemblyDone) {
+                    if (signal.aborted) throw new Error('Task cancelled');
+                    if (Date.now() - assemblyStart > ASSEMBLY_TIMEOUT) {
+                        throw new Error('Assembly timed out after 10 minutes');
+                    }
+
+                    await new Promise(r => setTimeout(r, ASSEMBLY_POLL_INTERVAL));
+                    const status = assemblyQueue.getStatus(jobId);
+                    if (!status) throw new Error('Assembly job lost');
+
+                    if (status.status === 'complete' && status.result) {
+                        // Save the final video URL to the task
+                        await db.collection(COLLECTION).updateOne(
+                            { _id: new ObjectId(taskId) },
+                            { $set: { assemblyVideoUrl: status.result.videoUrl, updatedAt: new Date() } }
+                        );
+                        console.log(`✅ Task ${taskId}: assembly complete — ${status.result.videoUrl}`);
+                        assemblyDone = true;
+                    } else if (status.status === 'failed') {
+                        // Refund assembly credits
+                        await credits.refundCredits(userId, 'assembly', 1, 'Auto-assembly failed: ' + (status.error || 'unknown'));
+                        totalCreditsCharged -= credits.COSTS.assembly;
+                        assemblyQueue.markRefunded(jobId);
+                        console.warn(`Task ${taskId}: assembly failed — ${status.error}. Credits refunded.`);
+                        assemblyDone = true; // Don't fail the whole task, just skip assembly
+                    } else {
+                        const msg = statusMsgs[status.status] || status.message || 'Assembling...';
+                        await updateProgress(taskId, {
+                            step: 'assembly', message: msg,
+                            totalScenes: scenes.length, imagesCompleted, videosCompleted, imagesFailed: 0, videosFailed: 0
+                        });
+                    }
+                }
+            } catch (assemblyErr) {
+                if (assemblyErr.message === 'Task cancelled') throw assemblyErr;
+                console.error(`Task ${taskId}: assembly error — ${assemblyErr.message}`);
+                // Don't fail the whole task — videos are still available
+            }
+        }
+
+        // Read back the task to check if assembly succeeded
+        const finalTask = await db.collection(COLLECTION).findOne({ _id: new ObjectId(taskId) });
+        const hasAssembly = finalTask && finalTask.assemblyVideoUrl;
+
         // Always mark as completed — message reflects what actually succeeded
         var completionMessage;
-        if (config.generateVideos && videosCompleted > 0) {
+        if (hasAssembly) {
+            completionMessage = `Video assembled and ready to download`;
+        } else if (config.generateVideos && videosCompleted > 0) {
             completionMessage = `Generated ${imagesCompleted} images and ${videosCompleted} videos — ready to assemble`;
         } else if (config.generateVideos && videosCompleted === 0 && imagesCompleted > 0) {
             completionMessage = `Generated ${imagesCompleted} images but all videos failed after retries. You can retry or use images only.`;
