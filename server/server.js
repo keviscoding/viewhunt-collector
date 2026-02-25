@@ -3787,9 +3787,21 @@ app.post('/api/subscription/webhook', async (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`ViewHunt server running on port ${PORT}`);
     console.log(`Database: MongoDB Atlas - viewhuntv2`);
+    
+    // Initialize background task manager
+    try {
+        const taskManager = require('./studio/task-manager');
+        await taskManager.ensureIndexes();
+        await taskManager.recoverStaleTasks();
+        // Clean up old completed tasks daily
+        setInterval(() => taskManager.cleanupOldTasks(7).catch(() => {}), 24 * 60 * 60 * 1000);
+        console.log('📋 Background task manager initialized');
+    } catch (e) {
+        console.warn('Task manager init warning:', e.message);
+    }
     
     // Clean up orphaned temp files every 30 minutes
     setInterval(() => {

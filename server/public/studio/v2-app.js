@@ -647,39 +647,179 @@ async function handleAutoGeneration(script, generateVideos) {
     document.getElementById('scenes-container').innerHTML = '';
     
     try {
-        const response = await fetch('/api/studio/generate/stream', {
+        // Create a background task instead of SSE streaming
+        const createRes = await fetch('/api/studio/tasks/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getAuthToken()}` },
             body: JSON.stringify({ format: 'skeleton-anatomy', script, gradientColors: selectedGradient, generateVideos, videoModel })
         });
         
-        if (!response.ok) throw new Error('Failed to start generation');
-        
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n\n');
-            buffer = lines.pop();
-            for (const line of lines) {
-                if (!line.trim()) continue;
-                const m = line.match(/^event: (.+)\ndata: (.+)$/);
-                if (!m) continue;
-                handleStreamEvent(m[1], JSON.parse(m[2]), generateVideos);
-            }
+        if (createRes.status === 402) {
+            await handleCreditError(createRes);
+            return;
         }
+        if (createRes.status === 429) {
+            var limitData = await createRes.json();
+            alert(limitData.error || 'Too many concurrent tasks. Please wait for a task to finish.');
+            resetToConfig();
+            return;
+        }
+        if (!createRes.ok) {
+            var errData = await createRes.json();
+            throw new Error(errData.error || 'Failed to start generation');
+        }
+        
+        var taskData = await createRes.json();
+        var taskId = taskData.taskId;
+        console.log('Background task created:', taskId);
+        
+        // Update the warning banner to show they can close the tab
+        var warningDiv = document.getElementById('generation-warning');
+        if (warningDiv) {
+            warningDiv.innerHTML = '<div style="font-size:1.5rem;flex-shrink:0;">✅</div>' +
+                '<div>' +
+                    '<div style="color:#34d399;font-weight:700;font-size:0.9rem;margin-bottom:0.25rem;">Running in the background</div>' +
+                    '<div style="color:#d1d5db;font-size:0.8rem;line-height:1.4;">You can close this tab. Your video will keep generating. Check progress in <a href="/studio" style="color:#7c6aef;text-decoration:underline;">My Tasks</a>.</div>' +
+                '</div>';
+        }
+        
+        // Poll the task for progress
+        await pollTaskProgress(taskId, generateVideos);
+        
     } catch (error) {
+        if (error.message === '__credit_error__') { resetToConfig(); return; }
         console.error('Generation error:', error);
-        updateMsg(`❌ Error: ${error.message}`);
+        updateMsg('❌ Error: ' + error.message);
         hide('generation-warning');
-        setTimeout(() => { if (confirm('Generation failed. Try again?')) resetToConfig(); }, 2000);
+        setTimeout(function() { if (confirm('Generation failed. Try again?')) resetToConfig(); }, 2000);
     } finally {
         generationInProgress = false;
     }
+}
+
+// Poll a background task and update the UI as if it were streaming
+async function pollTaskProgress(taskId, hasVideos) {
+    var lastStep = '';
+    var scenesRendered = new Set();
+    
+    while (true) {
+        await sleep(3000);
+        
+        try {
+            var res = await fetch('/api/studio/tasks/' + taskId, {
+                headers: { 'Authorization': 'Bearer ' + getAuthToken() }
+            });
+            if (!res.ok) break;
+            var data = await res.json();
+            if (!data.task) break;
+            
+            var task = data.task;
+            var p = task.progress || {};
+            
+            // Update progress chips
+            if (p.step === 'claude') {
+                setChip('claude', p.step === 'claude' ? 'active' : 'done');
+            }
+            if (p.step === 'images' || p.step === 'videos' || p.step === 'complete') {
+                setChip('claude', 'done');
+            }
+            if (p.step === 'images') {
+                setChip('images', 'active');
+            }
+            if (p.step === 'videos' || p.step === 'complete') {
+                setChip('images', 'done');
+            }
+            if (p.step === 'videos') {
+                setChip('videos', 'active');
+            }
+            if (p.step === 'complete') {
+                setChip('videos', 'done');
+                setChip('complete', 'done');
+            }
+            
+            // Update progress bar
+            var pct = 0;
+            if (p.totalScenes > 0) {
+                if (p.step === 'complete') pct = 100;
+                else if (p.step === 'videos') pct = 60 + (p.videosCompleted / p.totalScenes) * 35;
+                else if (p.step === 'images') pct = 25 + (p.imagesCompleted / p.totalScenes) * 35;
+                else if (p.step === 'claude') pct = 10;
+            }
+            document.getElementById('progress-fill').style.width = pct + '%';
+            updateMsg(p.message || 'Processing...');
+            
+            // Render completed scenes
+            var scenes = task.scenes || [];
+            scenes.forEach(function(s, i) {
+                if (scenesRendered.has(i)) return;
+                if (!s.imageUrl && !s.videoUrl) return;
+                
+                scenesRendered.add(i);
+                show('results-section');
+                var container = document.getElementById('scenes-container');
+                var sceneData = {
+                    sceneNumber: i + 1,
+                    imageUrl: s.imageUrl,
+                    videoUrl: s.videoUrl,
+                    imagePrompt: s.imagePrompt || '',
+                    videoPrompt: s.videoPrompt || '',
+                    scriptLine: s.scriptLine || ''
+                };
+                currentScenes[i] = sceneData;
+                var card = createAutoCard(sceneData, i + 1, hasVideos);
+                container.appendChild(card);
+            });
+            
+            // Update existing scene cards if video arrived after image
+            scenes.forEach(function(s, i) {
+                if (s.videoUrl && scenesRendered.has(i)) {
+                    currentScenes[i] = {
+                        sceneNumber: i + 1,
+                        imageUrl: s.imageUrl,
+                        videoUrl: s.videoUrl,
+                        imagePrompt: s.imagePrompt || '',
+                        videoPrompt: s.videoPrompt || '',
+                        scriptLine: s.scriptLine || ''
+                    };
+                }
+            });
+            
+            // Check if done
+            if (task.status === 'completed' || task.status === 'partial') {
+                // Rebuild currentScenes from task data
+                currentScenes = scenes.map(function(s, i) {
+                    return {
+                        sceneNumber: i + 1,
+                        imageUrl: s.imageUrl,
+                        videoUrl: s.videoUrl,
+                        imagePrompt: s.imagePrompt || '',
+                        videoPrompt: s.videoPrompt || '',
+                        scriptLine: s.scriptLine || ''
+                    };
+                });
+                handleComplete({ scenes: currentScenes });
+                break;
+            }
+            
+            if (task.status === 'failed') {
+                updateMsg('❌ ' + (task.error || 'Generation failed'));
+                hide('generation-warning');
+                break;
+            }
+            
+            if (task.status === 'cancelled') {
+                updateMsg('🚫 Task was cancelled');
+                hide('generation-warning');
+                break;
+            }
+            
+        } catch (e) {
+            console.warn('Poll error:', e);
+            // Keep polling on network errors
+        }
+    }
+    
+    loadCreditBalance();
 }
 
 function handleStreamEvent(event, data, hasVideos) {

@@ -15,6 +15,7 @@ const VideoEditor = require('./editor/video-editor');
 const assemblyQueue = require('./editor/job-queue');
 const { saveSfx, listSfx, loadAllSfx } = require('./editor/sfx-store');
 const credits = require('./credits');
+const taskManager = require('./task-manager');
 const rateLimit = require('express-rate-limit');
 
 // Rate limiters for studio endpoints
@@ -1136,6 +1137,152 @@ router.get('/health', (req, res) => {
         status: 'ok',
         availableFormats: ['skeleton-anatomy', 'ranking']
     });
+});
+
+// === BACKGROUND TASK ENDPOINTS ===
+
+// Create a background generation task
+router.post('/tasks/create', requireAuth, studioGenerateLimiter, async (req, res) => {
+    try {
+        const userId = String(req.user.userId);
+        const { format, script, skeletonStyle, gradientColors, generateVideos, videoModel } = req.body;
+
+        if (!script || !script.trim()) {
+            return res.status(400).json({ error: 'Script is required' });
+        }
+
+        // Check concurrent task limit
+        const canCreate = await taskManager.canCreateTask(userId);
+        if (!canCreate.allowed) {
+            return res.status(429).json({
+                error: 'You already have ' + canCreate.running + ' task(s) running. Your plan allows ' + canCreate.limit + ' concurrent task(s).',
+                running: canCreate.running,
+                limit: canCreate.limit,
+                plan: canCreate.plan
+            });
+        }
+
+        // Estimate credits needed
+        var wordCount = script.trim().split(/\s+/).length;
+        var estimatedScenes = Math.max(4, Math.min(16, Math.round(wordCount / 20)));
+        var estimatedCost = credits.COSTS.script_generation;
+        estimatedCost += credits.COSTS.image_generation * estimatedScenes;
+        if (generateVideos !== false) estimatedCost += credits.COSTS.video_generation * estimatedScenes;
+
+        const bal = await credits.getBalance(userId);
+        const totalAvailable = (bal.balance || 0) + (bal.topUpBalance || 0);
+        if (totalAvailable < estimatedCost) {
+            return res.status(402).json({
+                error: 'Not enough credits. Need ~' + Math.ceil(estimatedCost) + ' credits.',
+                balance: bal.balance,
+                topUpBalance: bal.topUpBalance || 0,
+                totalAvailable,
+                estimatedCost: Math.ceil(estimatedCost)
+            });
+        }
+
+        // Resolve video model (only admin can use kling)
+        const resolvedModel = (videoModel === 'kling' && req.user.email === process.env.ADMIN_EMAIL) ? 'kling' : 'wan';
+
+        // Create the task
+        const task = await taskManager.createTask(userId, {
+            format: format || 'skeleton-anatomy',
+            script: script.trim(),
+            skeletonStyle,
+            gradientColors,
+            generateVideos: generateVideos !== false,
+            videoModel: resolvedModel
+        });
+
+        // Get the generator and start the task in the background
+        const generator = getGenerator(format || 'skeleton-anatomy', 'v2');
+        if (!generator) {
+            return res.status(400).json({ error: 'Invalid format' });
+        }
+
+        taskManager.runTask(task._id, generator, userId);
+
+        res.json({
+            success: true,
+            taskId: task._id.toString(),
+            status: 'pending',
+            estimatedCost: Math.ceil(estimatedCost),
+            message: 'Task started. You can close this tab — generation will continue in the background.'
+        });
+
+    } catch (error) {
+        console.error('Task creation error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// List user's tasks
+router.get('/tasks', requireAuth, async (req, res) => {
+    try {
+        const userId = String(req.user.userId);
+        const tasks = await taskManager.listTasks(userId, 20);
+
+        // Slim down the response (don't send full scene prompts in list view)
+        const slim = tasks.map(t => ({
+            id: t._id.toString(),
+            status: t.status,
+            format: t.format,
+            progress: t.progress,
+            scenesCount: (t.scenes || []).length,
+            creditsCharged: t.creditsCharged || 0,
+            createdAt: t.createdAt,
+            completedAt: t.completedAt,
+            error: t.error,
+            // Include first line of script as preview
+            scriptPreview: (t.config && t.config.script) ? t.config.script.substring(0, 80) + (t.config.script.length > 80 ? '...' : '') : ''
+        }));
+
+        res.json({ success: true, tasks: slim });
+    } catch (error) {
+        console.error('Task list error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get single task detail (full scene data)
+router.get('/tasks/:id', requireAuth, async (req, res) => {
+    try {
+        const userId = String(req.user.userId);
+        const task = await taskManager.getTask(req.params.id, userId);
+        if (!task) return res.status(404).json({ error: 'Task not found' });
+
+        res.json({
+            success: true,
+            task: {
+                id: task._id.toString(),
+                status: task.status,
+                format: task.format,
+                config: task.config,
+                progress: task.progress,
+                scenes: task.scenes || [],
+                creditsCharged: task.creditsCharged || 0,
+                createdAt: task.createdAt,
+                startedAt: task.startedAt,
+                completedAt: task.completedAt,
+                error: task.error
+            }
+        });
+    } catch (error) {
+        console.error('Task detail error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Cancel a running task
+router.delete('/tasks/:id', requireAuth, async (req, res) => {
+    try {
+        const userId = String(req.user.userId);
+        const result = await taskManager.cancelTask(req.params.id, userId);
+        res.json(result);
+    } catch (error) {
+        console.error('Task cancel error:', error);
+        res.status(500).json({ error: error.message });
+    }
 });
 
 module.exports = router;

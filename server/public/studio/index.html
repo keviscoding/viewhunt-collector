@@ -56,7 +56,29 @@
         .btn-secondary{background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border)}
         .btn-secondary:hover{color:var(--text);border-color:var(--border-hover)}
         .footer{text-align:center;padding-top:2rem;font-size:0.75rem;color:var(--text-dim)}
-        @media(max-width:640px){.app{padding:1rem 0.75rem 3rem}.formats{grid-template-columns:1fr}}
+        .task-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.25rem;margin-bottom:0.75rem;transition:border-color 0.15s}
+        .task-card:hover{border-color:var(--border-hover)}
+        .task-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem}
+        .task-status{font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;padding:0.15rem 0.5rem;border-radius:4px}
+        .task-status.running{background:rgba(124,106,239,0.15);color:var(--accent)}
+        .task-status.pending{background:var(--surface-3);color:var(--text-dim)}
+        .task-status.completed{background:var(--green-dim);color:var(--green)}
+        .task-status.partial{background:rgba(251,191,36,0.12);color:var(--amber)}
+        .task-status.failed{background:rgba(248,113,113,0.12);color:var(--red)}
+        .task-status.cancelled{background:var(--surface-3);color:var(--text-dim)}
+        .task-progress-bar{height:4px;background:var(--surface-3);border-radius:2px;overflow:hidden;margin:0.5rem 0}
+        .task-progress-fill{height:100%;border-radius:2px;background:var(--accent);transition:width 0.3s}
+        .task-meta{font-size:0.78rem;color:var(--text-dim);display:flex;gap:1rem;flex-wrap:wrap}
+        .task-actions{display:flex;gap:0.4rem;margin-top:0.5rem}
+        .task-btn{padding:0.3rem 0.6rem;border-radius:6px;font-size:0.75rem;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-muted);font-family:inherit;transition:all 0.15s}
+        .task-btn:hover{color:var(--text);border-color:var(--accent)}
+        .task-btn-danger{color:var(--red);border-color:rgba(248,113,113,0.3)}
+        .task-btn-danger:hover{background:rgba(248,113,113,0.1);border-color:var(--red)}
+        .scene-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:0.75rem;margin-top:1rem}
+        .scene-thumb{aspect-ratio:9/16;background:var(--surface-2);border-radius:8px;overflow:hidden;position:relative;border:1px solid var(--border)}
+        .scene-thumb img,.scene-thumb video{width:100%;height:100%;object-fit:cover}
+        .scene-thumb-label{position:absolute;bottom:0;left:0;right:0;padding:0.3rem 0.5rem;background:linear-gradient(transparent,rgba(0,0,0,0.8));font-size:0.7rem;color:white;font-weight:600}
+        @media(max-width:640px){.app{padding:1rem 0.75rem 3rem}.formats{grid-template-columns:1fr}.scene-grid{grid-template-columns:repeat(auto-fill,minmax(100px,1fr))}}
     </style>
 </head>
 <body>
@@ -80,6 +102,26 @@
     </div>
 
     <div class="formats" id="formats-grid"></div>
+
+    <!-- My Tasks Panel -->
+    <div id="tasks-section" style="display:none;margin-bottom:2rem;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+            <h2 style="font-size:1.1rem;font-weight:700;">📋 My Tasks</h2>
+            <button onclick="loadTasks()" style="background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border);padding:0.3rem 0.7rem;border-radius:6px;font-size:0.78rem;cursor:pointer;font-family:inherit;">↻ Refresh</button>
+        </div>
+        <div id="tasks-list"></div>
+    </div>
+
+    <!-- Task Detail Modal -->
+    <div id="task-modal" style="display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);overflow-y:auto;" onclick="if(event.target===this)closeTaskModal()">
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:16px;max-width:800px;width:95%;margin:2rem auto;padding:1.5rem;max-height:90vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <div style="font-weight:700;font-size:1rem;">Task Details</div>
+                <button onclick="closeTaskModal()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:1.3rem;">✕</button>
+            </div>
+            <div id="task-detail-content">Loading...</div>
+        </div>
+    </div>
 
     <footer class="footer">ViewHunt Studio · AI-Powered Video Generation</footer>
 </div>
@@ -193,6 +235,294 @@ function openFormat(id, isLive) {
         window.location.href = format.url;
     }
 }
+
+// === TASKS ===
+var tasksPollingInterval = null;
+
+async function loadTasks() {
+    var token = getAuthToken();
+    if (!token || !hasPaidAccess) return;
+
+    try {
+        var res = await fetch('/api/studio/tasks', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!res.ok) return;
+        var data = await res.json();
+        if (!data.tasks || data.tasks.length === 0) {
+            document.getElementById('tasks-section').style.display = 'none';
+            stopTasksPolling();
+            return;
+        }
+
+        document.getElementById('tasks-section').style.display = 'block';
+        renderTasks(data.tasks);
+
+        // Auto-poll if any tasks are running
+        var hasActive = data.tasks.some(function(t) { return t.status === 'running' || t.status === 'pending'; });
+        if (hasActive && !tasksPollingInterval) {
+            tasksPollingInterval = setInterval(loadTasks, 4000);
+        } else if (!hasActive) {
+            stopTasksPolling();
+        }
+    } catch (e) {
+        console.warn('Failed to load tasks:', e);
+    }
+}
+
+function stopTasksPolling() {
+    if (tasksPollingInterval) {
+        clearInterval(tasksPollingInterval);
+        tasksPollingInterval = null;
+    }
+}
+
+function renderTasks(tasks) {
+    var list = document.getElementById('tasks-list');
+    var html = '';
+    tasks.forEach(function(t) {
+        var pct = 0;
+        var p = t.progress || {};
+        if (p.totalScenes > 0) {
+            if (p.step === 'complete' || t.status === 'completed') {
+                pct = 100;
+            } else if (p.step === 'videos') {
+                pct = 50 + Math.round((p.videosCompleted / p.totalScenes) * 50);
+            } else if (p.step === 'images') {
+                pct = 10 + Math.round((p.imagesCompleted / p.totalScenes) * 40);
+            } else if (p.step === 'claude') {
+                pct = 5;
+            }
+        }
+
+        html += '<div class="task-card">';
+        html += '<div class="task-card-head">';
+        html += '<div style="flex:1;min-width:0;">';
+        html += '<div style="font-size:0.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(t.scriptPreview || 'Generation task') + '</div>';
+        html += '</div>';
+        html += '<span class="task-status ' + t.status + '">' + t.status + '</span>';
+        html += '</div>';
+
+        if (t.status === 'running' || t.status === 'pending') {
+            html += '<div class="task-progress-bar"><div class="task-progress-fill" style="width:' + pct + '%"></div></div>';
+            html += '<div style="font-size:0.78rem;color:var(--text-muted);">' + escHtml(p.message || 'Starting...') + '</div>';
+        }
+
+        html += '<div class="task-meta">';
+        if (p.totalScenes) html += '<span>' + p.totalScenes + ' scenes</span>';
+        if (p.imagesCompleted) html += '<span>' + p.imagesCompleted + ' images</span>';
+        if (p.videosCompleted) html += '<span>' + p.videosCompleted + ' videos</span>';
+        if (t.creditsCharged) html += '<span>💎 ' + t.creditsCharged + '</span>';
+        html += '<span>' + timeAgo(t.createdAt) + '</span>';
+        html += '</div>';
+
+        html += '<div class="task-actions">';
+        if (t.status === 'completed' || t.status === 'partial') {
+            html += '<button class="task-btn" onclick="viewTask(\'' + t.id + '\')">View Results</button>';
+        }
+        if (t.status === 'running' || t.status === 'pending') {
+            html += '<button class="task-btn" onclick="viewTask(\'' + t.id + '\')">View Progress</button>';
+            html += '<button class="task-btn task-btn-danger" onclick="cancelTask(\'' + t.id + '\')">Cancel</button>';
+        }
+        if (t.status === 'failed') {
+            html += '<button class="task-btn" onclick="viewTask(\'' + t.id + '\')">View Details</button>';
+        }
+        html += '</div>';
+        html += '</div>';
+    });
+    list.innerHTML = html;
+}
+
+async function viewTask(taskId) {
+    var token = getAuthToken();
+    var modal = document.getElementById('task-modal');
+    var content = document.getElementById('task-detail-content');
+    modal.style.display = 'flex';
+    content.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-dim);">Loading...</div>';
+
+    try {
+        var res = await fetch('/api/studio/tasks/' + taskId, { headers: { 'Authorization': 'Bearer ' + token } });
+        var data = await res.json();
+        if (!data.task) { content.innerHTML = '<div style="color:var(--red);">Task not found</div>'; return; }
+        renderTaskDetail(data.task);
+
+        // Poll if running
+        if (data.task.status === 'running' || data.task.status === 'pending') {
+            if (window._taskDetailPoll) clearInterval(window._taskDetailPoll);
+            window._taskDetailPoll = setInterval(async function() {
+                try {
+                    var r = await fetch('/api/studio/tasks/' + taskId, { headers: { 'Authorization': 'Bearer ' + token } });
+                    var d = await r.json();
+                    if (d.task) {
+                        renderTaskDetail(d.task);
+                        if (d.task.status !== 'running' && d.task.status !== 'pending') {
+                            clearInterval(window._taskDetailPoll);
+                            loadTasks(); // refresh list
+                        }
+                    }
+                } catch (e) {}
+            }, 3000);
+        }
+    } catch (e) {
+        content.innerHTML = '<div style="color:var(--red);">Error loading task</div>';
+    }
+}
+
+function renderTaskDetail(task) {
+    var content = document.getElementById('task-detail-content');
+    var p = task.progress || {};
+    var html = '';
+
+    // Status + progress
+    html += '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;">';
+    html += '<span class="task-status ' + task.status + '" style="font-size:0.8rem;">' + task.status + '</span>';
+    html += '<span style="font-size:0.82rem;color:var(--text-muted);">' + escHtml(p.message || '') + '</span>';
+    html += '</div>';
+
+    if (task.status === 'running' || task.status === 'pending') {
+        var pct = 0;
+        if (p.totalScenes > 0) {
+            if (p.step === 'videos') pct = 50 + Math.round((p.videosCompleted / p.totalScenes) * 50);
+            else if (p.step === 'images') pct = 10 + Math.round((p.imagesCompleted / p.totalScenes) * 40);
+            else if (p.step === 'claude') pct = 5;
+        }
+        html += '<div class="task-progress-bar" style="height:6px;margin-bottom:1rem;"><div class="task-progress-fill" style="width:' + pct + '%"></div></div>';
+    }
+
+    if (task.error) {
+        html += '<div style="padding:0.75rem;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.2);border-radius:8px;color:var(--red);font-size:0.82rem;margin-bottom:1rem;">' + escHtml(task.error) + '</div>';
+    }
+
+    // Stats
+    html += '<div style="display:flex;gap:1.5rem;margin-bottom:1rem;font-size:0.82rem;color:var(--text-muted);">';
+    if (p.totalScenes) html += '<span>Scenes: ' + p.totalScenes + '</span>';
+    if (p.imagesCompleted) html += '<span>Images: ' + p.imagesCompleted + (p.imagesFailed ? ' (' + p.imagesFailed + ' failed)' : '') + '</span>';
+    if (p.videosCompleted) html += '<span>Videos: ' + p.videosCompleted + (p.videosFailed ? ' (' + p.videosFailed + ' failed)' : '') + '</span>';
+    if (task.creditsCharged) html += '<span>💎 ' + task.creditsCharged + ' credits</span>';
+    html += '</div>';
+
+    // Scene grid
+    var scenes = task.scenes || [];
+    if (scenes.length > 0) {
+        html += '<div style="font-size:0.82rem;font-weight:600;margin-bottom:0.5rem;">Scenes</div>';
+        html += '<div class="scene-grid">';
+        scenes.forEach(function(s, i) {
+            html += '<div class="scene-thumb">';
+            if (s.videoUrl) {
+                html += '<video src="' + s.videoUrl + '" muted playsinline preload="metadata" onclick="this.paused?this.play():this.pause()" style="cursor:pointer"></video>';
+            } else if (s.imageUrl) {
+                html += '<img src="' + s.imageUrl + '" alt="Scene ' + (i + 1) + '">';
+            } else {
+                html += '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:0.75rem;">' + (s.imageError || s.videoError || 'Pending') + '</div>';
+            }
+            html += '<div class="scene-thumb-label">Scene ' + (i + 1) + '</div>';
+            html += '</div>';
+        });
+        html += '</div>';
+
+        // Download buttons for completed tasks
+        if (task.status === 'completed' || task.status === 'partial') {
+            var videosAvailable = scenes.filter(function(s) { return s.videoUrl; });
+            var imagesAvailable = scenes.filter(function(s) { return s.imageUrl; });
+            html += '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:1rem;">';
+            if (videosAvailable.length > 0) {
+                html += '<button class="task-btn" onclick="downloadTaskVideos(\'' + task.id + '\')" style="background:var(--accent);color:white;border-color:var(--accent);">📥 Download ' + videosAvailable.length + ' Videos</button>';
+            }
+            if (imagesAvailable.length > 0) {
+                html += '<button class="task-btn" onclick="downloadTaskImages(\'' + task.id + '\')">📥 Download ' + imagesAvailable.length + ' Images</button>';
+            }
+            // Assemble button
+            if (videosAvailable.length >= 2) {
+                html += '<button class="task-btn" onclick="assembleFromTask(\'' + task.id + '\')" style="background:var(--green);color:#0e0e12;border-color:var(--green);">🎬 Assemble Final Video · 2 💎</button>';
+            }
+            html += '</div>';
+        }
+    }
+
+    content.innerHTML = html;
+}
+
+function closeTaskModal() {
+    document.getElementById('task-modal').style.display = 'none';
+    if (window._taskDetailPoll) clearInterval(window._taskDetailPoll);
+}
+
+async function cancelTask(taskId) {
+    if (!confirm('Cancel this generation task?')) return;
+    var token = getAuthToken();
+    try {
+        await fetch('/api/studio/tasks/' + taskId, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } });
+        loadTasks();
+    } catch (e) {
+        alert('Failed to cancel task');
+    }
+}
+
+async function downloadTaskVideos(taskId) {
+    var token = getAuthToken();
+    try {
+        var res = await fetch('/api/studio/tasks/' + taskId, { headers: { 'Authorization': 'Bearer ' + token } });
+        var data = await res.json();
+        if (!data.task) return;
+        var scenes = data.task.scenes || [];
+        scenes.forEach(function(s, i) {
+            if (s.videoUrl) {
+                var a = document.createElement('a');
+                a.href = s.videoUrl;
+                a.download = 'scene-' + (i + 1) + '.mp4';
+                a.target = '_blank';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+        });
+    } catch (e) { alert('Download failed'); }
+}
+
+async function downloadTaskImages(taskId) {
+    var token = getAuthToken();
+    try {
+        var res = await fetch('/api/studio/tasks/' + taskId, { headers: { 'Authorization': 'Bearer ' + token } });
+        var data = await res.json();
+        if (!data.task) return;
+        var scenes = data.task.scenes || [];
+        scenes.forEach(function(s, i) {
+            if (s.imageUrl) {
+                var a = document.createElement('a');
+                a.href = s.imageUrl;
+                a.download = 'scene-' + (i + 1) + '.png';
+                a.target = '_blank';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+        });
+    } catch (e) { alert('Download failed'); }
+}
+
+async function assembleFromTask(taskId) {
+    if (!confirm('Assemble final video from this task? This will cost 2 credits.')) return;
+    // Redirect to v2 page with task ID so it can load scenes and assemble
+    window.location.href = '/studio/v2?task=' + taskId;
+}
+
+function escHtml(str) {
+    var d = document.createElement('div');
+    d.textContent = str || '';
+    return d.innerHTML;
+}
+
+function timeAgo(dateStr) {
+    if (!dateStr) return '';
+    var now = Date.now();
+    var then = new Date(dateStr).getTime();
+    var diff = Math.floor((now - then) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    return Math.floor(diff / 86400) + 'd ago';
+}
+
+// Load tasks on page load (after auth check)
+setTimeout(loadTasks, 500);
 </script>
 </body>
 </html>
