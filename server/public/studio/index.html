@@ -441,11 +441,12 @@ function renderTaskDetail(task) {
             if (videosAvailable.length >= 2) {
                 html += '<button class="task-btn" onclick="assembleFromTask(\'' + task.id + '\')" style="background:var(--green);color:#0e0e12;border-color:var(--green);">🎬 Assemble Final Video · 2 💎</button>';
             }
-            // If videos were expected but missing, show a note
+            // If videos were expected but missing, show retry button
             if (scenesNeedingVideo.length > 0 && task.config && task.config.generateVideos) {
                 html += '</div>';
-                html += '<div style="margin-top:0.75rem;padding:0.75rem;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:8px;font-size:0.82rem;color:var(--amber);">';
-                html += '⚠️ ' + scenesNeedingVideo.length + ' video(s) failed after multiple retries. The images are ready — you can use them in Director Mode on the <a href="/studio/v2" style="color:var(--accent);text-decoration:underline;">Studio page</a> to generate videos individually.';
+                html += '<div style="margin-top:0.75rem;padding:0.75rem;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:8px;font-size:0.82rem;color:var(--amber);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">';
+                html += '<span>⚠️ ' + scenesNeedingVideo.length + ' video(s) failed after multiple retries.</span>';
+                html += '<button class="task-btn" onclick="retryTaskVideos(\'' + task.id + '\')" style="background:var(--accent);color:white;border-color:var(--accent);white-space:nowrap;">🔄 Retry Failed Videos · ' + (scenesNeedingVideo.length * 5) + ' 💎</button>';
             }
             html += '</div>';
         }
@@ -513,9 +514,160 @@ async function downloadTaskImages(taskId) {
 }
 
 async function assembleFromTask(taskId) {
-    if (!confirm('Assemble final video from this task? This will cost 2 credits.')) return;
-    // Redirect to v2 page with task ID so it can load scenes and assemble
-    window.location.href = '/studio/v2?task=' + taskId;
+    var token = getAuthToken();
+    try {
+        var res = await fetch('/api/studio/tasks/' + taskId, { headers: { 'Authorization': 'Bearer ' + token } });
+        var data = await res.json();
+        if (!data.task) return alert('Task not found');
+
+        var task = data.task;
+        var scenes = (task.scenes || []).filter(function(s) { return s.videoUrl; });
+        if (scenes.length < 2) return alert('Need at least 2 videos to assemble');
+
+        var confirmMsg = 'Assemble final video from ' + scenes.length + ' scenes? This costs 2 credits.\nEstimated time: 2-4 minutes.';
+        if (!confirm(confirmMsg)) return;
+
+        // Build the payload
+        var payload = scenes.map(function(s, i) {
+            return {
+                sceneNumber: i + 1,
+                scriptLine: s.scriptLine || '',
+                imagePrompt: s.imagePrompt || '',
+                videoPrompt: s.videoPrompt || '',
+                videoUrl: s.videoUrl
+            };
+        });
+
+        // Show progress in the task detail modal
+        var content = document.getElementById('task-detail-content');
+        content.innerHTML = '<div style="text-align:center;padding:2rem;"><div style="font-size:1.5rem;margin-bottom:0.75rem;">🎬</div><div style="font-size:0.9rem;color:var(--text-muted);" id="assembly-status-msg">Submitting assembly job...</div></div>';
+
+        // Submit assembly
+        var assembleRes = await fetch('/api/studio/assemble', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify({ script: task.config.script, scenes: payload })
+        });
+        if (!assembleRes.ok) {
+            var err = await assembleRes.json().catch(function() { return {}; });
+            throw new Error(err.error || 'Assembly failed');
+        }
+        var assembleData = await assembleRes.json();
+        var jobId = assembleData.jobId;
+
+        // Poll for assembly result
+        var statusMsgs = {
+            queued: '⏳ Waiting in queue...',
+            generating_voiceover: '🎙️ Generating voiceover...',
+            analyzing_edit_points: '🧠 Analyzing edit points...',
+            assembling_video: '🎬 Assembling video (1-3 min)...'
+        };
+        var failCount = 0;
+        while (true) {
+            await new Promise(function(r) { setTimeout(r, 3000); });
+            try {
+                var pollRes = await fetch('/api/studio/assemble/status/' + jobId, { headers: { 'Authorization': 'Bearer ' + token } });
+                if (!pollRes.ok) { failCount++; if (failCount >= 10) throw new Error('Lost connection'); continue; }
+                failCount = 0;
+                var pollData = await pollRes.json();
+
+                if (pollData.status === 'complete' && pollData.result) {
+                    var r = pollData.result;
+                    var dur = r.duration ? r.duration.toFixed(1) : '?';
+                    var bustUrl = r.videoUrl + (r.videoUrl.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
+                    content.innerHTML = '<div style="text-align:center;">' +
+                        '<div style="font-size:1.2rem;margin-bottom:0.5rem;">✅ Final video ready (' + dur + 's)</div>' +
+                        '<video src="' + bustUrl + '" controls autoplay muted loop style="width:100%;max-width:360px;border-radius:12px;margin:0.75rem auto;display:block;"></video>' +
+                        '<div style="margin-top:0.75rem;display:flex;gap:0.5rem;justify-content:center;">' +
+                            '<a href="' + r.videoUrl + '" download="final-video.mp4" target="_blank" class="task-btn" style="background:var(--green);color:#0e0e12;border-color:var(--green);text-decoration:none;">📥 Download</a>' +
+                            '<button class="task-btn" onclick="assembleFromTask(\'' + taskId + '\')">↻ Re-assemble</button>' +
+                        '</div></div>';
+                    break;
+                }
+                if (pollData.status === 'failed') throw new Error(pollData.error || 'Assembly failed');
+
+                var msg = statusMsgs[pollData.status] || pollData.message || 'Processing...';
+                document.getElementById('assembly-status-msg').textContent = msg;
+            } catch (e) {
+                if (e.message === 'Lost connection' || e.message.includes('Assembly failed')) {
+                    content.innerHTML = '<div style="text-align:center;color:var(--red);padding:1rem;">❌ ' + escHtml(e.message) + '<br><span style="color:var(--green);font-size:0.82rem;">🛡️ Credits refunded on failure.</span></div>';
+                    break;
+                }
+                failCount++;
+                if (failCount >= 10) {
+                    content.innerHTML = '<div style="text-align:center;color:var(--red);padding:1rem;">❌ Lost connection to server</div>';
+                    break;
+                }
+            }
+        }
+    } catch (e) {
+        alert('Assembly error: ' + e.message);
+    }
+}
+
+async function retryTaskVideos(taskId) {
+    var token = getAuthToken();
+    try {
+        var res = await fetch('/api/studio/tasks/' + taskId, { headers: { 'Authorization': 'Bearer ' + token } });
+        var data = await res.json();
+        if (!data.task) return alert('Task not found');
+
+        var task = data.task;
+        var scenesNeedingVideo = (task.scenes || []).filter(function(s) { return s.imageUrl && !s.videoUrl; });
+        if (scenesNeedingVideo.length === 0) return alert('All scenes already have videos');
+
+        if (!confirm('Retry video generation for ' + scenesNeedingVideo.length + ' scene(s)? This will cost ' + (scenesNeedingVideo.length * 5) + ' credits.')) return;
+
+        var content = document.getElementById('task-detail-content');
+        var completed = 0;
+        var total = scenesNeedingVideo.length;
+
+        for (var i = 0; i < total; i++) {
+            var scene = scenesNeedingVideo[i];
+            var sceneNum = scene.index + 1;
+            content.innerHTML = '<div style="text-align:center;padding:2rem;">' +
+                '<div style="font-size:1.5rem;margin-bottom:0.75rem;">🎬</div>' +
+                '<div style="font-size:0.9rem;color:var(--text-muted);">Generating video ' + (i + 1) + '/' + total + ' (Scene ' + sceneNum + ')...</div>' +
+                '<div class="task-progress-bar" style="margin-top:1rem;height:6px;"><div class="task-progress-fill" style="width:' + Math.round((i / total) * 100) + '%"></div></div>' +
+                '<div style="font-size:0.78rem;color:var(--text-dim);margin-top:0.5rem;">' + completed + ' completed so far</div></div>';
+
+            try {
+                var videoRes = await fetch('/api/studio/generate/scene-video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({
+                        format: 'skeleton-anatomy',
+                        imageUrl: scene.imageUrl,
+                        videoPrompt: scene.videoPrompt,
+                        sceneNumber: sceneNum
+                    })
+                });
+                if (videoRes.ok) {
+                    var videoData = await videoRes.json();
+                    if (videoData.videoUrl) {
+                        completed++;
+                        // Update the task document with the new video URL
+                        await fetch('/api/studio/tasks/' + taskId + '/scene/' + scene.index, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                            body: JSON.stringify({ videoUrl: videoData.videoUrl })
+                        });
+                    }
+                }
+            } catch (e) {
+                console.warn('Video retry failed for scene ' + sceneNum + ':', e.message);
+            }
+        }
+
+        // Show result and reload task
+        content.innerHTML = '<div style="text-align:center;padding:2rem;">' +
+            '<div style="font-size:1.5rem;margin-bottom:0.5rem;">' + (completed === total ? '✅' : '⚠️') + '</div>' +
+            '<div style="font-size:0.9rem;">' + completed + '/' + total + ' videos generated</div>' +
+            '<button class="task-btn" onclick="viewTask(\'' + taskId + '\')" style="margin-top:1rem;">View Updated Results</button></div>';
+        loadTasks();
+    } catch (e) {
+        alert('Retry error: ' + e.message);
+    }
 }
 
 function escHtml(str) {

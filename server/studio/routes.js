@@ -1273,6 +1273,52 @@ router.get('/tasks/:id', requireAuth, async (req, res) => {
     }
 });
 
+// Update a scene in a completed task (e.g. after retrying a failed video)
+router.patch('/tasks/:id/scene/:sceneIndex', requireAuth, async (req, res) => {
+    try {
+        const userId = String(req.user.userId);
+        const task = await taskManager.getTask(req.params.id, userId);
+        if (!task) return res.status(404).json({ error: 'Task not found' });
+        if (task.status !== 'completed') return res.status(400).json({ error: 'Can only update completed tasks' });
+
+        const sceneIndex = parseInt(req.params.sceneIndex, 10);
+        if (isNaN(sceneIndex) || sceneIndex < 0 || sceneIndex >= (task.scenes || []).length) {
+            return res.status(400).json({ error: 'Invalid scene index' });
+        }
+
+        const { videoUrl } = req.body;
+        if (!videoUrl) return res.status(400).json({ error: 'videoUrl is required' });
+
+        // Update the scene in the task document
+        const scene = task.scenes[sceneIndex];
+        scene.videoUrl = videoUrl;
+        scene.videoError = null;
+        await taskManager.saveScene(req.params.id, sceneIndex, scene);
+
+        // Recalculate progress counts
+        const scenes = task.scenes;
+        scenes[sceneIndex] = scene;
+        const videosCompleted = scenes.filter(s => s.videoUrl).length;
+        const videosFailed = scenes.filter(s => s.imageUrl && !s.videoUrl).length;
+        const msg = videosCompleted > 0
+            ? `Generated ${task.progress.imagesCompleted} images and ${videosCompleted} videos — ready to assemble`
+            : task.progress.message;
+
+        await taskManager.updateProgress(req.params.id, {
+            ...task.progress,
+            videosCompleted,
+            videosFailed,
+            message: msg
+        });
+
+        console.log(`📋 Task ${req.params.id}: scene ${sceneIndex} video updated via retry`);
+        res.json({ success: true, videosCompleted, videosFailed });
+    } catch (error) {
+        console.error('Task scene update error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Cancel a running task
 router.delete('/tasks/:id', requireAuth, async (req, res) => {
     try {
