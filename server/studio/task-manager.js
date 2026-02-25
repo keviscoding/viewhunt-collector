@@ -162,7 +162,7 @@ async function saveScene(taskId, sceneIndex, sceneData) {
 }
 
 /**
- * Mark task as completed.
+ * Mark task as completed (always 'completed', never 'partial').
  */
 async function completeTask(taskId, result) {
     const db = await getDb();
@@ -170,15 +170,15 @@ async function completeTask(taskId, result) {
         { _id: new ObjectId(taskId) },
         {
             $set: {
-                status: result.success ? 'completed' : 'partial',
+                status: 'completed',
                 progress: {
                     step: 'complete',
                     message: result.message || 'Generation complete',
                     totalScenes: result.totalScenes || 0,
                     imagesCompleted: result.imagesCompleted || 0,
                     videosCompleted: result.videosCompleted || 0,
-                    imagesFailed: result.imagesFailed || 0,
-                    videosFailed: result.videosFailed || 0
+                    imagesFailed: 0,
+                    videosFailed: 0
                 },
                 creditsCharged: result.creditsCharged || 0,
                 completedAt: new Date(),
@@ -187,7 +187,7 @@ async function completeTask(taskId, result) {
         }
     );
     runningTasks.delete(taskId.toString());
-    console.log(`✅ Task ${taskId} completed (${result.success ? 'success' : 'partial'})`);
+    console.log(`✅ Task ${taskId} completed`);
 }
 
 /**
@@ -263,6 +263,8 @@ function runTask(taskId, generator, userId) {
 
 /**
  * Internal: execute the generation pipeline for a task.
+ * Images and videos are retried aggressively (up to 5 attempts each with backoff).
+ * No "partial" status — we keep retrying until everything succeeds or we hit max retries.
  */
 async function _executeTask(taskId, generator, userId, signal) {
     const db = await getDb();
@@ -270,6 +272,8 @@ async function _executeTask(taskId, generator, userId, signal) {
     if (!task) throw new Error('Task not found');
 
     const config = task.config;
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY_BASE = 8000; // 8s base, increases with each retry
     let totalCreditsCharged = 0;
 
     // Mark as running
@@ -279,28 +283,20 @@ async function _executeTask(taskId, generator, userId, signal) {
     );
 
     try {
-        // Check for cancellation
         if (signal.aborted) throw new Error('Task cancelled');
 
         // Step 1: Generate scene prompts
         await updateProgress(taskId, {
             step: 'claude',
             message: 'Claude is analyzing your script...',
-            totalScenes: 0,
-            imagesCompleted: 0,
-            videosCompleted: 0,
-            imagesFailed: 0,
-            videosFailed: 0
+            totalScenes: 0, imagesCompleted: 0, videosCompleted: 0, imagesFailed: 0, videosFailed: 0
         });
 
         console.log(`📋 Task ${taskId}: generating scene prompts...`);
         const scenes = await generator.generateScenePrompts(
-            config.script,
-            config.skeletonStyle,
-            config.gradientColors
+            config.script, config.skeletonStyle, config.gradientColors
         );
 
-        // Charge for script generation
         await credits.deductCredits(userId, 'script_generation', 1, 'Background task: script generation');
         totalCreditsCharged += credits.COSTS.script_generation;
 
@@ -310,10 +306,7 @@ async function _executeTask(taskId, generator, userId, signal) {
             scriptLine: s.scriptLine,
             imagePrompt: s.imagePrompt,
             videoPrompt: s.videoPrompt,
-            imageUrl: null,
-            videoUrl: null,
-            imageError: null,
-            videoError: null
+            imageUrl: null, videoUrl: null, imageError: null, videoError: null
         }));
 
         await db.collection(COLLECTION).updateOne(
@@ -331,134 +324,128 @@ async function _executeTask(taskId, generator, userId, signal) {
 
         if (signal.aborted) throw new Error('Task cancelled');
 
-        // Step 2: Generate images in parallel
+        // Step 2: Generate images — parallel first pass, then retry failures sequentially
         console.log(`📋 Task ${taskId}: generating ${scenes.length} images...`);
         let imagesCompleted = 0;
-        let imagesFailed = 0;
 
+        // First pass: all in parallel
         const imagePromises = scenes.map(async (scene, index) => {
-            if (signal.aborted) return { success: false, error: 'cancelled' };
+            if (signal.aborted) return;
             try {
                 const imageUrl = await generator.generateImage(scene.imagePrompt, index + 1);
                 scenes[index].imageUrl = imageUrl;
                 imagesCompleted++;
-
-                // Save to DB immediately
-                await saveScene(taskId, index, {
-                    ...scenesDocs[index],
-                    imageUrl: imageUrl
-                });
+                await saveScene(taskId, index, { ...scenesDocs[index], imageUrl });
                 await updateProgress(taskId, {
-                    step: 'images',
-                    message: `Generated image ${imagesCompleted}/${scenes.length}`,
-                    totalScenes: scenes.length,
-                    imagesCompleted,
-                    videosCompleted: 0,
-                    imagesFailed,
-                    videosFailed: 0
+                    step: 'images', message: `Generated image ${imagesCompleted}/${scenes.length}`,
+                    totalScenes: scenes.length, imagesCompleted, videosCompleted: 0, imagesFailed: 0, videosFailed: 0
                 });
-
-                return { success: true, index };
             } catch (err) {
-                imagesFailed++;
+                console.warn(`Task ${taskId}: image ${index + 1} failed (will retry): ${err.message}`);
                 scenes[index].imageError = err.message;
-                await saveScene(taskId, index, {
-                    ...scenesDocs[index],
-                    imageError: err.message
-                });
-                return { success: false, index, error: err.message };
             }
         });
-
         await Promise.all(imagePromises);
 
-        // Charge for successful images only
+        // Retry loop: keep retrying failed images until all succeed or max retries hit
+        for (let retry = 1; retry <= MAX_RETRIES; retry++) {
+            if (signal.aborted) throw new Error('Task cancelled');
+            const failedImages = scenes.filter(s => !s.imageUrl);
+            if (failedImages.length === 0) break;
+
+            const delay = RETRY_DELAY_BASE * retry;
+            console.log(`📋 Task ${taskId}: retrying ${failedImages.length} failed image(s) (attempt ${retry}/${MAX_RETRIES}, waiting ${delay / 1000}s)...`);
+            await updateProgress(taskId, {
+                step: 'images', message: `Retrying ${failedImages.length} failed image(s)... (attempt ${retry}/${MAX_RETRIES})`,
+                totalScenes: scenes.length, imagesCompleted, videosCompleted: 0, imagesFailed: failedImages.length, videosFailed: 0
+            });
+            await new Promise(r => setTimeout(r, delay));
+
+            for (const scene of failedImages) {
+                if (signal.aborted) throw new Error('Task cancelled');
+                const idx = scenes.indexOf(scene);
+                try {
+                    const imageUrl = await generator.generateImage(scene.imagePrompt, idx + 1);
+                    scenes[idx].imageUrl = imageUrl;
+                    scenes[idx].imageError = null;
+                    imagesCompleted++;
+                    await saveScene(taskId, idx, { ...scenesDocs[idx], imageUrl, imageError: null });
+                    await updateProgress(taskId, {
+                        step: 'images', message: `Generated image ${imagesCompleted}/${scenes.length} (retry ${retry})`,
+                        totalScenes: scenes.length, imagesCompleted, videosCompleted: 0, imagesFailed: scenes.filter(s => !s.imageUrl).length, videosFailed: 0
+                    });
+                    console.log(`✅ Task ${taskId}: image ${idx + 1} retry succeeded`);
+                } catch (err) {
+                    console.warn(`Task ${taskId}: image ${idx + 1} retry ${retry} failed: ${err.message}`);
+                }
+            }
+        }
+
+        // Charge for successful images
         if (imagesCompleted > 0) {
-            await credits.deductCredits(userId, 'image_generation', imagesCompleted,
-                `Background task: ${imagesCompleted} images`);
+            await credits.deductCredits(userId, 'image_generation', imagesCompleted, `Background task: ${imagesCompleted} images`);
             totalCreditsCharged += credits.COSTS.image_generation * imagesCompleted;
         }
 
+        const finalFailedImages = scenes.filter(s => !s.imageUrl).length;
         await updateProgress(taskId, {
-            step: 'images',
-            message: `${imagesCompleted}/${scenes.length} images generated`,
-            totalScenes: scenes.length,
-            imagesCompleted,
-            videosCompleted: 0,
-            imagesFailed,
-            videosFailed: 0
+            step: 'images', message: `${imagesCompleted}/${scenes.length} images generated`,
+            totalScenes: scenes.length, imagesCompleted, videosCompleted: 0, imagesFailed: finalFailedImages, videosFailed: 0
         });
 
         if (signal.aborted) throw new Error('Task cancelled');
 
         // Step 3: Generate videos (if enabled)
         let videosCompleted = 0;
-        let videosFailed = 0;
 
         if (config.generateVideos) {
-            const scenesWithImages = scenes.filter((s, i) => s.imageUrl);
+            const scenesWithImages = scenes.filter(s => s.imageUrl);
 
             await updateProgress(taskId, {
-                step: 'videos',
-                message: `Generating ${scenesWithImages.length} videos...`,
-                totalScenes: scenes.length,
-                imagesCompleted,
-                videosCompleted: 0,
-                imagesFailed,
-                videosFailed: 0
+                step: 'videos', message: `Generating ${scenesWithImages.length} videos...`,
+                totalScenes: scenes.length, imagesCompleted, videosCompleted: 0, imagesFailed: finalFailedImages, videosFailed: 0
             });
 
             console.log(`📋 Task ${taskId}: generating ${scenesWithImages.length} videos...`);
 
-            const videoPromises = scenesWithImages.map(async (scene, idx) => {
-                if (signal.aborted) return { success: false, error: 'cancelled' };
+            // First pass: all in parallel
+            const videoPromises = scenesWithImages.map(async (scene) => {
+                if (signal.aborted) return;
                 const sceneIndex = scenes.indexOf(scene);
                 try {
                     const videoUrl = await generator.generateVideo(
-                        scene.imageUrl,
-                        scene.videoPrompt,
-                        sceneIndex + 1,
-                        config.videoModel
+                        scene.imageUrl, scene.videoPrompt, sceneIndex + 1, config.videoModel
                     );
                     scenes[sceneIndex].videoUrl = videoUrl;
                     videosCompleted++;
-
-                    await saveScene(taskId, sceneIndex, {
-                        ...scenesDocs[sceneIndex],
-                        imageUrl: scene.imageUrl,
-                        videoUrl: videoUrl
-                    });
+                    await saveScene(taskId, sceneIndex, { ...scenesDocs[sceneIndex], imageUrl: scene.imageUrl, videoUrl });
                     await updateProgress(taskId, {
-                        step: 'videos',
-                        message: `Generated video ${videosCompleted}/${scenesWithImages.length}`,
-                        totalScenes: scenes.length,
-                        imagesCompleted,
-                        videosCompleted,
-                        imagesFailed,
-                        videosFailed
+                        step: 'videos', message: `Generated video ${videosCompleted}/${scenesWithImages.length}`,
+                        totalScenes: scenes.length, imagesCompleted, videosCompleted, imagesFailed: finalFailedImages, videosFailed: 0
                     });
-
-                    return { success: true, sceneIndex };
                 } catch (err) {
-                    videosFailed++;
+                    console.warn(`Task ${taskId}: video ${sceneIndex + 1} failed (will retry): ${err.message}`);
                     scenes[sceneIndex].videoError = err.message;
-                    await saveScene(taskId, sceneIndex, {
-                        ...scenesDocs[sceneIndex],
-                        imageUrl: scene.imageUrl,
-                        videoError: err.message
-                    });
-                    return { success: false, sceneIndex, error: err.message };
                 }
             });
-
             await Promise.all(videoPromises);
 
-            // Retry failed videos sequentially
-            const failedVideoScenes = scenes.filter(s => s.imageUrl && !s.videoUrl && s.videoError);
-            if (failedVideoScenes.length > 0 && !signal.aborted) {
-                console.log(`📋 Task ${taskId}: retrying ${failedVideoScenes.length} failed videos...`);
-                for (const scene of failedVideoScenes) {
-                    if (signal.aborted) break;
+            // Retry loop: keep retrying failed videos
+            for (let retry = 1; retry <= MAX_RETRIES; retry++) {
+                if (signal.aborted) throw new Error('Task cancelled');
+                const failedVideos = scenesWithImages.filter(s => !s.videoUrl);
+                if (failedVideos.length === 0) break;
+
+                const delay = RETRY_DELAY_BASE * retry;
+                console.log(`📋 Task ${taskId}: retrying ${failedVideos.length} failed video(s) (attempt ${retry}/${MAX_RETRIES}, waiting ${delay / 1000}s)...`);
+                await updateProgress(taskId, {
+                    step: 'videos', message: `Retrying ${failedVideos.length} failed video(s)... (attempt ${retry}/${MAX_RETRIES})`,
+                    totalScenes: scenes.length, imagesCompleted, videosCompleted, imagesFailed: finalFailedImages, videosFailed: failedVideos.length
+                });
+                await new Promise(r => setTimeout(r, delay));
+
+                for (const scene of failedVideos) {
+                    if (signal.aborted) throw new Error('Task cancelled');
                     const sceneIndex = scenes.indexOf(scene);
                     try {
                         const videoUrl = await generator.generateVideo(
@@ -467,39 +454,29 @@ async function _executeTask(taskId, generator, userId, signal) {
                         scenes[sceneIndex].videoUrl = videoUrl;
                         scenes[sceneIndex].videoError = null;
                         videosCompleted++;
-                        videosFailed--;
                         await saveScene(taskId, sceneIndex, {
-                            ...scenesDocs[sceneIndex],
-                            imageUrl: scene.imageUrl,
-                            videoUrl: videoUrl,
-                            videoError: null
+                            ...scenesDocs[sceneIndex], imageUrl: scene.imageUrl, videoUrl, videoError: null
                         });
+                        console.log(`✅ Task ${taskId}: video ${sceneIndex + 1} retry succeeded`);
                     } catch (err) {
-                        console.error(`Task ${taskId}: retry failed for scene ${sceneIndex + 1}: ${err.message}`);
+                        console.warn(`Task ${taskId}: video ${sceneIndex + 1} retry ${retry} failed: ${err.message}`);
                     }
                 }
             }
 
-            // Charge for successful videos only
+            // Charge for successful videos
             if (videosCompleted > 0) {
-                await credits.deductCredits(userId, 'video_generation', videosCompleted,
-                    `Background task: ${videosCompleted} videos`);
+                await credits.deductCredits(userId, 'video_generation', videosCompleted, `Background task: ${videosCompleted} videos`);
                 totalCreditsCharged += credits.COSTS.video_generation * videosCompleted;
             }
         }
 
-        // Done
-        const allSuccess = imagesFailed === 0 && videosFailed === 0;
+        // Always mark as completed — ready to assemble
         await completeTask(taskId, {
-            success: allSuccess,
-            message: allSuccess
-                ? `Generated ${imagesCompleted} images and ${videosCompleted} videos`
-                : `Completed with ${imagesFailed} image failures and ${videosFailed} video failures`,
+            message: `Generated ${imagesCompleted} images and ${videosCompleted} videos — ready to assemble`,
             totalScenes: scenes.length,
             imagesCompleted,
             videosCompleted,
-            imagesFailed,
-            videosFailed,
             creditsCharged: totalCreditsCharged
         });
 
@@ -508,7 +485,7 @@ async function _executeTask(taskId, generator, userId, signal) {
     } catch (err) {
         if (err.message === 'Task cancelled') {
             console.log(`📋 Task ${taskId}: cancelled during execution`);
-            return; // cancelTask already updated the status
+            return;
         }
         await failTask(taskId, err.message);
     }
@@ -525,7 +502,7 @@ async function cleanupOldTasks(maxAgeDays) {
     cutoff.setDate(cutoff.getDate() - maxAgeDays);
 
     const result = await db.collection(COLLECTION).deleteMany({
-        status: { $in: ['completed', 'failed', 'cancelled', 'partial'] },
+        status: { $in: ['completed', 'failed', 'cancelled'] },
         completedAt: { $lt: cutoff }
     });
 

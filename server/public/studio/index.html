@@ -63,7 +63,6 @@
         .task-status.running{background:rgba(124,106,239,0.15);color:var(--accent)}
         .task-status.pending{background:var(--surface-3);color:var(--text-dim)}
         .task-status.completed{background:var(--green-dim);color:var(--green)}
-        .task-status.partial{background:rgba(251,191,36,0.12);color:var(--amber)}
         .task-status.failed{background:rgba(248,113,113,0.12);color:var(--red)}
         .task-status.cancelled{background:var(--surface-3);color:var(--text-dim)}
         .task-progress-bar{height:4px;background:var(--surface-3);border-radius:2px;overflow:hidden;margin:0.5rem 0}
@@ -298,7 +297,7 @@ function renderTasks(tasks) {
         html += '<div style="flex:1;min-width:0;">';
         html += '<div style="font-size:0.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(t.scriptPreview || 'Generation task') + '</div>';
         html += '</div>';
-        html += '<span class="task-status ' + t.status + '">' + t.status + '</span>';
+        html += '<span class="task-status ' + t.status + '">' + (t.status === 'completed' ? 'Ready' : t.status) + '</span>';
         html += '</div>';
 
         if (t.status === 'running' || t.status === 'pending') {
@@ -373,7 +372,7 @@ function renderTaskDetail(task) {
 
     // Status + progress
     html += '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;">';
-    html += '<span class="task-status ' + task.status + '" style="font-size:0.8rem;">' + task.status + '</span>';
+    html += '<span class="task-status ' + task.status + '" style="font-size:0.8rem;">' + (task.status === 'completed' ? 'Ready to assemble' : task.status) + '</span>';
     html += '<span style="font-size:0.82rem;color:var(--text-muted);">' + escHtml(p.message || '') + '</span>';
     html += '</div>';
 
