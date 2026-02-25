@@ -297,7 +297,11 @@ function renderTasks(tasks) {
         html += '<div style="flex:1;min-width:0;">';
         html += '<div style="font-size:0.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(t.scriptPreview || 'Generation task') + '</div>';
         html += '</div>';
-        html += '<span class="task-status ' + t.status + '">' + (t.status === 'completed' ? 'Ready' : t.status) + '</span>';
+        var statusLabel = t.status;
+        if (t.status === 'completed') {
+            statusLabel = (t.progress && t.progress.videosCompleted > 0) ? 'Ready' : 'Images Only';
+        }
+        html += '<span class="task-status ' + t.status + '">' + statusLabel + '</span>';
         html += '</div>';
 
         if (t.status === 'running' || t.status === 'pending') {
@@ -372,7 +376,11 @@ function renderTaskDetail(task) {
 
     // Status + progress
     html += '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;">';
-    html += '<span class="task-status ' + task.status + '" style="font-size:0.8rem;">' + (task.status === 'completed' ? 'Ready to assemble' : task.status) + '</span>';
+    var detailStatusLabel = task.status;
+    if (task.status === 'completed') {
+        detailStatusLabel = (p.videosCompleted > 0) ? 'Ready to assemble' : 'Images generated';
+    }
+    html += '<span class="task-status ' + task.status + '" style="font-size:0.8rem;">' + detailStatusLabel + '</span>';
     html += '<span style="font-size:0.82rem;color:var(--text-muted);">' + escHtml(p.message || '') + '</span>';
     html += '</div>';
 
@@ -418,9 +426,10 @@ function renderTaskDetail(task) {
         html += '</div>';
 
         // Download buttons for completed tasks
-        if (task.status === 'completed' || task.status === 'partial') {
+        if (task.status === 'completed') {
             var videosAvailable = scenes.filter(function(s) { return s.videoUrl; });
             var imagesAvailable = scenes.filter(function(s) { return s.imageUrl; });
+            var scenesNeedingVideo = scenes.filter(function(s) { return s.imageUrl && !s.videoUrl; });
             html += '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:1rem;">';
             if (videosAvailable.length > 0) {
                 html += '<button class="task-btn" onclick="downloadTaskVideos(\'' + task.id + '\')" style="background:var(--accent);color:white;border-color:var(--accent);">📥 Download ' + videosAvailable.length + ' Videos</button>';
@@ -428,9 +437,15 @@ function renderTaskDetail(task) {
             if (imagesAvailable.length > 0) {
                 html += '<button class="task-btn" onclick="downloadTaskImages(\'' + task.id + '\')">📥 Download ' + imagesAvailable.length + ' Images</button>';
             }
-            // Assemble button
+            // Assemble button — only if we have at least 2 videos
             if (videosAvailable.length >= 2) {
                 html += '<button class="task-btn" onclick="assembleFromTask(\'' + task.id + '\')" style="background:var(--green);color:#0e0e12;border-color:var(--green);">🎬 Assemble Final Video · 2 💎</button>';
+            }
+            // If videos were expected but missing, show a note
+            if (scenesNeedingVideo.length > 0 && task.config && task.config.generateVideos) {
+                html += '</div>';
+                html += '<div style="margin-top:0.75rem;padding:0.75rem;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:8px;font-size:0.82rem;color:var(--amber);">';
+                html += '⚠️ ' + scenesNeedingVideo.length + ' video(s) failed after multiple retries. The images are ready — you can use them in Director Mode on the <a href="/studio/v2" style="color:var(--accent);text-decoration:underline;">Studio page</a> to generate videos individually.';
             }
             html += '</div>';
         }

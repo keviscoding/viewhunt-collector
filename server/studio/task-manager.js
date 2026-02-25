@@ -471,9 +471,20 @@ async function _executeTask(taskId, generator, userId, signal) {
             }
         }
 
-        // Always mark as completed — ready to assemble
+        // Always mark as completed — message reflects what actually succeeded
+        var completionMessage;
+        if (config.generateVideos && videosCompleted > 0) {
+            completionMessage = `Generated ${imagesCompleted} images and ${videosCompleted} videos — ready to assemble`;
+        } else if (config.generateVideos && videosCompleted === 0 && imagesCompleted > 0) {
+            completionMessage = `Generated ${imagesCompleted} images but all videos failed after retries. You can retry or use images only.`;
+        } else if (!config.generateVideos && imagesCompleted > 0) {
+            completionMessage = `Generated ${imagesCompleted} images — ready to review`;
+        } else {
+            completionMessage = `Generation completed with ${imagesCompleted} images and ${videosCompleted} videos`;
+        }
+
         await completeTask(taskId, {
-            message: `Generated ${imagesCompleted} images and ${videosCompleted} videos — ready to assemble`,
+            message: completionMessage,
             totalScenes: scenes.length,
             imagesCompleted,
             videosCompleted,
