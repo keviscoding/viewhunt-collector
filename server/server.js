@@ -3796,8 +3796,8 @@ app.listen(PORT, async () => {
         const taskManager = require('./studio/task-manager');
         await taskManager.ensureIndexes();
         await taskManager.recoverStaleTasks();
-        // Clean up old completed tasks daily
-        setInterval(() => taskManager.cleanupOldTasks(7).catch(() => {}), 24 * 60 * 60 * 1000);
+        // Clean up old completed tasks every 5 days
+        setInterval(() => taskManager.cleanupOldTasks(5).catch(() => {}), 24 * 60 * 60 * 1000);
         console.log('📋 Background task manager initialized');
     } catch (e) {
         console.warn('Task manager init warning:', e.message);
@@ -3829,6 +3829,51 @@ app.listen(PORT, async () => {
             if (cleaned > 0) console.log('🧹 Cleaned ' + cleaned + ' old temp files/dirs');
         } catch (e) { /* ignore */ }
     }, 30 * 60 * 1000);
+    
+    // Clean up old final assembled videos every 6 hours (delete files older than 5 days)
+    setInterval(() => {
+        const finalDir = path.join(__dirname, 'public/studio/generated/final');
+        try {
+            if (!fs.existsSync(finalDir)) return;
+            const now = Date.now();
+            const maxAge = 5 * 24 * 60 * 60 * 1000; // 5 days
+            const entries = fs.readdirSync(finalDir);
+            let cleaned = 0;
+            for (const entry of entries) {
+                const filePath = path.join(finalDir, entry);
+                try {
+                    const stat = fs.statSync(filePath);
+                    if (stat.isFile() && now - stat.mtimeMs > maxAge) {
+                        fs.unlinkSync(filePath);
+                        cleaned++;
+                    }
+                } catch (e) { /* skip */ }
+            }
+            if (cleaned > 0) console.log('🧹 Cleaned ' + cleaned + ' old final video(s) (>5 days)');
+        } catch (e) { /* ignore */ }
+    }, 6 * 60 * 60 * 1000);
+    
+    // Also run final video cleanup once on startup
+    try {
+        const finalDir = path.join(__dirname, 'public/studio/generated/final');
+        if (fs.existsSync(finalDir)) {
+            const now = Date.now();
+            const maxAge = 5 * 24 * 60 * 60 * 1000;
+            const entries = fs.readdirSync(finalDir);
+            let cleaned = 0;
+            for (const entry of entries) {
+                const filePath = path.join(finalDir, entry);
+                try {
+                    const stat = fs.statSync(filePath);
+                    if (stat.isFile() && now - stat.mtimeMs > maxAge) {
+                        fs.unlinkSync(filePath);
+                        cleaned++;
+                    }
+                } catch (e) { /* skip */ }
+            }
+            if (cleaned > 0) console.log('🧹 Startup cleanup: removed ' + cleaned + ' old final video(s)');
+        }
+    } catch (e) { /* ignore */ }
     
     // Memory monitoring — log every 5 minutes, warn if high
     setInterval(() => {
