@@ -472,6 +472,11 @@ function renderTaskDetail(task) {
     }
 
     content.innerHTML = html;
+
+    // Show course promo once after first assembled video
+    if (task.assemblyVideoUrl && task.status === 'completed') {
+        setTimeout(maybeShowCoursePromo, 1500);
+    }
 }
 
 function closeTaskModal() {
@@ -715,6 +720,25 @@ function timeAgo(dateStr) {
 
 // Load tasks on page load (after auth check)
 setTimeout(loadTasks, 500);
+
+// === Free course promo — shows once after first assembled video ===
+function maybeShowCoursePromo() {
+    if (localStorage.getItem('vh_course_promo_seen')) return;
+    localStorage.setItem('vh_course_promo_seen', '1');
+    var overlay = document.createElement('div');
+    overlay.id = 'course-promo-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;animation:fadeIn 0.3s ease';
+    overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+    overlay.innerHTML = '<div style="background:linear-gradient(145deg,#18181f,#1f1f28);border:1px solid #2a2a36;border-radius:20px;max-width:420px;width:90%;padding:2.25rem 2rem;text-align:center;position:relative;box-shadow:0 20px 60px rgba(0,0,0,0.5);">' +
+        '<button onclick="this.parentElement.parentElement.remove()" style="position:absolute;top:12px;right:14px;background:none;border:none;color:#5c5c6e;font-size:1.2rem;cursor:pointer;">✕</button>' +
+        '<div style="font-size:2.5rem;margin-bottom:0.75rem;">🎉</div>' +
+        '<div style="font-size:1.15rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.5rem;color:#e8e8ed;">Your first video is ready</div>' +
+        '<div style="font-size:0.88rem;color:#8b8b9e;line-height:1.65;margin-bottom:1.5rem;">Now learn how to title, post, and optimize it to actually go viral. Free course — no fluff, just what works.</div>' +
+        '<a href="https://www.skool.com/viewmastery" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:0.5rem;padding:0.7rem 1.5rem;background:#7c6aef;color:white;border-radius:10px;font-weight:700;font-size:0.9rem;text-decoration:none;transition:all 0.15s;font-family:inherit;" onmouseover="this.style.background=\'#6b58e0\';this.style.transform=\'translateY(-1px)\'" onmouseout="this.style.background=\'#7c6aef\';this.style.transform=\'none\'">Join the Free Course →</a>' +
+        '<div style="font-size:0.72rem;color:#5c5c6e;margin-top:0.75rem;">Free community · 100% optional</div>' +
+    '</div>';
+    document.body.appendChild(overlay);
+}
 </script>
 </body>
 </html>
