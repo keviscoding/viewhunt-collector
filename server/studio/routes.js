@@ -1068,7 +1068,7 @@ router.post('/ranking/clip-info', requireAuth, async (req, res) => {
 // Assemble ranking video
 router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req, res) => {
     try {
-        var { clips, title, layout, commentary: enableCommentary, voiceName, colorPalette, checkeredMode } = req.body;
+        var { clips, title, layout, commentary: enableCommentary, voiceName, colorPalette, checkeredMode, subtitleFont, subtitleY } = req.body;
         // clips: [{ filename, number, label, startTime, endTime }]
         // title: { text, highlightWord, highlightColor }
         // commentary: boolean — if true, generate AI commentary voiceovers
@@ -1124,8 +1124,11 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
         var result = await assembler.assemble(clipList, title || {}, {
             layout: layout || {},
             commentary: commentaryData,
+            commentaryLines: enableCommentary ? commentaryResults || [] : [],
             colorPalette: colorPalette || 'yellow',
-            checkeredMode: !!checkeredMode
+            checkeredMode: !!checkeredMode,
+            subtitleFont: subtitleFont || 'Arial',
+            subtitleY: subtitleY != null ? subtitleY : 82
         });
 
         console.log('🏆 Ranking video assembled: ' + result.videoUrl + (commentaryData.length > 0 ? ' (with ' + commentaryData.length + ' commentary lines)' : ''));

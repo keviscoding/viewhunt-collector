@@ -317,6 +317,26 @@
                         <button class="btn btn-green" id="btn-assemble">Assemble Video (2 💎)</button>
                     </div>
                 </div>
+                <!-- Commentary subtitle settings (visible when commentary is on) -->
+                <div id="subtitle-settings" class="pos-controls" style="margin-top:0.5rem;display:none;">
+                    <div class="pos-title">Commentary Subtitles</div>
+                    <div class="pos-row">
+                        <label>Font</label>
+                        <select id="subtitle-font" style="flex:1;background:var(--surface-3);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:0.25rem 0.4rem;font-size:0.78rem;font-family:inherit;">
+                            <option value="Arial">Arial</option>
+                            <option value="Impact">Impact</option>
+                            <option value="Verdana">Verdana</option>
+                            <option value="Georgia">Georgia</option>
+                            <option value="Courier New">Courier New</option>
+                            <option value="Trebuchet MS">Trebuchet MS</option>
+                        </select>
+                    </div>
+                    <div class="pos-row">
+                        <label>Sub Y</label>
+                        <input type="range" id="subtitle-y" min="50" max="95" value="82">
+                        <span class="pos-val" id="subtitle-y-val">82%</span>
+                    </div>
+                </div>
             </div>
             <div class="split-preview">
                 <div class="preview-frame" id="preview-dash"></div>
@@ -340,6 +360,6 @@
         </div>
     </div>
 </div>
-<script src="/studio/ranking-app.js?v=20260226b"></script>
+<script src="/studio/ranking-app.js?v=20260226c"></script>
 </body>
 </html>

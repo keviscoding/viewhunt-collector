@@ -331,11 +331,12 @@
         document.getElementById('title-text').addEventListener('input', function() { renderPreview('preview-dash'); });
         document.getElementById('title-highlight').addEventListener('input', function() { renderPreview('preview-dash'); });
         document.getElementById('btn-back-trim').addEventListener('click', function() { goToStep(2); showTrimClip(clips.length - 1); });
-        // Commentary toggle — update assemble button cost + show/hide voice picker
+        // Commentary toggle — update assemble button cost + show/hide voice picker + subtitle settings
         document.getElementById('commentary-toggle').addEventListener('change', function() {
             var cost = this.checked ? 7 : 2;
             document.getElementById('btn-assemble').textContent = 'Assemble Video (' + cost + ' 💎)';
             document.getElementById('voice-picker').style.display = this.checked ? '' : 'none';
+            document.getElementById('subtitle-settings').style.display = this.checked ? '' : 'none';
         });
         // Color palette
         document.querySelectorAll('.color-swatch').forEach(function(btn) {
@@ -351,6 +352,14 @@
             checkeredMode = this.checked;
             renderPreview('preview-dash');
         });
+        // Subtitle Y position slider
+        var subYEl = document.getElementById('subtitle-y');
+        var subYVal = document.getElementById('subtitle-y-val');
+        if (subYEl) {
+            subYEl.addEventListener('input', function() {
+                subYVal.textContent = subYEl.value + '%';
+            });
+        }
     }
 
     // ==================== POSITION CONTROLS ====================
@@ -489,6 +498,8 @@
             pt.textContent = enableCommentary ? 'Generating AI commentary... this may take a minute' : 'Assembling ranking video...';
 
             var selectedVoice = document.getElementById('voice-picker').value || 'Kore';
+            var selectedFont = document.getElementById('subtitle-font').value || 'Arial';
+            var selectedSubY = parseInt(document.getElementById('subtitle-y').value) || 82;
             var aRes = await apiFetch('/api/studio/ranking/assemble', {
                 method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
                 body: JSON.stringify({
@@ -498,7 +509,9 @@
                     commentary: enableCommentary,
                     voiceName: selectedVoice,
                     colorPalette: colorPalette,
-                    checkeredMode: checkeredMode
+                    checkeredMode: checkeredMode,
+                    subtitleFont: selectedFont,
+                    subtitleY: selectedSubY
                 })
             });
             var aData = await aRes.json(); if (!aData.success) throw new Error(aData.error || 'Assembly failed');
@@ -542,6 +555,10 @@
             document.getElementById('commentary-toggle').checked = false;
             document.getElementById('voice-picker').style.display = 'none';
             document.getElementById('voice-picker').value = 'Kore';
+            document.getElementById('subtitle-settings').style.display = 'none';
+            document.getElementById('subtitle-font').value = 'Arial';
+            document.getElementById('subtitle-y').value = 82;
+            document.getElementById('subtitle-y-val').textContent = '82%';
             // Reset checkered toggle
             document.getElementById('checkered-toggle').checked = false;
             // Reset color swatches

@@ -300,6 +300,12 @@ class RankingAssembler {
         ass += 'Style: NumDoneAlt,Arial,50,' + whiteASS + ',&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
         ass += 'Style: Label,Arial,32,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,7,0,0,0,1\n';
 
+        // Commentary subtitle style — font and Y position from options
+        var subFont = (options && options.subtitleFont) || 'Arial';
+        var subYPct = (options && options.subtitleY != null) ? options.subtitleY : 82;
+        var subY = Math.round((subYPct / 100) * 1920);
+        ass += 'Style: ComSub,' + subFont + ',42,&H00FFFFFF,&H000000FF,&H00000000,&HC0000000,-1,0,0,0,100,100,0,0,1,3,2,2,40,40,' + subY + ',1\n';
+
         ass += '\n[Events]\n';
         ass += 'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n';
 
@@ -358,6 +364,19 @@ class RankingAssembler {
             }
         }
 
+        // Commentary subtitles — show each line during its clip
+        var commentaryLines = (options && options.commentaryLines) || [];
+        for (var cl = 0; cl < commentaryLines.length; cl++) {
+            var cLine = commentaryLines[cl];
+            if (!cLine.line) continue;
+            var cInfo = numberInfo[clips[cLine.clipIndex] && clips[cLine.clipIndex].number];
+            if (!cInfo) continue;
+            var cStart = cInfo.offset;
+            // Show subtitle for 2.5 seconds or clip duration, whichever is shorter
+            var cEnd = Math.min(cInfo.offset + cInfo.duration, cStart + 2.5);
+            ass += 'Dialogue: 4,' + this.assTime(cStart) + ',' + this.assTime(cEnd) + ',ComSub,,0,0,0,,{\\fad(200,200)}' + cLine.line.replace(/\n/g, ' ') + '\n';
+        }
+
         fs.writeFileSync(outputPath, ass);
         console.log('  ASS overlay generated (' + totalClips + ' numbers, ' + totalDuration.toFixed(1) + 's, listX=' + listX + ', titleY=' + titleY + ', titleSize=' + titleFontSize + ')');
     }
@@ -379,6 +398,7 @@ class RankingAssembler {
         await this.ffmpeg([
             '-i', inputPath, '-vf', filterStr,
             '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+            '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
             '-c:a', 'aac', '-b:a', '128k',
             '-f', 'mpegts', '-y', outputPath
         ]);
