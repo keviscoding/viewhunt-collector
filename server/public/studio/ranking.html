@@ -274,7 +274,14 @@
                 </div>
                 <div class="btn-row">
                     <button class="btn btn-secondary" id="btn-back-trim">&larr; Back to Trim</button>
-                    <button class="btn btn-green" id="btn-assemble">Assemble Video (2 credits)</button>
+                    <div style="display:flex;align-items:center;gap:0.75rem;">
+                        <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.82rem;color:var(--text-muted);">
+                            <input type="checkbox" id="commentary-toggle" style="accent-color:var(--accent);width:16px;height:16px;cursor:pointer;">
+                            <span>AI Commentary</span>
+                            <span style="font-size:0.7rem;background:var(--accent-glow);color:var(--accent);padding:0.1rem 0.4rem;border-radius:4px;font-weight:600;">+5 💎</span>
+                        </label>
+                        <button class="btn btn-green" id="btn-assemble">Assemble Video (2 💎)</button>
+                    </div>
                 </div>
             </div>
             <div class="split-preview">
@@ -299,6 +306,6 @@
         </div>
     </div>
 </div>
-<script src="/studio/ranking-app.js?v=20260218j"></script>
+<script src="/studio/ranking-app.js?v=20260226a"></script>
 </body>
 </html>

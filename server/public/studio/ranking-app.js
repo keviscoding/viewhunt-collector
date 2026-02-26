@@ -319,6 +319,11 @@
         document.getElementById('title-text').addEventListener('input', function() { renderPreview('preview-dash'); });
         document.getElementById('title-highlight').addEventListener('input', function() { renderPreview('preview-dash'); });
         document.getElementById('btn-back-trim').addEventListener('click', function() { goToStep(2); showTrimClip(clips.length - 1); });
+        // Commentary toggle — update assemble button cost
+        document.getElementById('commentary-toggle').addEventListener('change', function() {
+            var cost = this.checked ? 7 : 2;
+            document.getElementById('btn-assemble').textContent = 'Assemble Video (' + cost + ' 💎)';
+        });
     }
 
     // ==================== POSITION CONTROLS ====================
@@ -412,6 +417,7 @@
     // ==================== ASSEMBLE ====================
     async function assembleVideo() {
         var btn = document.getElementById('btn-assemble');
+        var enableCommentary = document.getElementById('commentary-toggle').checked;
         btn.disabled = true; btn.textContent = 'Trimming clips...';
         goToStep(4);
         var pf = document.getElementById('progress-fill'), pt = document.getElementById('progress-text');
@@ -422,7 +428,7 @@
             var trimmedClips = [];
             for (var i = 0; i < clips.length; i++) {
                 var clip = clips[i];
-                pf.style.width = Math.round(((i + 1) / clips.length) * 50) + '%';
+                pf.style.width = Math.round(((i + 1) / clips.length) * 30) + '%';
                 pt.textContent = 'Trimming clip ' + (i + 1) + ' of ' + clips.length + '...';
                 var needsTrim = clip.startTime > 0.1 || Math.abs(clip.endTime - clip.originalDuration) > 0.1;
                 var filename = clip.filename;
@@ -436,14 +442,16 @@
                 trimmedClips.push({ filename: filename, number: clips.length - i, label: clip.label || '' });
             }
 
-            pf.style.width = '60%'; pt.textContent = 'Assembling ranking video... keep this tab open';
+            pf.style.width = '40%';
+            pt.textContent = enableCommentary ? 'Generating AI commentary... this may take a minute' : 'Assembling ranking video...';
 
             var aRes = await apiFetch('/api/studio/ranking/assemble', {
                 method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
                 body: JSON.stringify({
                     clips: trimmedClips,
                     title: { text: document.getElementById('title-text').value || '', highlightWord: document.getElementById('title-highlight').value || '' },
-                    layout: { listXPercent: layout.listX, titleYPercent: layout.titleY, titleFontSize: layout.titleSize }
+                    layout: { listXPercent: layout.listX, titleYPercent: layout.titleY, titleFontSize: layout.titleSize },
+                    commentary: enableCommentary
                 })
             });
             var aData = await aRes.json(); if (!aData.success) throw new Error(aData.error || 'Assembly failed');
@@ -452,7 +460,8 @@
             loadCredits();
         } catch (err) {
             pf.style.width = '0%'; pt.textContent = 'Error: ' + err.message;
-            btn.disabled = false; btn.textContent = 'Assemble Video (2 credits)'; loadCredits();
+            var cost = enableCommentary ? 7 : 2;
+            btn.disabled = false; btn.textContent = 'Assemble Video (' + cost + ' 💎)'; loadCredits();
         }
     }
 

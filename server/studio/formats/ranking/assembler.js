@@ -68,14 +68,15 @@ class RankingAssembler {
      * Assemble ranking video.
      * clips: [{ path, number, label }] in playback order (highest number first, #1 last)
      * title: { text, highlightWord }
-     * options: { layout: { listXPercent, titleYPercent, titleFontSize } }
+     * options: { layout: { listXPercent, titleYPercent, titleFontSize }, commentary: [{ clipIndex, audioPath }] }
      */
     async assemble(clips, title, options) {
         var jobId = 'ranking-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
         var jobDir = path.join(this.tempDir, jobId);
         fs.mkdirSync(jobDir, { recursive: true });
 
-        console.log('\n🏆 Ranking assembly: ' + clips.length + ' clips');
+        var commentary = (options && options.commentary) || [];
+        console.log('\n🏆 Ranking assembly: ' + clips.length + ' clips' + (commentary.length > 0 ? ' + ' + commentary.filter(function(c) { return c.audioPath; }).length + ' commentary lines' : ''));
 
         try {
             // Step 1: Normalize each clip
@@ -90,6 +91,12 @@ class RankingAssembler {
                 console.log('  ✓ Clip ' + (i + 1) + '/' + clips.length + ' (' + dur.toFixed(1) + 's)');
             }
 
+            // Calculate time offsets for each clip
+            var offsets = [0];
+            for (var i = 0; i < durations.length - 1; i++) {
+                offsets.push(offsets[i] + durations[i]);
+            }
+
             // Step 2: Hard-cut concat
             var concatList = path.join(jobDir, 'concat.txt');
             fs.writeFileSync(concatList, normalizedPaths.map(function(p) { return "file '" + p + "'"; }).join('\n'));
@@ -101,16 +108,31 @@ class RankingAssembler {
             this.generateASS(assPath, clips, durations, title, options);
 
             // Step 4: Burn subtitles
-            var outputName = 'ranking-' + Date.now() + '.mp4';
-            var finalPath = path.join(this.outputDir, outputName);
+            var subtitledPath = path.join(jobDir, 'subtitled.mp4');
             var escapedAss = assPath.replace(/\\/g, '/').replace(/:/g, '\\:');
 
             await this.ffmpeg([
                 '-i', concatPath,
                 '-vf', 'ass=' + escapedAss,
                 '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
-                '-c:a', 'copy', '-y', finalPath
+                '-c:a', 'copy', '-y', subtitledPath
             ]);
+
+            // Step 5: Mix commentary audio (if any)
+            var outputName = 'ranking-' + Date.now() + '.mp4';
+            var finalPath = path.join(this.outputDir, outputName);
+
+            var commentaryWithAudio = commentary.filter(function(c) {
+                return c.audioPath && fs.existsSync(c.audioPath);
+            });
+
+            if (commentaryWithAudio.length > 0) {
+                console.log('  🎙️ Mixing ' + commentaryWithAudio.length + ' commentary audio tracks...');
+                await this._mixCommentaryAudio(subtitledPath, commentaryWithAudio, offsets, durations, finalPath, jobDir);
+            } else {
+                // No commentary — just copy subtitled as final
+                fs.copyFileSync(subtitledPath, finalPath);
+            }
 
             var duration = await this.getDuration(finalPath);
             console.log('🏆 Ranking video complete: ' + duration.toFixed(1) + 's');
@@ -124,6 +146,60 @@ class RankingAssembler {
             try { if (fs.existsSync(jobDir)) fs.rmSync(jobDir, { recursive: true, force: true }); }
             catch (e) { console.warn('Cleanup:', e.message); }
         }
+    }
+
+    /**
+     * Mix commentary audio tracks into the video at the correct timestamps.
+     * Each commentary line plays at the start of its corresponding clip.
+     * Commentary is mixed on top of existing audio (lowered volume during commentary).
+     */
+    async _mixCommentaryAudio(videoPath, commentary, offsets, durations, outputPath, jobDir) {
+        // Build FFmpeg filter to overlay commentary at correct timestamps
+        // Strategy: create a single commentary track with all lines placed at their timestamps,
+        // then mix it with the original audio
+
+        var totalDuration = offsets[offsets.length - 1] + durations[durations.length - 1];
+
+        // Build individual delayed commentary tracks and amerge them
+        var inputs = ['-i', videoPath];
+        var filterParts = [];
+        var commentaryLabels = [];
+
+        for (var i = 0; i < commentary.length; i++) {
+            var c = commentary[i];
+            var startMs = Math.round((offsets[c.clipIndex] || 0) * 1000);
+            inputs.push('-i', c.audioPath);
+            // Delay each commentary to its clip start time, pad to total duration
+            filterParts.push('[' + (i + 1) + ':a]adelay=' + startMs + '|' + startMs + ',apad=whole_dur=' + totalDuration.toFixed(2) + '[c' + i + ']');
+            commentaryLabels.push('[c' + i + ']');
+        }
+
+        // Mix all commentary tracks into one
+        var commentaryMix;
+        if (commentaryLabels.length === 1) {
+            commentaryMix = commentaryLabels[0].replace('[', '').replace(']', '');
+            // Rename for consistency
+            filterParts[filterParts.length - 1] = filterParts[filterParts.length - 1].replace('[c0]', '[cmix]');
+            commentaryMix = 'cmix';
+        } else {
+            filterParts.push(commentaryLabels.join('') + 'amix=inputs=' + commentaryLabels.length + ':duration=longest[cmix]');
+            commentaryMix = 'cmix';
+        }
+
+        // Mix original audio with commentary (duck original slightly during commentary)
+        filterParts.push('[0:a]volume=0.6[orig]');
+        filterParts.push('[orig][' + commentaryMix + ']amix=inputs=2:duration=first:dropout_transition=0[aout]');
+
+        var filterComplex = filterParts.join(';');
+
+        var args = inputs.concat([
+            '-filter_complex', filterComplex,
+            '-map', '0:v', '-map', '[aout]',
+            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+            '-shortest', '-y', outputPath
+        ]);
+
+        await this.ffmpeg(args);
     }
 
     /**

@@ -1068,17 +1068,19 @@ router.post('/ranking/clip-info', requireAuth, async (req, res) => {
 // Assemble ranking video
 router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req, res) => {
     try {
-        var { clips, title, layout } = req.body;
+        var { clips, title, layout, commentary: enableCommentary } = req.body;
         // clips: [{ filename, number, label, startTime, endTime }]
         // title: { text, highlightWord, highlightColor }
+        // commentary: boolean — if true, generate AI commentary voiceovers
 
         if (!clips || !Array.isArray(clips) || clips.length === 0) {
             return res.status(400).json({ error: 'At least one clip is required' });
         }
 
-        // Credit check
+        // Credit check — ranking_assembly = 2 credits, commentary adds script_generation cost
         var userId = String(req.user.userId);
-        var check = await credits.checkCredits(userId, 'ranking_assembly', 1);
+        var creditType = enableCommentary ? 'ranking_assembly' : 'ranking_assembly';
+        var check = await credits.checkCredits(userId, creditType, 1);
         if (!check.allowed) {
             return res.status(402).json({ error: 'Not enough credits', ...check });
         }
@@ -1099,10 +1101,33 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             };
         });
 
-        var result = await assembler.assemble(clipList, title || {}, { layout: layout || {} });
+        // Generate AI commentary if enabled
+        var commentaryData = [];
+        if (enableCommentary && title && title.text) {
+            try {
+                console.log('🎙️ Generating AI commentary for ranking video...');
+                var RankingCommentary = require('./formats/ranking/commentary');
+                var commentaryGen = new RankingCommentary();
+                var commentaryResults = await commentaryGen.generateCommentary(clipList, title.text);
+                commentaryData = commentaryResults.filter(function(c) { return c.audioPath; });
 
-        console.log('🏆 Ranking video assembled: ' + result.videoUrl);
-        res.json({ success: true, ...result });
+                // Charge for commentary (script_generation cost)
+                if (commentaryData.length > 0) {
+                    await credits.deductCredits(userId, 'script_generation', 1, 'Ranking AI commentary');
+                }
+            } catch (commentaryErr) {
+                console.warn('Commentary generation failed, assembling without:', commentaryErr.message);
+                // Don't fail the whole assembly — just skip commentary
+            }
+        }
+
+        var result = await assembler.assemble(clipList, title || {}, {
+            layout: layout || {},
+            commentary: commentaryData
+        });
+
+        console.log('🏆 Ranking video assembled: ' + result.videoUrl + (commentaryData.length > 0 ? ' (with ' + commentaryData.length + ' commentary lines)' : ''));
+        res.json({ success: true, ...result, hasCommentary: commentaryData.length > 0 });
 
     } catch (error) {
         console.error('Ranking assembly error:', error.message);
