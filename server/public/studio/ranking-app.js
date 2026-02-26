@@ -14,6 +14,8 @@
 
     // Layout settings (sent to assembler)
     var layout = { listX: 5, titleY: 6, titleSize: 48 };
+    var colorPalette = 'yellow';
+    var checkeredMode = false;
 
     function getToken() { return localStorage.getItem('viewhunt_token') || localStorage.getItem('token') || null; }
     function authHeaders() { return { 'Authorization': 'Bearer ' + getToken() }; }
@@ -220,6 +222,11 @@
         document.getElementById('trim-start-display').textContent = clip.startTime.toFixed(1) + 's';
         document.getElementById('trim-end-display').textContent = clip.endTime.toFixed(1) + 's';
         document.getElementById('trim-duration-badge').textContent = Math.max(0, clip.endTime - clip.startTime).toFixed(1) + 's selected';
+        // Update total duration across all clips
+        var total = 0;
+        clips.forEach(function(c) { total += Math.max(0, (c.endTime || c.duration) - (c.startTime || 0)); });
+        var el = document.getElementById('trim-total-duration');
+        if (el) el.textContent = total.toFixed(1) + 's';
     }
 
     function updatePlayhead() { var v = document.getElementById('trim-video'); document.getElementById('timeline-playhead').style.left = 'calc(' + timeToPercent(v.currentTime) + '% - 1.5px)'; }
@@ -262,6 +269,11 @@
             else { goToStep(3); renderOrderList(); renderPreview('preview-dash'); }
         });
         document.getElementById('trim-label').addEventListener('input', function() { saveTrimState(); renderPreview('preview-trim'); });
+        document.getElementById('btn-trim-back-upload').addEventListener('click', function() {
+            saveTrimState();
+            var v = document.getElementById('trim-video'); v.pause(); v.src = '';
+            goToStep(1); renderClipList(); updateNextButton();
+        });
     }
 
     // ==================== DASHBOARD ====================
@@ -319,10 +331,25 @@
         document.getElementById('title-text').addEventListener('input', function() { renderPreview('preview-dash'); });
         document.getElementById('title-highlight').addEventListener('input', function() { renderPreview('preview-dash'); });
         document.getElementById('btn-back-trim').addEventListener('click', function() { goToStep(2); showTrimClip(clips.length - 1); });
-        // Commentary toggle — update assemble button cost
+        // Commentary toggle — update assemble button cost + show/hide voice picker
         document.getElementById('commentary-toggle').addEventListener('change', function() {
             var cost = this.checked ? 7 : 2;
             document.getElementById('btn-assemble').textContent = 'Assemble Video (' + cost + ' 💎)';
+            document.getElementById('voice-picker').style.display = this.checked ? '' : 'none';
+        });
+        // Color palette
+        document.querySelectorAll('.color-swatch').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.color-swatch').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                colorPalette = btn.dataset.color;
+                renderPreview('preview-dash');
+            });
+        });
+        // Checkered mode
+        document.getElementById('checkered-toggle').addEventListener('change', function() {
+            checkeredMode = this.checked;
+            renderPreview('preview-dash');
         });
     }
 
@@ -353,6 +380,18 @@
         var hlWord = (document.getElementById('title-highlight') || {}).value || '';
         var totalClips = clips.filter(function(c) { return !c.uploading; }).length;
 
+        // Color map for palettes
+        var colorMap = {
+            yellow: { active: '#facc15', done: '#ccaa00', hl: '#facc15' },
+            cyan: { active: '#22d3ee', done: '#0e9ab5', hl: '#22d3ee' },
+            green: { active: '#34d399', done: '#1a9a6e', hl: '#34d399' },
+            red: { active: '#f87171', done: '#c44040', hl: '#f87171' },
+            pink: { active: '#f472b6', done: '#c44a8a', hl: '#f472b6' },
+            orange: { active: '#fb923c', done: '#c86a20', hl: '#fb923c' },
+            white: { active: '#ffffff', done: '#cccccc', hl: '#ffffff' }
+        };
+        var colors = colorMap[colorPalette] || colorMap.yellow;
+
         if (totalClips < 1) {
             el.innerHTML = '<div class="pv-bg"></div><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#555;font-size:0.65rem;text-align:center;padding:1rem">Upload clips to see preview</div>';
             return;
@@ -362,45 +401,49 @@
 
         // Title — position and size from layout
         var titleYPct = layout.titleY;
-        var titleFontRem = (layout.titleSize / 48) * 0.7; // scale relative to default
+        var titleFontRem = (layout.titleSize / 48) * 0.7;
         if (titleText) {
             var titleHtml = escapeHtml(titleText);
             if (hlWord) {
                 var re = new RegExp('(' + escapeRegex(hlWord) + ')', 'i');
-                titleHtml = titleHtml.replace(re, '<span class="pv-hl">$1</span>');
+                titleHtml = titleHtml.replace(re, '<span style="color:' + colors.hl + '">$1</span>');
             }
             html += '<div class="pv-title" style="top:' + titleYPct + '%"><div class="pv-title-text" style="font-size:' + titleFontRem.toFixed(2) + 'rem">' + titleHtml + '</div></div>';
         }
 
-        // Number list — #1 at top, ascending down
-        // clips[0] plays first (gets highest number), clips[last] plays last (gets #1)
-        // On screen: #1 at top row, #2 below, etc.
-        // So we need to map: screen row 0 = #1 (which is clips[clips.length-1])
         var listXPct = layout.listX;
         html += '<div class="pv-list" style="left:' + listXPct + '%">';
 
         for (var row = 0; row < totalClips; row++) {
-            var num = row + 1; // #1 at top, #2 next, etc.
-            // Find which clip index has this number
-            // number = clips.length - clipIndex, so clipIndex = clips.length - num
+            var num = row + 1;
             var clipIdx = totalClips - num;
             var clip = clips[clipIdx];
             var label = (clip && clip.label) || '';
 
             var numClass = 'dim';
             var labelClass = 'dim';
+            var numColor = '';
 
             if (isTrim) {
-                // clipIdx < currentTrimIndex means this clip already played → done
-                // clipIdx === currentTrimIndex → active
-                // clipIdx > currentTrimIndex → not yet
                 if (clipIdx < currentTrimIndex) { numClass = 'done'; labelClass = ''; }
                 else if (clipIdx === currentTrimIndex) { numClass = 'active'; labelClass = ''; }
             } else {
                 numClass = 'done'; labelClass = '';
             }
 
-            html += '<div class="pv-row"><div class="pv-num ' + numClass + '">' + num + '.</div><div class="pv-label ' + labelClass + '">' + escapeHtml(label) + '</div></div>';
+            // Apply color palette
+            if (numClass === 'active') {
+                numColor = 'color:' + colors.active + ';';
+            } else if (numClass === 'done') {
+                // Checkered mode: alternate between palette color and white
+                if (checkeredMode) {
+                    numColor = (row % 2 === 0) ? 'color:' + colors.done + ';' : 'color:#ffffff;';
+                } else {
+                    numColor = 'color:' + colors.done + ';';
+                }
+            }
+
+            html += '<div class="pv-row"><div class="pv-num ' + numClass + '" style="' + numColor + '">' + num + '.</div><div class="pv-label ' + labelClass + '">' + escapeHtml(label) + '</div></div>';
         }
         html += '</div>';
 
@@ -445,13 +488,17 @@
             pf.style.width = '40%';
             pt.textContent = enableCommentary ? 'Generating AI commentary... this may take a minute' : 'Assembling ranking video...';
 
+            var selectedVoice = document.getElementById('voice-picker').value || 'Kore';
             var aRes = await apiFetch('/api/studio/ranking/assemble', {
                 method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
                 body: JSON.stringify({
                     clips: trimmedClips,
                     title: { text: document.getElementById('title-text').value || '', highlightWord: document.getElementById('title-highlight').value || '' },
                     layout: { listXPercent: layout.listX, titleYPercent: layout.titleY, titleFontSize: layout.titleSize },
-                    commentary: enableCommentary
+                    commentary: enableCommentary,
+                    voiceName: selectedVoice,
+                    colorPalette: colorPalette,
+                    checkeredMode: checkeredMode
                 })
             });
             var aData = await aRes.json(); if (!aData.success) throw new Error(aData.error || 'Assembly failed');
@@ -468,7 +515,7 @@
     function showResult(data) {
         document.getElementById('assembly-progress').classList.add('hidden');
         var v = document.getElementById('result-video'); v.src = data.videoUrl; v.classList.remove('hidden'); v.load();
-        document.getElementById('result-info').textContent = data.clipCount + ' clips, ' + data.duration.toFixed(1) + 's, 2 credits';
+        document.getElementById('result-info').textContent = data.clipCount + ' clips, ' + data.duration.toFixed(1) + 's' + (data.hasCommentary ? ' (with commentary)' : '');
         document.getElementById('result-info').classList.remove('hidden');
         document.getElementById('result-actions').classList.remove('hidden');
         document.getElementById('btn-download').href = data.videoUrl;
@@ -485,11 +532,22 @@
         document.getElementById('btn-assemble').addEventListener('click', assembleVideo);
         document.getElementById('btn-new').addEventListener('click', function() {
             clips = []; currentTrimIndex = 0; layout = { listX: 5, titleY: 6, titleSize: 48 };
+            colorPalette = 'yellow'; checkeredMode = false;
             renderClipList(); updateNextButton();
             document.getElementById('title-text').value = ''; document.getElementById('title-highlight').value = '';
             document.getElementById('result-video').classList.add('hidden'); document.getElementById('result-info').classList.add('hidden');
             document.getElementById('result-actions').classList.add('hidden');
-            document.getElementById('btn-assemble').disabled = false; document.getElementById('btn-assemble').textContent = 'Assemble Video (2 credits)';
+            document.getElementById('btn-assemble').disabled = false; document.getElementById('btn-assemble').textContent = 'Assemble Video (2 💎)';
+            // Reset commentary toggle + voice picker
+            document.getElementById('commentary-toggle').checked = false;
+            document.getElementById('voice-picker').style.display = 'none';
+            document.getElementById('voice-picker').value = 'Kore';
+            // Reset checkered toggle
+            document.getElementById('checkered-toggle').checked = false;
+            // Reset color swatches
+            document.querySelectorAll('.color-swatch').forEach(function(b) { b.classList.remove('active'); });
+            var defSwatch = document.querySelector('.color-swatch[data-color="yellow"]');
+            if (defSwatch) defSwatch.classList.add('active');
             // Reset sliders
             ['pos-list-x','pos-title-y','pos-title-size'].forEach(function(id) { var el = document.getElementById(id); if (el) el.dispatchEvent(new Event('input')); });
             goToStep(1);

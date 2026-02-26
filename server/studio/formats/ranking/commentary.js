@@ -26,8 +26,9 @@ class RankingCommentary {
      * @param {string} rankingTitle - The ranking title (e.g. "Ranking the Funniest Trampoline Moments")
      * @returns {Array} Array of { clipIndex, line, audioPath } — audioPath is the TTS wav file
      */
-    async generateCommentary(clips, rankingTitle) {
-        console.log(`🎙️ Ranking commentary: generating for ${clips.length} clips, title: "${rankingTitle}"`);
+    async generateCommentary(clips, rankingTitle, voiceName) {
+        console.log(`🎙️ Ranking commentary: generating for ${clips.length} clips, title: "${rankingTitle}", voice: ${voiceName || 'Kore'}`);
+        this.voiceName = voiceName || 'Kore';
 
         // Step 1: Generate intro line for clip 1
         const introLine = await this._generateIntroLine(rankingTitle);
@@ -161,7 +162,7 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
                 responseModalities: ['AUDIO'],
                 speechConfig: {
                     voiceConfig: {
-                        prebuiltVoiceConfig: { voiceName: 'Kore' }
+                        prebuiltVoiceConfig: { voiceName: this.voiceName || 'Kore' }
                     }
                 }
             }

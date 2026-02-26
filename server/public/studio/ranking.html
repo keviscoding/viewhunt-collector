@@ -138,6 +138,9 @@
         .pos-row .pos-val{font-size:0.7rem;color:var(--text-muted);min-width:28px;text-align:right;font-variant-numeric:tabular-nums}
 
         .hidden{display:none!important}
+        .color-swatch{width:28px;height:28px;border-radius:50%;border:2px solid var(--border);cursor:pointer;transition:all 0.15s;padding:0}
+        .color-swatch:hover{transform:scale(1.15)}
+        .color-swatch.active{border-color:var(--text);box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--text)}
         @media(max-width:740px){
             .app{padding:1rem 0.75rem 3rem}
             .timeline-track{height:40px}
@@ -211,15 +214,21 @@
                         <span style="color:var(--text-dim)">In:</span> <span class="time-val" id="trim-start-display">0.0s</span>
                         <span style="color:var(--text-dim);margin-left:0.5rem">Out:</span> <span class="time-val" id="trim-end-display">0.0s</span>
                     </div>
-                    <div class="duration-badge" id="trim-duration-badge">0.0s selected</div>
+                    <div style="display:flex;align-items:center;gap:0.75rem;">
+                        <div class="duration-badge" id="trim-duration-badge">0.0s selected</div>
+                        <div style="font-size:0.78rem;color:var(--text-dim);">Total: <span id="trim-total-duration" style="color:var(--text);font-weight:600;">0.0s</span></div>
+                    </div>
                 </div>
                 <div style="margin-top:0.75rem">
                     <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:0.35rem">Clip label (shown next to number):</label>
                     <input type="text" class="label-input" id="trim-label" placeholder="e.g. Baby vs Dog" maxlength="40">
                 </div>
                 <div class="btn-row">
-                    <button class="btn btn-secondary" id="btn-trim-prev">&larr; Previous</button>
-                    <button class="btn btn-primary" id="btn-trim-next">Next Clip &rarr;</button>
+                    <button class="btn btn-secondary" id="btn-trim-back-upload">&larr; Back to Upload</button>
+                    <div style="display:flex;gap:0.75rem;">
+                        <button class="btn btn-secondary" id="btn-trim-prev">&larr; Previous</button>
+                        <button class="btn btn-primary" id="btn-trim-next">Next Clip &rarr;</button>
+                    </div>
                 </div>
             </div>
             <div class="split-preview">
@@ -266,20 +275,45 @@
                     </div>
                 </div>
 
+                <!-- Color & Style -->
+                <div class="pos-controls" style="margin-top:0.5rem;">
+                    <div class="pos-title">Color &amp; Style</div>
+                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem;">
+                        <button class="color-swatch active" data-color="yellow" style="background:#facc15;" title="Yellow"></button>
+                        <button class="color-swatch" data-color="cyan" style="background:#22d3ee;" title="Cyan"></button>
+                        <button class="color-swatch" data-color="green" style="background:#34d399;" title="Green"></button>
+                        <button class="color-swatch" data-color="red" style="background:#f87171;" title="Red"></button>
+                        <button class="color-swatch" data-color="pink" style="background:#f472b6;" title="Pink"></button>
+                        <button class="color-swatch" data-color="orange" style="background:#fb923c;" title="Orange"></button>
+                        <button class="color-swatch" data-color="white" style="background:#ffffff;" title="White"></button>
+                    </div>
+                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.78rem;color:var(--text-muted);">
+                        <input type="checkbox" id="checkered-toggle" style="accent-color:var(--accent);width:14px;height:14px;cursor:pointer;">
+                        Checkered mode <span style="font-size:0.7rem;color:var(--text-dim);">(alternating colors)</span>
+                    </label>
+                </div>
+
                 <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin:0.75rem 0 0.5rem">Clips (drag to reorder):</label>
                 <div class="clip-list" id="order-list"></div>
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.75rem;font-size:0.8rem;color:var(--text-dim)">
                     <span>Total: <span id="total-duration" style="color:var(--text);font-weight:600">0.0s</span></span>
                     <span><span id="total-clips" style="color:var(--text);font-weight:600">0</span> clips</span>
                 </div>
-                <div class="btn-row">
+                <div class="btn-row" style="flex-wrap:wrap;">
                     <button class="btn btn-secondary" id="btn-back-trim">&larr; Back to Trim</button>
-                    <div style="display:flex;align-items:center;gap:0.75rem;">
+                    <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
                         <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.82rem;color:var(--text-muted);">
                             <input type="checkbox" id="commentary-toggle" style="accent-color:var(--accent);width:16px;height:16px;cursor:pointer;">
                             <span>AI Commentary</span>
                             <span style="font-size:0.7rem;background:var(--accent-glow);color:var(--accent);padding:0.1rem 0.4rem;border-radius:4px;font-weight:600;">+5 💎</span>
                         </label>
+                        <select id="voice-picker" style="background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:0.3rem 0.5rem;font-size:0.78rem;font-family:inherit;display:none;">
+                            <option value="Kore">Kore (upbeat)</option>
+                            <option value="Charon">Charon (deep)</option>
+                            <option value="Puck">Puck (energetic)</option>
+                            <option value="Fenrir">Fenrir (bold)</option>
+                            <option value="Aoede">Aoede (warm)</option>
+                        </select>
                         <button class="btn btn-green" id="btn-assemble">Assemble Video (2 💎)</button>
                     </div>
                 </div>
@@ -306,6 +340,6 @@
         </div>
     </div>
 </div>
-<script src="/studio/ranking-app.js?v=20260226a"></script>
+<script src="/studio/ranking-app.js?v=20260226b"></script>
 </body>
 </html>

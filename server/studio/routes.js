@@ -1068,7 +1068,7 @@ router.post('/ranking/clip-info', requireAuth, async (req, res) => {
 // Assemble ranking video
 router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req, res) => {
     try {
-        var { clips, title, layout, commentary: enableCommentary } = req.body;
+        var { clips, title, layout, commentary: enableCommentary, voiceName, colorPalette, checkeredMode } = req.body;
         // clips: [{ filename, number, label, startTime, endTime }]
         // title: { text, highlightWord, highlightColor }
         // commentary: boolean — if true, generate AI commentary voiceovers
@@ -1108,7 +1108,7 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                 console.log('🎙️ Generating AI commentary for ranking video...');
                 var RankingCommentary = require('./formats/ranking/commentary');
                 var commentaryGen = new RankingCommentary();
-                var commentaryResults = await commentaryGen.generateCommentary(clipList, title.text);
+                var commentaryResults = await commentaryGen.generateCommentary(clipList, title.text, voiceName || 'Kore');
                 commentaryData = commentaryResults.filter(function(c) { return c.audioPath; });
 
                 // Charge for commentary (script_generation cost)
@@ -1123,7 +1123,9 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
 
         var result = await assembler.assemble(clipList, title || {}, {
             layout: layout || {},
-            commentary: commentaryData
+            commentary: commentaryData,
+            colorPalette: colorPalette || 'yellow',
+            checkeredMode: !!checkeredMode
         });
 
         console.log('🏆 Ranking video assembled: ' + result.videoUrl + (commentaryData.length > 0 ? ' (with ' + commentaryData.length + ' commentary lines)' : ''));

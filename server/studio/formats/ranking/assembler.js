@@ -156,7 +156,7 @@ class RankingAssembler {
     async _mixCommentaryAudio(videoPath, commentary, offsets, durations, outputPath, jobDir) {
         // Build FFmpeg filter to overlay commentary at correct timestamps
         // Strategy: create a single commentary track with all lines placed at their timestamps,
-        // then mix it with the original audio
+        // then mix it with the original audio using smooth ducking via sidechaincompress
 
         var totalDuration = offsets[offsets.length - 1] + durations[durations.length - 1];
 
@@ -169,8 +169,8 @@ class RankingAssembler {
             var c = commentary[i];
             var startMs = Math.round((offsets[c.clipIndex] || 0) * 1000);
             inputs.push('-i', c.audioPath);
-            // Delay each commentary to its clip start time, pad to total duration
-            filterParts.push('[' + (i + 1) + ':a]adelay=' + startMs + '|' + startMs + ',apad=whole_dur=' + totalDuration.toFixed(2) + '[c' + i + ']');
+            // Normalize commentary volume (loudnorm) then delay to clip start
+            filterParts.push('[' + (i + 1) + ':a]loudnorm=I=-14:TP=-1:LRA=7,adelay=' + startMs + '|' + startMs + ',apad=whole_dur=' + totalDuration.toFixed(2) + '[c' + i + ']');
             commentaryLabels.push('[c' + i + ']');
         }
 
@@ -178,7 +178,6 @@ class RankingAssembler {
         var commentaryMix;
         if (commentaryLabels.length === 1) {
             commentaryMix = commentaryLabels[0].replace('[', '').replace(']', '');
-            // Rename for consistency
             filterParts[filterParts.length - 1] = filterParts[filterParts.length - 1].replace('[c0]', '[cmix]');
             commentaryMix = 'cmix';
         } else {
@@ -186,9 +185,10 @@ class RankingAssembler {
             commentaryMix = 'cmix';
         }
 
-        // Mix original audio with commentary (duck original slightly during commentary)
-        filterParts.push('[0:a]volume=0.6[orig]');
-        filterParts.push('[orig][' + commentaryMix + ']amix=inputs=2:duration=first:dropout_transition=0[aout]');
+        // Smooth ducking: use sidechaincompress so original audio ducks when commentary plays
+        // This gives a smooth fade-down/fade-up instead of a hard volume cut
+        filterParts.push('[0:a][' + commentaryMix + ']sidechaincompress=threshold=0.01:ratio=6:attack=80:release=400:level_sc=1[ducked]');
+        filterParts.push('[ducked][' + commentaryMix + ']amix=inputs=2:duration=first:dropout_transition=0[aout]');
 
         var filterComplex = filterParts.join(';');
 
@@ -199,7 +199,23 @@ class RankingAssembler {
             '-shortest', '-y', outputPath
         ]);
 
-        await this.ffmpeg(args);
+        try {
+            await this.ffmpeg(args);
+        } catch (err) {
+            // Fallback: if sidechaincompress not available, use simple volume ducking
+            console.warn('sidechaincompress failed, falling back to volume ducking:', err.message);
+            filterParts.pop(); filterParts.pop();
+            filterParts.push('[0:a]volume=0.55[orig]');
+            filterParts.push('[orig][' + commentaryMix + ']amix=inputs=2:duration=first:dropout_transition=0[aout]');
+            var fallbackFilter = filterParts.join(';');
+            var fallbackArgs = inputs.concat([
+                '-filter_complex', fallbackFilter,
+                '-map', '0:v', '-map', '[aout]',
+                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+                '-shortest', '-y', outputPath
+            ]);
+            await this.ffmpeg(fallbackArgs);
+        }
     }
 
     /**
@@ -219,6 +235,21 @@ class RankingAssembler {
         var listXPct = lo.listXPercent || 5;
         var titleYPct = lo.titleYPercent || 6;
         var titleFontSize = lo.titleFontSize || 48;
+        var palette = (options && options.colorPalette) || 'yellow';
+        var checkered = !!(options && options.checkeredMode);
+
+        // ASS color format: &H00BBGGRR (BGR, not RGB)
+        var colorMap = {
+            yellow:  { active: '&H0015CCFA', done: '&H0000AACC', hl: '&H0015CCFA' },
+            cyan:    { active: '&H00EED322', done: '&H00B59A0E', hl: '&H00EED322' },
+            green:   { active: '&H0099D334', done: '&H006E9A1A', hl: '&H0099D334' },
+            red:     { active: '&H007171F8', done: '&H004040C4', hl: '&H007171F8' },
+            pink:    { active: '&H00B672F4', done: '&H008A4AC4', hl: '&H00B672F4' },
+            orange:  { active: '&H003C92FB', done: '&H00206AC8', hl: '&H003C92FB' },
+            white:   { active: '&H00FFFFFF', done: '&H00CCCCCC', hl: '&H00FFFFFF' }
+        };
+        var colors = colorMap[palette] || colorMap.yellow;
+        var whiteASS = '&H00FFFFFF';
 
         // Convert percentages to pixel positions (1080x1920)
         var listX = Math.round((listXPct / 100) * 1080);
@@ -261,10 +292,12 @@ class RankingAssembler {
         // Title style — uses custom font size and Y position via MarginV
         ass += 'Style: Title,Arial,' + titleFontSize + ',&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,8,20,20,' + titleY + ',1\n';
 
-        // Number styles
+        // Number styles — use palette colors
         ass += 'Style: NumDim,Arial,50,&H00888888,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
-        ass += 'Style: NumActive,Arial,56,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,7,0,0,0,1\n';
-        ass += 'Style: NumDone,Arial,50,&H0000CCFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
+        ass += 'Style: NumActive,Arial,56,' + colors.active + ',&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,7,0,0,0,1\n';
+        ass += 'Style: NumDone,Arial,50,' + colors.done + ',&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
+        // Checkered alternate style (white or palette color depending on row)
+        ass += 'Style: NumDoneAlt,Arial,50,' + whiteASS + ',&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
         ass += 'Style: Label,Arial,32,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,7,0,0,0,1\n';
 
         ass += '\n[Events]\n';
@@ -281,7 +314,7 @@ class RankingAssembler {
                 var before = titleText.substring(0, idx);
                 var hl = titleText.substring(idx, idx + title.highlightWord.length);
                 var after = titleText.substring(idx + title.highlightWord.length);
-                titleText = before + '{\\c&H00FFFF&}' + hl + '{\\c&HFFFFFF&}' + after;
+                titleText = before + '{\\c' + colors.hl + '}' + hl + '{\\c&HFFFFFF&}' + after;
             }
             ass += 'Dialogue: 2,' + t0 + ',' + tEnd + ',Title,,0,0,0,,' + titleText + '\n';
         }
@@ -313,9 +346,12 @@ class RankingAssembler {
                 ass += 'Dialogue: 3,' + this.assTime(clipStart) + ',' + this.assTime(clipEnd) + ',Label,,0,0,0,,{\\pos(' + labelX + ',' + y + ')\\fad(300,0)}' + info.label + '\n';
             }
 
-            // Phase 3: After clip plays — stays revealed
+            // Phase 3: After clip plays — stays revealed (checkered: alternate style)
             if (clipEnd < totalDuration - 0.1) {
-                ass += 'Dialogue: 1,' + this.assTime(clipEnd) + ',' + tEnd + ',NumDone,,0,0,0,,{\\pos(' + listX + ',' + y + ')}' + num + '.\n';
+                // Determine row index for checkered mode
+                var rowIdx = sortedNumbers.indexOf(num);
+                var doneStyle = (checkered && rowIdx % 2 === 1) ? 'NumDoneAlt' : 'NumDone';
+                ass += 'Dialogue: 1,' + this.assTime(clipEnd) + ',' + tEnd + ',' + doneStyle + ',,0,0,0,,{\\pos(' + listX + ',' + y + ')}' + num + '.\n';
                 if (info.label) {
                     ass += 'Dialogue: 1,' + this.assTime(clipEnd) + ',' + tEnd + ',Label,,0,0,0,,{\\pos(' + labelX + ',' + y + ')}' + info.label + '\n';
                 }
