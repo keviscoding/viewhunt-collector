@@ -983,10 +983,11 @@ function showAdminModelToggle() {
     var container = document.getElementById('admin-model-toggle');
     if (!container) return;
     container.style.display = 'block';
-    container.innerHTML = '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px">' +
+    container.innerHTML = '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;flex-wrap:wrap">' +
         '<span style="font-size:0.8rem;color:var(--text-muted)">Video Model:</span>' +
         '<button id="model-wan-btn" class="btn btn-sm" onclick="setVideoModel(\'wan\')" style="font-size:0.75rem;padding:0.3rem 0.7rem">Wan Flash · $0.02</button>' +
         '<button id="model-kling-btn" class="btn btn-sm" onclick="setVideoModel(\'kling\')" style="font-size:0.75rem;padding:0.3rem 0.7rem">Kling 2.6 · $0.40</button>' +
+        '<button id="model-sora2-btn" class="btn btn-sm" onclick="setVideoModel(\'sora2\')" style="font-size:0.75rem;padding:0.3rem 0.7rem">Sora 2 · $0.15</button>' +
         '<span style="font-size:0.7rem;color:var(--text-dim)">(admin only)</span>' +
         '</div>';
     updateModelButtons();
@@ -1000,11 +1001,16 @@ function setVideoModel(model) {
 function updateModelButtons() {
     var wan = document.getElementById('model-wan-btn');
     var kling = document.getElementById('model-kling-btn');
+    var sora2 = document.getElementById('model-sora2-btn');
     if (!wan || !kling) return;
     wan.style.background = videoModel === 'wan' ? 'var(--accent)' : 'var(--surface-3)';
     wan.style.color = videoModel === 'wan' ? '#fff' : 'var(--text-muted)';
     kling.style.background = videoModel === 'kling' ? 'var(--accent)' : 'var(--surface-3)';
     kling.style.color = videoModel === 'kling' ? '#fff' : 'var(--text-muted)';
+    if (sora2) {
+        sora2.style.background = videoModel === 'sora2' ? 'var(--accent)' : 'var(--surface-3)';
+        sora2.style.color = videoModel === 'sora2' ? '#fff' : 'var(--text-muted)';
+    }
 }
 
 async function downloadFile(url, filename) {

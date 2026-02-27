@@ -649,6 +649,9 @@ Format your response as JSON:
             if (videoModel === 'kling') {
                 return this.generateVideoKling(imageUrl, videoPrompt, sceneNumber);
             }
+            if (videoModel === 'sora2') {
+                return this.generateVideoSora2(imageUrl, videoPrompt, sceneNumber);
+            }
             // Default: Atlas Cloud Wan-2.6 Flash
             console.log(`\n=== Generating video for scene ${sceneNumber} (Atlas Cloud Wan-2.6 Flash) ===`);
             console.log(`Image URL: ${imageUrl.substring(0, 80)}...`);
@@ -816,6 +819,94 @@ Format your response as JSON:
                 }
 
                 console.error(`Error generating Kling video ${sceneNumber}:`, error.response?.data || error.message);
+                throw error;
+            }
+        }
+    }
+
+    /**
+     * Generate video using Kie.ai Sora 2 image-to-video
+     * Admin-only option — $0.15 per 10s clip, includes audio, no watermark
+     */
+    async generateVideoSora2(imageUrl, videoPrompt, sceneNumber) {
+        console.log(`\n=== Generating video for scene ${sceneNumber} (Kie.ai Sora 2) ===`);
+        console.log(`Image URL: ${imageUrl.substring(0, 80)}...`);
+        console.log(`Video Prompt: "${videoPrompt.substring(0, 120)}..."`);
+        console.log(`===\n`);
+
+        const maxRetries = 3;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`🎬 Kie.ai Sora 2 - Scene ${sceneNumber} (attempt ${attempt}/${maxRetries})`);
+
+                const createResponse = await axios.post(
+                    `${this.kieBaseUrl}/api/v1/jobs/createTask`,
+                    {
+                        model: 'sora-2-image-to-video',
+                        input: {
+                            image_urls: [imageUrl],
+                            prompt: videoPrompt,
+                            aspect_ratio: 'portrait',
+                            n_frames: '10',
+                            remove_watermark: true,
+                            upload_method: 's3'
+                        }
+                    },
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${this.kieApiKey}`
+                        },
+                        timeout: 30000
+                    }
+                );
+
+                const respData = createResponse.data;
+                const taskId = respData?.data?.taskId || respData?.taskId || respData?.data?.task_id || respData?.task_id;
+
+                if (!taskId) {
+                    const code = respData?.code || respData?.status;
+                    const msg = respData?.msg || respData?.message || '';
+
+                    if (code === 402 || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('quota')) {
+                        throw new Error('Out of Kie.ai credits. Please top up your account.');
+                    }
+
+                    console.warn(`Scene ${sceneNumber}: No taskId (attempt ${attempt}/${maxRetries}). Response: ${JSON.stringify(respData).substring(0, 300)}`);
+
+                    if (attempt < maxRetries) {
+                        const delay = attempt * 3000;
+                        console.log(`Retrying in ${delay / 1000}s...`);
+                        await new Promise(r => setTimeout(r, delay));
+                        continue;
+                    }
+                    throw new Error(`Kie.ai Sora 2 failed to create video task after ${maxRetries} attempts`);
+                }
+
+                console.log(`Sora 2 video task created: ${taskId}`);
+
+                const videoUrl = await this.pollKieTaskForVideo(taskId, 600000);
+                console.log(`✅ Video ${sceneNumber} generated successfully (Sora 2)`);
+
+                return videoUrl;
+
+            } catch (error) {
+                if (error.message.includes('credit') || error.message.includes('quota') || error.message.includes('authentication')) {
+                    throw error;
+                }
+
+                const status = error.response?.status;
+                const isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
+
+                if (isRetryable && attempt < maxRetries) {
+                    const delay = attempt * 3000;
+                    console.warn(`Scene ${sceneNumber} Sora 2 video error (attempt ${attempt}/${maxRetries}): ${error.message}. Retrying in ${delay / 1000}s...`);
+                    await new Promise(r => setTimeout(r, delay));
+                    continue;
+                }
+
+                console.error(`Error generating Sora 2 video ${sceneNumber}:`, error.response?.data || error.message);
                 throw error;
             }
         }
@@ -1125,7 +1216,7 @@ Format your response as JSON:
                 // Cost summary
                 console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
                 console.log(`   Videos generated: ${videoSuccessCount}`);
-                console.log(`   Provider: ${videoModel === 'kling' ? 'Kie.ai Kling 2.6' : 'Atlas Cloud Wan-2.6 Flash'}`);
+                console.log(`   Provider: ${videoModel === 'kling' ? 'Kie.ai Kling 2.6' : videoModel === 'sora2' ? 'Kie.ai Sora 2' : 'Atlas Cloud Wan-2.6 Flash'}`);
                 console.log(`\n`);
             }
 
@@ -1358,7 +1449,7 @@ Format your response as JSON:
 
                 console.log(`\n💰 VIDEO GENERATION COST SUMMARY:`);
                 console.log(`   Videos generated: ${videoSuccessCount}`);
-                console.log(`   Provider: ${videoModel === 'kling' ? 'Kie.ai Kling 2.6' : 'Atlas Cloud Wan-2.6 Flash'}`);
+                console.log(`   Provider: ${videoModel === 'kling' ? 'Kie.ai Kling 2.6' : videoModel === 'sora2' ? 'Kie.ai Sora 2' : 'Atlas Cloud Wan-2.6 Flash'}`);
 
                 console.log(`\n`);
                 

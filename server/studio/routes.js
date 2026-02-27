@@ -177,7 +177,7 @@ router.post('/generate/full', requireAuth, async (req, res) => {
         
         console.log(`Full generation for format: ${format}`);
         
-        const resolvedModel = (videoModel === 'kling' && req.user.email === process.env.ADMIN_EMAIL) ? 'kling' : 'wan';
+        const resolvedModel = (['kling','sora2'].includes(videoModel) && req.user.email === process.env.ADMIN_EMAIL) ? videoModel : 'wan';
         
         const result = await generator.generate(script, {
             skeletonStyle,
@@ -268,7 +268,7 @@ router.post('/generate/stream', requireAuth, async (req, res) => {
         let videosCharged = 0;
         
         try {
-            const resolvedModel = (videoModel === 'kling' && req.user.email === process.env.ADMIN_EMAIL) ? 'kling' : 'wan';
+            const resolvedModel = (['kling','sora2'].includes(videoModel) && req.user.email === process.env.ADMIN_EMAIL) ? videoModel : 'wan';
             
             const result = await generator.generateWithProgress(script, {
                 skeletonStyle,
@@ -441,7 +441,7 @@ router.post('/generate/scene-video', requireAuth, studioGenerateLimiter, async (
         console.log(`  Video Prompt: ${videoPrompt.substring(0, 100)}...`);
         
         // Only admin can use kling model
-        const resolvedModel = (videoModel === 'kling' && req.user.email === process.env.ADMIN_EMAIL) ? 'kling' : 'wan';
+        const resolvedModel = (['kling','sora2'].includes(videoModel) && req.user.email === process.env.ADMIN_EMAIL) ? videoModel : 'wan';
         
         const videoUrl = await generator.generateVideo(imageUrl, videoPrompt, sceneNumber, resolvedModel);
         
@@ -1212,7 +1212,7 @@ router.post('/tasks/create', requireAuth, studioGenerateLimiter, async (req, res
         }
 
         // Resolve video model (only admin can use kling)
-        const resolvedModel = (videoModel === 'kling' && req.user.email === process.env.ADMIN_EMAIL) ? 'kling' : 'wan';
+        const resolvedModel = (['kling','sora2'].includes(videoModel) && req.user.email === process.env.ADMIN_EMAIL) ? videoModel : 'wan';
 
         // Create the task
         const task = await taskManager.createTask(userId, {
