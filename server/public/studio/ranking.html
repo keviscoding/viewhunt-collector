@@ -141,6 +141,9 @@
         .color-swatch{width:28px;height:28px;border-radius:50%;border:2px solid var(--border);cursor:pointer;transition:all 0.15s;padding:0}
         .color-swatch:hover{transform:scale(1.15)}
         .color-swatch.active{border-color:var(--text);box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--text)}
+        .sub-color-swatch{transition:all 0.15s}
+        .sub-color-swatch:hover{transform:scale(1.15)}
+        .sub-color-swatch.active{border-color:var(--text)!important;box-shadow:0 0 0 2px var(--bg),0 0 0 3px var(--text)}
         @media(max-width:740px){
             .app{padding:1rem 0.75rem 3rem}
             .timeline-track{height:40px}
@@ -332,10 +335,23 @@
                         </select>
                     </div>
                     <div class="pos-row">
-                        <label>Sub Y</label>
-                        <input type="range" id="subtitle-y" min="50" max="95" value="82">
-                        <span class="pos-val" id="subtitle-y-val">82%</span>
+                        <label>Color</label>
+                        <div id="subtitle-color-swatches" style="display:flex;gap:0.35rem;flex:1;">
+                            <button type="button" class="sub-color-swatch active" data-color="yellow" style="width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;background:#facc15;" title="Yellow"></button>
+                            <button type="button" class="sub-color-swatch" data-color="white" style="width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;background:#ffffff;" title="White"></button>
+                            <button type="button" class="sub-color-swatch" data-color="cyan" style="width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;background:#22d3ee;" title="Cyan"></button>
+                            <button type="button" class="sub-color-swatch" data-color="green" style="width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;background:#34d399;" title="Green"></button>
+                            <button type="button" class="sub-color-swatch" data-color="red" style="width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;background:#f87171;" title="Red"></button>
+                            <button type="button" class="sub-color-swatch" data-color="pink" style="width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;background:#f472b6;" title="Pink"></button>
+                            <button type="button" class="sub-color-swatch" data-color="orange" style="width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;background:#fb923c;" title="Orange"></button>
+                        </div>
                     </div>
+                    <div class="pos-row">
+                        <label>Sub Y</label>
+                        <input type="range" id="subtitle-y" min="40" max="80" value="55">
+                        <span class="pos-val" id="subtitle-y-val">55%</span>
+                    </div>
+                    <div id="subtitle-preview" style="margin-top:0.4rem;text-align:center;font-size:1.1rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;text-shadow:0 2px 6px rgba(0,0,0,0.8);color:#facc15;padding:0.3rem 0;">SAMPLE</div>
                 </div>
             </div>
             <div class="split-preview">
@@ -360,6 +376,6 @@
         </div>
     </div>
 </div>
-<script src="/studio/ranking-app.js?v=20260228a"></script>
+<script src="/studio/ranking-app.js?v=20260228b"></script>
 </body>
 </html>

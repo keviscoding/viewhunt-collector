@@ -16,6 +16,7 @@
     var layout = { listX: 5, titleY: 6, titleSize: 48 };
     var colorPalette = 'yellow';
     var checkeredMode = false;
+    var subtitleColor = 'yellow';
 
     function getToken() { return localStorage.getItem('viewhunt_token') || localStorage.getItem('token') || null; }
     function authHeaders() { return { 'Authorization': 'Bearer ' + getToken() }; }
@@ -360,6 +361,26 @@
                 subYVal.textContent = subYEl.value + '%';
             });
         }
+        // Subtitle color swatches
+        var subColorMap = { yellow: '#facc15', white: '#ffffff', cyan: '#22d3ee', green: '#34d399', red: '#f87171', pink: '#f472b6', orange: '#fb923c' };
+        document.querySelectorAll('.sub-color-swatch').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.sub-color-swatch').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                subtitleColor = btn.dataset.color;
+                // Update preview text color
+                var preview = document.getElementById('subtitle-preview');
+                if (preview) preview.style.color = subColorMap[subtitleColor] || '#facc15';
+            });
+        });
+        // Subtitle font change updates preview
+        var subFontEl = document.getElementById('subtitle-font');
+        if (subFontEl) {
+            subFontEl.addEventListener('change', function() {
+                var preview = document.getElementById('subtitle-preview');
+                if (preview) preview.style.fontFamily = subFontEl.value;
+            });
+        }
     }
 
     // ==================== POSITION CONTROLS ====================
@@ -499,7 +520,7 @@
 
             var selectedVoice = document.getElementById('voice-picker').value || 'Kore';
             var selectedFont = document.getElementById('subtitle-font').value || 'Arial';
-            var selectedSubY = parseInt(document.getElementById('subtitle-y').value) || 82;
+            var selectedSubY = parseInt(document.getElementById('subtitle-y').value) || 55;
             var aRes = await apiFetch('/api/studio/ranking/assemble', {
                 method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
                 body: JSON.stringify({
@@ -511,7 +532,8 @@
                     colorPalette: colorPalette,
                     checkeredMode: checkeredMode,
                     subtitleFont: selectedFont,
-                    subtitleY: selectedSubY
+                    subtitleY: selectedSubY,
+                    subtitleColor: subtitleColor
                 })
             });
             var aData = await aRes.json(); if (!aData.success) throw new Error(aData.error || 'Assembly failed');
@@ -545,7 +567,7 @@
         document.getElementById('btn-assemble').addEventListener('click', assembleVideo);
         document.getElementById('btn-new').addEventListener('click', function() {
             clips = []; currentTrimIndex = 0; layout = { listX: 5, titleY: 6, titleSize: 48 };
-            colorPalette = 'yellow'; checkeredMode = false;
+            colorPalette = 'yellow'; checkeredMode = false; subtitleColor = 'yellow';
             renderClipList(); updateNextButton();
             document.getElementById('title-text').value = ''; document.getElementById('title-highlight').value = '';
             document.getElementById('result-video').classList.add('hidden'); document.getElementById('result-info').classList.add('hidden');
@@ -557,8 +579,14 @@
             document.getElementById('voice-picker').value = 'Kore';
             document.getElementById('subtitle-settings').style.display = 'none';
             document.getElementById('subtitle-font').value = 'Arial';
-            document.getElementById('subtitle-y').value = 82;
-            document.getElementById('subtitle-y-val').textContent = '82%';
+            document.getElementById('subtitle-y').value = 55;
+            document.getElementById('subtitle-y-val').textContent = '55%';
+            // Reset subtitle color swatches
+            document.querySelectorAll('.sub-color-swatch').forEach(function(b) { b.classList.remove('active'); });
+            var defSubSwatch = document.querySelector('.sub-color-swatch[data-color="yellow"]');
+            if (defSubSwatch) defSubSwatch.classList.add('active');
+            var subPreview = document.getElementById('subtitle-preview');
+            if (subPreview) { subPreview.style.color = '#facc15'; subPreview.style.fontFamily = 'Arial'; }
             // Reset checkered toggle
             document.getElementById('checkered-toggle').checked = false;
             // Reset color swatches

@@ -68,7 +68,7 @@ class RankingAssembler {
      * Assemble ranking video.
      * clips: [{ path, number, label }] in playback order (highest number first, #1 last)
      * title: { text, highlightWord }
-     * options: { layout: { listXPercent, titleYPercent, titleFontSize }, commentary: [{ clipIndex, audioPath }] }
+     * options: { layout, commentary, commentaryLines, colorPalette, checkeredMode, subtitleFont, subtitleY, subtitleColor, hookEnabled }
      */
     async assemble(clips, title, options) {
         var jobId = 'ranking-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
@@ -76,7 +76,8 @@ class RankingAssembler {
         fs.mkdirSync(jobDir, { recursive: true });
 
         var commentary = (options && options.commentary) || [];
-        console.log('\n🏆 Ranking assembly: ' + clips.length + ' clips' + (commentary.length > 0 ? ' + ' + commentary.filter(function(c) { return c.audioPath; }).length + ' commentary lines' : ''));
+        var hookEnabled = !!(options && options.hookEnabled);
+        console.log('\n🏆 Ranking assembly: ' + clips.length + ' clips' + (commentary.length > 0 ? ' + ' + commentary.filter(function(c) { return c.audioPath; }).length + ' commentary lines' : '') + (hookEnabled ? ' + hook intro' : ''));
 
         try {
             // Step 1: Normalize each clip
@@ -91,21 +92,38 @@ class RankingAssembler {
                 console.log('  ✓ Clip ' + (i + 1) + '/' + clips.length + ' (' + dur.toFixed(1) + 's)');
             }
 
-            // Calculate time offsets for each clip
-            var offsets = [0];
+            // Step 1b: Build hook intro if commentary is enabled
+            var hookPath = null;
+            var hookDuration = 0;
+            var introCommentary = commentary.find(function(c) { return c.clipIndex === 0; });
+            if (hookEnabled && introCommentary && introCommentary.audioPath && fs.existsSync(introCommentary.audioPath)) {
+                console.log('  🎬 Building hook intro...');
+                var hookResult = await this._buildHookIntro(normalizedPaths, durations, introCommentary.audioPath, jobDir, options);
+                hookPath = hookResult.path;
+                hookDuration = hookResult.duration;
+                console.log('  ✓ Hook intro: ' + hookDuration.toFixed(1) + 's');
+            }
+
+            // Calculate time offsets for each clip (shifted by hook duration)
+            var offsets = [hookDuration];
             for (var i = 0; i < durations.length - 1; i++) {
                 offsets.push(offsets[i] + durations[i]);
             }
 
-            // Step 2: Hard-cut concat
+            // Step 2: Hard-cut concat (hook + ranked clips)
             var concatList = path.join(jobDir, 'concat.txt');
-            fs.writeFileSync(concatList, normalizedPaths.map(function(p) { return "file '" + p + "'"; }).join('\n'));
+            var concatEntries = [];
+            if (hookPath) concatEntries.push("file '" + hookPath + "'");
+            for (var i = 0; i < normalizedPaths.length; i++) {
+                concatEntries.push("file '" + normalizedPaths[i] + "'");
+            }
+            fs.writeFileSync(concatList, concatEntries.join('\n'));
             var concatPath = path.join(jobDir, 'concat.mp4');
             await this.ffmpeg(['-f', 'concat', '-safe', '0', '-i', concatList, '-c', 'copy', '-y', concatPath]);
 
-            // Step 3: Generate ASS overlay
+            // Step 3: Generate ASS overlay (offsets already include hook duration)
             var assPath = path.join(jobDir, 'overlay.ass');
-            this.generateASS(assPath, clips, durations, title, options);
+            this.generateASS(assPath, clips, durations, title, options, hookDuration);
 
             // Step 4: Burn subtitles
             var subtitledPath = path.join(jobDir, 'subtitled.mp4');
@@ -118,11 +136,13 @@ class RankingAssembler {
                 '-c:a', 'copy', '-y', subtitledPath
             ]);
 
-            // Step 5: Mix commentary audio (if any)
+            // Step 5: Mix commentary audio (if any) — skip intro line since it's already in the hook
             var outputName = 'ranking-' + Date.now() + '.mp4';
             var finalPath = path.join(this.outputDir, outputName);
 
             var commentaryWithAudio = commentary.filter(function(c) {
+                // Skip clipIndex 0 (intro) if hook is enabled — it's already mixed into the hook
+                if (hookEnabled && c.clipIndex === 0) return false;
                 return c.audioPath && fs.existsSync(c.audioPath);
             });
 
@@ -140,12 +160,132 @@ class RankingAssembler {
             return {
                 videoUrl: '/studio/generated/final/' + outputName,
                 duration: duration,
-                clipCount: clips.length
+                clipCount: clips.length,
+                hookDuration: hookDuration
             };
         } finally {
             try { if (fs.existsSync(jobDir)) fs.rmSync(jobDir, { recursive: true, force: true }); }
             catch (e) { console.warn('Cleanup:', e.message); }
         }
+    }
+
+    /**
+     * Build hook intro — rapid-fire cycling through random moments of all clips
+     * with click SFX between each cut, while the intro TTS line plays over top.
+     * Keeps cycling until the intro audio finishes.
+     */
+    async _buildHookIntro(normalizedPaths, durations, introAudioPath, jobDir, options) {
+        // Get intro audio duration
+        var introDur = await this.getDuration(introAudioPath);
+        if (introDur <= 0) introDur = 3;
+
+        // Each hook cut is 0.3-0.5s — cycle through clips randomly
+        var cutDuration = 0.35;
+        var numCuts = Math.ceil(introDur / cutDuration) + 1; // +1 for safety
+
+        // Load click SFX if available
+        var clickSfxPath = null;
+        try {
+            var sfxDir = path.join(__dirname, '../../editor/assets/sfx');
+            var hookFile = path.join(sfxDir, 'hook.mp3');
+            if (fs.existsSync(hookFile)) clickSfxPath = hookFile;
+        } catch (e) {}
+
+        // Build hook segments — pick random timestamps from each clip
+        var hookSegments = [];
+        var totalHookTime = 0;
+        var clipCount = normalizedPaths.length;
+
+        for (var i = 0; i < numCuts && totalHookTime < introDur + 0.5; i++) {
+            var clipIdx = i % clipCount;
+            // After first cycle, randomize which clip
+            if (i >= clipCount) clipIdx = Math.floor(Math.random() * clipCount);
+
+            var clipDur = durations[clipIdx];
+            // Pick a random start point (avoid very start/end)
+            var maxStart = Math.max(0, clipDur - cutDuration - 0.5);
+            var ss = maxStart > 0 ? (Math.random() * maxStart) + 0.2 : 0;
+
+            var segPath = path.join(jobDir, 'hook-seg-' + i + '.ts');
+            await this.ffmpeg([
+                '-ss', String(ss.toFixed(2)),
+                '-i', normalizedPaths[clipIdx],
+                '-t', String(cutDuration),
+                '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+                '-an', // No audio for hook segments — we'll add intro audio + clicks
+                '-f', 'mpegts', '-y', segPath
+            ]);
+            hookSegments.push(segPath);
+            totalHookTime += cutDuration;
+        }
+
+        // Concat all hook segments
+        var hookConcatList = path.join(jobDir, 'hook-concat.txt');
+        fs.writeFileSync(hookConcatList, hookSegments.map(function(p) { return "file '" + p + "'"; }).join('\n'));
+        var hookVideoPath = path.join(jobDir, 'hook-video.mp4');
+        await this.ffmpeg(['-f', 'concat', '-safe', '0', '-i', hookConcatList, '-c', 'copy', '-y', hookVideoPath]);
+
+        // Trim hook video to exact intro audio length + small buffer
+        var targetDur = introDur + 0.3;
+        var hookTrimmedPath = path.join(jobDir, 'hook-trimmed.mp4');
+        await this.ffmpeg([
+            '-i', hookVideoPath, '-t', String(targetDur.toFixed(2)),
+            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+            '-an', '-y', hookTrimmedPath
+        ]);
+
+        // Mix audio: intro TTS + click SFX at each cut point
+        var hookFinalPath = path.join(jobDir, 'hook-final.ts');
+
+        if (clickSfxPath) {
+            // Build click SFX overlay — one click at each cut boundary
+            var inputs = ['-i', hookTrimmedPath, '-i', introAudioPath, '-i', clickSfxPath];
+            var filterParts = [];
+
+            // Delay intro audio slightly (100ms) for impact
+            filterParts.push('[1:a]adelay=100|100[intro]');
+
+            // Create click at each cut boundary
+            var clickLabels = [];
+            for (var c = 0; c < Math.min(hookSegments.length - 1, 30); c++) {
+                var clickTime = Math.round((c + 1) * cutDuration * 1000);
+                filterParts.push('[2:a]adelay=' + clickTime + '|' + clickTime + ',volume=0.7[clk' + c + ']');
+                clickLabels.push('[clk' + c + ']');
+            }
+
+            // Mix all clicks together
+            if (clickLabels.length > 1) {
+                filterParts.push(clickLabels.join('') + 'amix=inputs=' + clickLabels.length + ':duration=longest[clicks]');
+            } else if (clickLabels.length === 1) {
+                filterParts[filterParts.length - 1] = filterParts[filterParts.length - 1].replace('[clk0]', '[clicks]');
+            }
+
+            // Mix intro + clicks
+            if (clickLabels.length > 0) {
+                filterParts.push('[intro][clicks]amix=inputs=2:duration=first:dropout_transition=0[aout]');
+            } else {
+                filterParts.push('[intro]acopy[aout]');
+            }
+
+            var filterComplex = filterParts.join(';');
+            await this.ffmpeg(inputs.concat([
+                '-filter_complex', filterComplex,
+                '-map', '0:v', '-map', '[aout]',
+                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+                '-shortest', '-f', 'mpegts', '-y', hookFinalPath
+            ]));
+        } else {
+            // No click SFX — just add intro audio
+            await this.ffmpeg([
+                '-i', hookTrimmedPath, '-i', introAudioPath,
+                '-map', '0:v', '-map', '1:a',
+                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+                '-shortest', '-f', 'mpegts', '-y', hookFinalPath
+            ]);
+        }
+
+        var finalDur = await this.getDuration(hookFinalPath);
+        return { path: hookFinalPath, duration: finalDur };
     }
 
     /**
@@ -228,8 +368,10 @@ class RankingAssembler {
      *   - When a clip plays, its label fades in next to its number
      *   - Currently playing number is highlighted
      *   - Position controlled by layout params from frontend
+     *   - Commentary subtitles: one word at a time, configurable color
      */
-    generateASS(outputPath, clips, durations, title, options) {
+    generateASS(outputPath, clips, durations, title, options, hookDuration) {
+        hookDuration = hookDuration || 0;
         var totalClips = clips.length;
         var lo = (options && options.layout) || {};
         var listXPct = lo.listXPercent || 5;
@@ -251,12 +393,25 @@ class RankingAssembler {
         var colors = colorMap[palette] || colorMap.yellow;
         var whiteASS = '&H00FFFFFF';
 
+        // Subtitle color (user-chosen, default yellow)
+        var subtitleColorName = (options && options.subtitleColor) || 'yellow';
+        var subColorMap = {
+            yellow:  '&H0015CCFA',
+            cyan:    '&H00EED322',
+            green:   '&H0099D334',
+            red:     '&H007171F8',
+            pink:    '&H00B672F4',
+            orange:  '&H003C92FB',
+            white:   '&H00FFFFFF'
+        };
+        var subtitleASS = subColorMap[subtitleColorName] || subColorMap.yellow;
+
         // Convert percentages to pixel positions (1080x1920)
         var listX = Math.round((listXPct / 100) * 1080);
         var titleY = Math.round((titleYPct / 100) * 1920);
 
-        // Calculate time offsets
-        var offsets = [0];
+        // Calculate time offsets (shifted by hookDuration)
+        var offsets = [hookDuration];
         for (var i = 0; i < durations.length - 1; i++) {
             offsets.push(offsets[i] + durations[i]);
         }
@@ -300,11 +455,11 @@ class RankingAssembler {
         ass += 'Style: NumDoneAlt,Arial,50,' + whiteASS + ',&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
         ass += 'Style: Label,Arial,32,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,7,0,0,0,1\n';
 
-        // Commentary subtitle style — font and Y position from options
+        // Commentary subtitle style — font, Y position, and color from options
         var subFont = (options && options.subtitleFont) || 'Arial';
-        var subYPct = (options && options.subtitleY != null) ? options.subtitleY : 82;
+        var subYPct = (options && options.subtitleY != null) ? options.subtitleY : 55;
         var subY = Math.round((subYPct / 100) * 1920);
-        ass += 'Style: ComSub,' + subFont + ',42,&H00FFFFFF,&H000000FF,&H00000000,&HC0000000,-1,0,0,0,100,100,0,0,1,3,2,2,40,40,' + subY + ',1\n';
+        ass += 'Style: ComSub,' + subFont + ',52,' + subtitleASS + ',&H000000FF,&H00000000,&HC0000000,-1,0,0,0,100,100,0,0,1,3,2,2,40,40,' + subY + ',1\n';
 
         ass += '\n[Events]\n';
         ass += 'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n';
@@ -364,17 +519,51 @@ class RankingAssembler {
             }
         }
 
-        // Commentary subtitles — show each line during its clip
+        // Hook intro subtitles — one word at a time during hook section
+        if (hookDuration > 0) {
+            var introLine = null;
+            var commentaryLines2 = (options && options.commentaryLines) || [];
+            for (var il = 0; il < commentaryLines2.length; il++) {
+                if (commentaryLines2[il].clipIndex === 0 && commentaryLines2[il].line) {
+                    introLine = commentaryLines2[il].line;
+                    break;
+                }
+            }
+            if (introLine) {
+                var introWords = introLine.replace(/\n/g, ' ').trim().split(/\s+/);
+                if (introWords.length > 0) {
+                    var introWordDur = hookDuration / introWords.length;
+                    for (var iw = 0; iw < introWords.length; iw++) {
+                        var iwStart = iw * introWordDur;
+                        var iwEnd = iwStart + introWordDur;
+                        ass += 'Dialogue: 4,' + this.assTime(iwStart) + ',' + this.assTime(iwEnd) + ',ComSub,,0,0,0,,{\\fad(50,50)}' + introWords[iw].toUpperCase() + '\n';
+                    }
+                }
+            }
+        }
+
+        // Commentary subtitles — one word at a time, spread across clip duration
         var commentaryLines = (options && options.commentaryLines) || [];
         for (var cl = 0; cl < commentaryLines.length; cl++) {
             var cLine = commentaryLines[cl];
             if (!cLine.line) continue;
+            // Skip intro line (clipIndex 0) if hook is enabled — already shown during hook
+            if (hookDuration > 0 && cLine.clipIndex === 0) continue;
             var cInfo = numberInfo[clips[cLine.clipIndex] && clips[cLine.clipIndex].number];
             if (!cInfo) continue;
             var cStart = cInfo.offset;
-            // Show subtitle for 2.5 seconds or clip duration, whichever is shorter
-            var cEnd = Math.min(cInfo.offset + cInfo.duration, cStart + 2.5);
-            ass += 'Dialogue: 4,' + this.assTime(cStart) + ',' + this.assTime(cEnd) + ',ComSub,,0,0,0,,{\\fad(200,200)}' + cLine.line.replace(/\n/g, ' ') + '\n';
+            var cLineDur = Math.min(cInfo.duration, 2.5);
+
+            // Split into individual words
+            var words = cLine.line.replace(/\n/g, ' ').trim().split(/\s+/);
+            if (words.length === 0) continue;
+            var wordDur = cLineDur / words.length;
+
+            for (var w = 0; w < words.length; w++) {
+                var wStart = cStart + (w * wordDur);
+                var wEnd = wStart + wordDur;
+                ass += 'Dialogue: 4,' + this.assTime(wStart) + ',' + this.assTime(wEnd) + ',ComSub,,0,0,0,,{\\fad(50,50)}' + words[w].toUpperCase() + '\n';
+            }
         }
 
         fs.writeFileSync(outputPath, ass);
