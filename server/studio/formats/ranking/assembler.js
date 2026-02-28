@@ -81,6 +81,7 @@ class RankingAssembler {
 
         try {
             // Step 1: Normalize each clip
+            console.log('  [Step 1] Normalizing clips...');
             var normalizedPaths = [];
             var durations = [];
             for (var i = 0; i < clips.length; i++) {
@@ -97,7 +98,7 @@ class RankingAssembler {
             var hookDuration = 0;
             var introCommentary = commentary.find(function(c) { return c.clipIndex === 0; });
             if (hookEnabled && introCommentary && introCommentary.audioPath && fs.existsSync(introCommentary.audioPath)) {
-                console.log('  🎬 Building hook intro...');
+                console.log('  [Step 1b] Building hook intro...');
                 var hookResult = await this._buildHookIntro(normalizedPaths, durations, introCommentary.audioPath, jobDir, options);
                 hookPath = hookResult.path;
                 hookDuration = hookResult.duration;
@@ -111,6 +112,7 @@ class RankingAssembler {
             }
 
             // Step 2: Hard-cut concat (hook + ranked clips)
+            console.log('  [Step 2] Concatenating...');
             var concatList = path.join(jobDir, 'concat.txt');
             var concatEntries = [];
             if (hookPath) concatEntries.push("file '" + hookPath + "'");
@@ -122,10 +124,12 @@ class RankingAssembler {
             await this.ffmpeg(['-f', 'concat', '-safe', '0', '-i', concatList, '-c', 'copy', '-y', concatPath]);
 
             // Step 3: Generate ASS overlay (offsets already include hook duration)
+            console.log('  [Step 3] Generating ASS overlay...');
             var assPath = path.join(jobDir, 'overlay.ass');
             this.generateASS(assPath, clips, durations, title, options, hookDuration);
 
             // Step 4: Burn subtitles
+            console.log('  [Step 4] Burning subtitles...');
             var subtitledPath = path.join(jobDir, 'subtitled.mp4');
             var escapedAss = assPath.replace(/\\/g, '/').replace(/:/g, '\\:');
 
@@ -137,6 +141,7 @@ class RankingAssembler {
             ]);
 
             // Step 5: Mix commentary audio (if any) — skip intro line since it's already in the hook
+            console.log('  [Step 5] Mixing commentary audio...');
             var outputName = 'ranking-' + Date.now() + '.mp4';
             var finalPath = path.join(this.outputDir, outputName);
 
@@ -607,8 +612,17 @@ class RankingAssembler {
             return await execFileAsync(ffmpegPath, args, { timeout: 600000, maxBuffer: 10 * 1024 * 1024 });
         } catch (error) {
             if (error.code) {
-                var msg = (error.stderr || '').slice(-1000);
-                console.error('FFmpeg error:', msg);
+                var fullStderr = error.stderr || '';
+                // Extract actual error lines (skip banner/config noise)
+                var lines = fullStderr.split('\n');
+                var errorLines = lines.filter(function(l) {
+                    return l && !l.startsWith('  ') && !l.startsWith('ffmpeg version') && 
+                           !l.startsWith('  configuration') && !l.startsWith('  lib') &&
+                           !l.startsWith('  built') && !l.includes('Copyright') &&
+                           l.trim().length > 0;
+                });
+                var msg = errorLines.length > 0 ? errorLines.join(' | ').substring(0, 800) : fullStderr.slice(-500);
+                console.error('FFmpeg error (code ' + error.code + '):', msg);
                 throw new Error('FFmpeg failed (code ' + error.code + '): ' + msg.substring(0, 500));
             }
             return { stdout: error.stdout, stderr: error.stderr };
