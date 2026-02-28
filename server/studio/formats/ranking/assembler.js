@@ -177,7 +177,8 @@ class RankingAssembler {
     /**
      * Build hook intro — rapid-fire cycling through random moments of all clips.
      * Single FFmpeg call using filter_complex: all clips as inputs, trim each, concat video.
-     * Then one more call to add intro audio on top.
+     * Intro audio is mixed in, with click SFX at each cut boundary.
+     * Output matches normalizeClip format (stereo AAC 128k) for seamless concat.
      */
     async _buildHookIntro(normalizedPaths, durations, introAudioPath, jobDir, options) {
         var introDur = await this.getDuration(introAudioPath);
@@ -187,6 +188,14 @@ class RankingAssembler {
         var targetDur = introDur + 0.15;
         var numCuts = Math.ceil(targetDur / cutDuration);
         var clipCount = normalizedPaths.length;
+
+        // Load click SFX
+        var clickSfxPath = null;
+        try {
+            var sfxDir = path.join(__dirname, '../../editor/assets/sfx');
+            var hookFile = path.join(sfxDir, 'hook.mp3');
+            if (fs.existsSync(hookFile)) clickSfxPath = hookFile;
+        } catch (e) {}
 
         // Build the cut list — which clip and where to seek
         var cuts = [];
@@ -198,39 +207,59 @@ class RankingAssembler {
             cuts.push({ clipIdx: clipIdx, ss: ss });
         }
 
-        // Single FFmpeg call: all normalized clips as inputs, trim+concat in filter_complex
+        // Build inputs: all normalized clips + intro audio + (optional) click SFX
         var inputs = [];
         for (var c = 0; c < normalizedPaths.length; c++) {
             inputs.push('-i', normalizedPaths[c]);
         }
-        inputs.push('-i', introAudioPath); // last input = intro audio
+        inputs.push('-i', introAudioPath);
+        var introIdx = normalizedPaths.length;
+        var clickIdx = -1;
+        if (clickSfxPath) {
+            inputs.push('-i', clickSfxPath);
+            clickIdx = introIdx + 1;
+        }
 
-        var introInputIdx = normalizedPaths.length;
+        // Build filter_complex
         var filterParts = [];
-        var concatInputs = '';
+        var concatVideoInputs = '';
 
+        // Video: trim each cut from its source clip
         for (var j = 0; j < cuts.length; j++) {
             var cut = cuts[j];
             filterParts.push('[' + cut.clipIdx + ':v]trim=start=' + cut.ss.toFixed(2) + ':duration=' + cutDuration.toFixed(2) + ',setpts=PTS-STARTPTS[hv' + j + ']');
-            concatInputs += '[hv' + j + ']';
+            concatVideoInputs += '[hv' + j + ']';
         }
+        filterParts.push(concatVideoInputs + 'concat=n=' + cuts.length + ':v=1:a=0[hookv]');
 
-        filterParts.push(concatInputs + 'concat=n=' + cuts.length + ':v=1:a=0[hookv]');
+        // Audio: intro TTS (convert to stereo 44100 to match normalized clips)
+        filterParts.push('[' + introIdx + ':a]aresample=44100,pan=stereo|c0=c0|c1=c0[introtts]');
+
+        // Click SFX: pad to cutDuration, loop, trim, mix with intro
+        if (clickIdx >= 0) {
+            var loopCount = Math.max(numCuts - 1, 1);
+            filterParts.push('[' + clickIdx + ':a]aresample=44100,apad=whole_dur=' + cutDuration.toFixed(2) + '[clickpad]');
+            filterParts.push('[clickpad]aloop=loop=' + loopCount + ':size=' + Math.round(cutDuration * 44100) + '[clickloop]');
+            filterParts.push('[clickloop]atrim=0:' + targetDur.toFixed(2) + ',volume=0.4,pan=stereo|c0=c0|c1=c0[clicks]');
+            filterParts.push('[introtts][clicks]amix=inputs=2:duration=first:dropout_transition=0[aout]');
+        } else {
+            filterParts.push('[introtts]acopy[aout]');
+        }
 
         var filterComplex = filterParts.join(';');
 
         var hookFinalPath = path.join(jobDir, 'hook-final.ts');
         await this.ffmpeg(inputs.concat([
             '-filter_complex', filterComplex,
-            '-map', '[hookv]', '-map', String(introInputIdx) + ':a',
+            '-map', '[hookv]', '-map', '[aout]',
             '-t', targetDur.toFixed(2),
             '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26',
-            '-c:a', 'aac', '-b:a', '128k',
+            '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
             '-shortest', '-f', 'mpegts', '-y', hookFinalPath
         ]));
 
         var finalDur = await this.getDuration(hookFinalPath);
-        console.log('  🎬 Hook: ' + cuts.length + ' cuts, ' + finalDur.toFixed(1) + 's');
+        console.log('  🎬 Hook: ' + cuts.length + ' cuts, ' + finalDur.toFixed(1) + 's' + (clickIdx >= 0 ? ' + clicks' : ''));
         return { path: hookFinalPath, duration: finalDur };
     }
 
@@ -534,7 +563,7 @@ class RankingAssembler {
             '-i', inputPath, '-vf', filterStr,
             '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
             '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
-            '-c:a', 'aac', '-b:a', '128k',
+            '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
             '-f', 'mpegts', '-y', outputPath
         ]);
     }
