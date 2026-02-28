@@ -172,18 +172,21 @@ class RankingAssembler {
     /**
      * Build hook intro — rapid-fire cycling through random moments of all clips
      * with click SFX between each cut, while the intro TTS line plays over top.
-     * Keeps cycling until the intro audio finishes.
+     * 
+     * Efficient approach: 2 FFmpeg calls total.
+     *   1. Build a concat file of short seeks into normalized clips (reuses .ts segments)
+     *   2. One FFmpeg call to combine video + intro audio + click track
      */
     async _buildHookIntro(normalizedPaths, durations, introAudioPath, jobDir, options) {
-        // Get intro audio duration
         var introDur = await this.getDuration(introAudioPath);
         if (introDur <= 0) introDur = 3;
 
-        // Each hook cut is 0.3-0.5s — cycle through clips randomly
         var cutDuration = 0.35;
-        var numCuts = Math.ceil(introDur / cutDuration) + 1; // +1 for safety
+        var targetDur = introDur + 0.2;
+        var numCuts = Math.ceil(targetDur / cutDuration);
+        var clipCount = normalizedPaths.length;
 
-        // Load click SFX if available
+        // Load click SFX
         var clickSfxPath = null;
         try {
             var sfxDir = path.join(__dirname, '../../editor/assets/sfx');
@@ -191,95 +194,62 @@ class RankingAssembler {
             if (fs.existsSync(hookFile)) clickSfxPath = hookFile;
         } catch (e) {}
 
-        // Build hook segments — pick random timestamps from each clip
-        var hookSegments = [];
-        var totalHookTime = 0;
-        var clipCount = normalizedPaths.length;
-
-        for (var i = 0; i < numCuts && totalHookTime < introDur + 0.5; i++) {
-            var clipIdx = i % clipCount;
-            // After first cycle, randomize which clip
-            if (i >= clipCount) clipIdx = Math.floor(Math.random() * clipCount);
-
+        // Step 1: Build concat list — each line seeks into a normalized clip
+        // Using the concat demuxer with inpoint/outpoint for zero-overhead seeking
+        var concatLines = [];
+        for (var i = 0; i < numCuts; i++) {
+            var clipIdx = i < clipCount ? i : Math.floor(Math.random() * clipCount);
             var clipDur = durations[clipIdx];
-            // Pick a random start point (avoid very start/end)
-            var maxStart = Math.max(0, clipDur - cutDuration - 0.5);
-            var ss = maxStart > 0 ? (Math.random() * maxStart) + 0.2 : 0;
+            var maxStart = Math.max(0, clipDur - cutDuration - 0.3);
+            var ss = maxStart > 0 ? (Math.random() * maxStart) + 0.1 : 0;
 
-            var segPath = path.join(jobDir, 'hook-seg-' + i + '.ts');
-            await this.ffmpeg([
-                '-ss', String(ss.toFixed(2)),
-                '-i', normalizedPaths[clipIdx],
-                '-t', String(cutDuration),
-                '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
-                '-an', // No audio for hook segments — we'll add intro audio + clicks
-                '-f', 'mpegts', '-y', segPath
-            ]);
-            hookSegments.push(segPath);
-            totalHookTime += cutDuration;
+            concatLines.push("file '" + normalizedPaths[clipIdx] + "'");
+            concatLines.push('inpoint ' + ss.toFixed(2));
+            concatLines.push('outpoint ' + (ss + cutDuration).toFixed(2));
         }
 
-        // Concat all hook segments
         var hookConcatList = path.join(jobDir, 'hook-concat.txt');
-        fs.writeFileSync(hookConcatList, hookSegments.map(function(p) { return "file '" + p + "'"; }).join('\n'));
-        var hookVideoPath = path.join(jobDir, 'hook-video.mp4');
-        await this.ffmpeg(['-f', 'concat', '-safe', '0', '-i', hookConcatList, '-c', 'copy', '-y', hookVideoPath]);
+        fs.writeFileSync(hookConcatList, concatLines.join('\n'));
 
-        // Trim hook video to exact intro audio length + small buffer
-        var targetDur = introDur + 0.3;
-        var hookTrimmedPath = path.join(jobDir, 'hook-trimmed.mp4');
-        await this.ffmpeg([
-            '-i', hookVideoPath, '-t', String(targetDur.toFixed(2)),
-            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
-            '-an', '-y', hookTrimmedPath
-        ]);
-
-        // Mix audio: intro TTS + click SFX at each cut point
+        // Step 2: Single FFmpeg call — concat video + intro audio + click track
         var hookFinalPath = path.join(jobDir, 'hook-final.ts');
 
         if (clickSfxPath) {
-            // Build click SFX overlay — one click at each cut boundary
-            var inputs = ['-i', hookTrimmedPath, '-i', introAudioPath, '-i', clickSfxPath];
-            var filterParts = [];
+            // Generate a repeating click track: loop the click SFX at cutDuration intervals
+            // Use aloop to repeat, then atrim to cut to length
+            var clickSfxDur = await this.getDuration(clickSfxPath);
+            if (clickSfxDur <= 0) clickSfxDur = 0.2;
 
-            // Delay intro audio slightly (100ms) for impact
-            filterParts.push('[1:a]adelay=100|100[intro]');
+            // Pad each click to cutDuration, then loop N times
+            var padMs = Math.round(cutDuration * 1000);
+            var loopCount = Math.max(numCuts - 1, 1);
 
-            // Create click at each cut boundary
-            var clickLabels = [];
-            for (var c = 0; c < Math.min(hookSegments.length - 1, 30); c++) {
-                var clickTime = Math.round((c + 1) * cutDuration * 1000);
-                filterParts.push('[2:a]adelay=' + clickTime + '|' + clickTime + ',volume=0.7[clk' + c + ']');
-                clickLabels.push('[clk' + c + ']');
-            }
-
-            // Mix all clicks together
-            if (clickLabels.length > 1) {
-                filterParts.push(clickLabels.join('') + 'amix=inputs=' + clickLabels.length + ':duration=longest[clicks]');
-            } else if (clickLabels.length === 1) {
-                filterParts[filterParts.length - 1] = filterParts[filterParts.length - 1].replace('[clk0]', '[clicks]');
-            }
-
-            // Mix intro + clicks
-            if (clickLabels.length > 0) {
-                filterParts.push('[intro][clicks]amix=inputs=2:duration=first:dropout_transition=0[aout]');
-            } else {
-                filterParts.push('[intro]acopy[aout]');
-            }
-
-            var filterComplex = filterParts.join(';');
-            await this.ffmpeg(inputs.concat([
-                '-filter_complex', filterComplex,
-                '-map', '0:v', '-map', '[aout]',
-                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
-                '-shortest', '-f', 'mpegts', '-y', hookFinalPath
-            ]));
-        } else {
-            // No click SFX — just add intro audio
             await this.ffmpeg([
-                '-i', hookTrimmedPath, '-i', introAudioPath,
+                '-f', 'concat', '-safe', '0', '-i', hookConcatList,
+                '-i', introAudioPath,
+                '-i', clickSfxPath,
+                '-filter_complex',
+                // Click track: pad to cut interval, loop, trim to target
+                '[2:a]aresample=48000,apad=whole_dur=' + cutDuration.toFixed(2) + '[clickpad];' +
+                '[clickpad]aloop=loop=' + loopCount + ':size=' + Math.round(cutDuration * 48000) + '[clickloop];' +
+                '[clickloop]atrim=0:' + targetDur.toFixed(2) + ',volume=0.7[clicks];' +
+                // Mix intro + clicks
+                '[1:a][clicks]amix=inputs=2:duration=first:dropout_transition=0[aout]',
+                '-map', '0:v', '-map', '[aout]',
+                '-t', String(targetDur.toFixed(2)),
+                '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+                '-c:a', 'aac', '-b:a', '128k',
+                '-shortest', '-f', 'mpegts', '-y', hookFinalPath
+            ]);
+        } else {
+            // No click SFX — just concat video + intro audio
+            await this.ffmpeg([
+                '-f', 'concat', '-safe', '0', '-i', hookConcatList,
+                '-i', introAudioPath,
                 '-map', '0:v', '-map', '1:a',
-                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+                '-t', String(targetDur.toFixed(2)),
+                '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+                '-c:a', 'aac', '-b:a', '128k',
                 '-shortest', '-f', 'mpegts', '-y', hookFinalPath
             ]);
         }
