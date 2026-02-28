@@ -886,6 +886,147 @@ router.post('/ranking/upload', requireAuth, function(req, res) {
 // Import a ranking clip from URL (yt-dlp — latest binary)
 const { execFile } = require('child_process');
 const https = require('https');
+const axios = require('axios');
+
+// Apify-based video download for TikTok and YouTube
+async function downloadViaApify(url, outPath) {
+    var apifyToken = process.env.APIFY_TOKEN;
+    if (!apifyToken) throw new Error('APIFY_TOKEN not configured');
+
+    var isTikTok = /tiktok\.com|vm\.tiktok|vt\.tiktok/i.test(url);
+    var isYouTube = /youtube\.com|youtu\.be|youtube\.com\/shorts/i.test(url);
+
+    if (isTikTok) {
+        console.log('🎵 TikTok download via Apify: ' + url);
+        var resp = await axios.post(
+            'https://api.apify.com/v2/acts/thenetaji~tiktok-video-downloader/run-sync-get-dataset-items?token=' + apifyToken,
+            {
+                urls: [{ url: url }],
+                quality: 'best',
+                format: 'mp4',
+                proxy: { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] }
+            },
+            { headers: { 'Content-Type': 'application/json' }, timeout: 120000 }
+        );
+
+        var items = resp.data;
+        if (!Array.isArray(items) || items.length === 0) throw new Error('Apify returned no results for TikTok video');
+
+        // Find the download URL from the dataset items
+        var item = items[0];
+        var videoUrl = item.videoUrlNoWatermark || item.videoUrl || item.downloadUrl || item.url;
+        if (!videoUrl && item.video) videoUrl = item.video.downloadAddr || item.video.playAddr;
+        if (!videoUrl) {
+            console.warn('Apify TikTok response keys:', Object.keys(item));
+            throw new Error('Could not find video URL in Apify response');
+        }
+
+        console.log('  TikTok video URL found, downloading to server...');
+        await downloadFileToPath(videoUrl, outPath);
+        return true;
+
+    } else if (isYouTube) {
+        console.log('📺 YouTube download via Apify: ' + url);
+        // YouTube downloader returns data in the key-value store, use run-sync
+        var runResp = await axios.post(
+            'https://api.apify.com/v2/acts/streamers~youtube-video-downloader/runs?token=' + apifyToken,
+            {
+                videos: [{ url: url }],
+                preferredQuality: '720p',
+                preferredFormat: 'mp4'
+            },
+            { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
+        );
+
+        var runData = runResp.data?.data;
+        if (!runData?.id) throw new Error('Failed to start YouTube download actor');
+
+        var runId = runData.id;
+        console.log('  YouTube actor run started: ' + runId);
+
+        // Poll for completion (max 3 minutes)
+        var startTime = Date.now();
+        var runStatus;
+        while (Date.now() - startTime < 180000) {
+            await new Promise(r => setTimeout(r, 5000));
+            var statusResp = await axios.get(
+                'https://api.apify.com/v2/actor-runs/' + runId + '?token=' + apifyToken,
+                { timeout: 15000 }
+            );
+            runStatus = statusResp.data?.data?.status;
+            if (runStatus === 'SUCCEEDED') break;
+            if (runStatus === 'FAILED' || runStatus === 'ABORTED' || runStatus === 'TIMED-OUT') {
+                throw new Error('YouTube download failed: ' + runStatus);
+            }
+        }
+        if (runStatus !== 'SUCCEEDED') throw new Error('YouTube download timed out');
+
+        // Get dataset items
+        var datasetId = runResp.data?.data?.defaultDatasetId;
+        if (!datasetId) throw new Error('No dataset ID from YouTube actor');
+
+        var dsResp = await axios.get(
+            'https://api.apify.com/v2/datasets/' + datasetId + '/items?token=' + apifyToken,
+            { timeout: 30000 }
+        );
+
+        var dsItems = dsResp.data;
+        if (!Array.isArray(dsItems) || dsItems.length === 0) throw new Error('No items in YouTube dataset');
+
+        var ytItem = dsItems[0];
+        var ytVideoUrl = ytItem.url || ytItem.videoUrl || ytItem.downloadUrl;
+        if (!ytVideoUrl) {
+            // Try key-value store
+            var kvStoreId = runResp.data?.data?.defaultKeyValueStoreId;
+            if (kvStoreId) {
+                var kvResp = await axios.get(
+                    'https://api.apify.com/v2/key-value-stores/' + kvStoreId + '/keys?token=' + apifyToken,
+                    { timeout: 15000 }
+                );
+                var keys = kvResp.data?.data?.items || [];
+                var videoKey = keys.find(k => k.key && (k.key.endsWith('.mp4') || k.contentType?.includes('video')));
+                if (videoKey) {
+                    ytVideoUrl = 'https://api.apify.com/v2/key-value-stores/' + kvStoreId + '/records/' + encodeURIComponent(videoKey.key) + '?token=' + apifyToken;
+                }
+            }
+            if (!ytVideoUrl) {
+                console.warn('YouTube dataset item keys:', Object.keys(ytItem));
+                throw new Error('Could not find video URL in YouTube response');
+            }
+        }
+
+        console.log('  YouTube video URL found, downloading to server...');
+        await downloadFileToPath(ytVideoUrl, outPath);
+        return true;
+    }
+
+    return false; // Not a TikTok/YouTube URL
+}
+
+// Download a file from URL to local path
+function downloadFileToPath(url, outPath) {
+    return new Promise(function(resolve, reject) {
+        var fileStream = fs.createWriteStream(outPath);
+        function doGet(getUrl, redirects) {
+            if (redirects > 5) return reject(new Error('Too many redirects'));
+            var mod = getUrl.startsWith('https') ? https : require('http');
+            mod.get(getUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 120000 }, function(resp) {
+                if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+                    return doGet(resp.headers.location, (redirects || 0) + 1);
+                }
+                if (resp.statusCode !== 200) {
+                    fileStream.close();
+                    try { fs.unlinkSync(outPath); } catch(e) {}
+                    return reject(new Error('Download failed: HTTP ' + resp.statusCode));
+                }
+                resp.pipe(fileStream);
+                fileStream.on('finish', function() { fileStream.close(resolve); });
+                resp.on('error', function(e) { fileStream.close(); reject(e); });
+            }).on('error', function(e) { fileStream.close(); reject(e); });
+        }
+        doGet(url, 0);
+    });
+}
 
 // Download latest yt-dlp binary if not present (or older than 24h)
 var ytdlpPath = path.join(__dirname, '../public/studio/ranking-uploads', '.yt-dlp');
@@ -964,20 +1105,36 @@ router.post('/ranking/import-url', requireAuth, urlImportLimiter, async (req, re
 
         console.log('Ranking URL import: ' + url);
 
-        var args = [
-            url,
-            '-o', outPath,
-            '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]/best',
-            '--merge-output-format', 'mp4',
-            '--no-playlist',
-            '--no-check-certificates',
-            '--no-warnings',
-            '--socket-timeout', '30',
-            '--extractor-args', 'youtube:player_client=ios,mweb',
-            '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-        ];
+        // Try Apify first for TikTok/YouTube, fall back to yt-dlp for other URLs
+        var isTikTokOrYT = /tiktok\.com|vm\.tiktok|vt\.tiktok|youtube\.com|youtu\.be/i.test(url);
+        var downloaded = false;
 
-        await runYtdlp(args, 120000);
+        if (isTikTokOrYT) {
+            try {
+                downloaded = await downloadViaApify(url, outPath);
+                if (downloaded) console.log('  ✅ Apify download succeeded');
+            } catch (apifyErr) {
+                console.warn('  ⚠️ Apify download failed, falling back to yt-dlp:', apifyErr.message);
+                downloaded = false;
+            }
+        }
+
+        if (!downloaded) {
+            var args = [
+                url,
+                '-o', outPath,
+                '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]/best',
+                '--merge-output-format', 'mp4',
+                '--no-playlist',
+                '--no-check-certificates',
+                '--no-warnings',
+                '--socket-timeout', '30',
+                '--extractor-args', 'youtube:player_client=ios,mweb',
+                '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+            ];
+
+            await runYtdlp(args, 120000);
+        }
 
         if (!fs.existsSync(outPath)) {
             return res.status(500).json({ error: 'Download failed — no output file' });
