@@ -200,7 +200,7 @@ class RankingAssembler {
             if (fs.existsSync(hookFile)) clickSfxPath = hookFile;
         } catch (e) {}
 
-        // Step 1: Extract short segments from each clip (keep audio — simpler, more reliable)
+        // Step 1: Extract short segments from each clip (re-encode for accurate sub-second seeking)
         var segPaths = [];
         for (var i = 0; i < numCuts; i++) {
             var clipIdx = i < clipCount ? i : Math.floor(Math.random() * clipCount);
@@ -213,21 +213,15 @@ class RankingAssembler {
                 await this.ffmpeg([
                     '-ss', ss.toFixed(2), '-i', normalizedPaths[clipIdx],
                     '-t', cutDuration.toFixed(2),
-                    '-c', 'copy',
-                    '-f', 'mpegts', '-y', segPath
-                ]);
-            } catch (segErr) {
-                console.warn('  Hook seg ' + i + ' copy failed, re-encoding:', segErr.message.substring(0, 100));
-                await this.ffmpeg([
-                    '-ss', ss.toFixed(2), '-i', normalizedPaths[clipIdx],
-                    '-t', cutDuration.toFixed(2),
-                    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '25',
+                    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
                     '-c:a', 'aac', '-b:a', '64k',
                     '-f', 'mpegts', '-y', segPath
                 ]);
+            } catch (segErr) {
+                console.warn('  Hook seg ' + i + ' failed:', segErr.message.substring(0, 100));
             }
-            if (!fs.existsSync(segPath)) {
-                console.warn('  Hook seg ' + i + ' missing, skipping');
+            if (!fs.existsSync(segPath) || fs.statSync(segPath).size < 1000) {
+                console.warn('  Hook seg ' + i + ' missing or empty, skipping');
                 continue;
             }
             segPaths.push(segPath);
