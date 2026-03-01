@@ -194,6 +194,11 @@ app.get('/studio/storytelling', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'studio', 'storytelling.html'));
 });
 
+// Studio AI Avatar page route
+app.get('/studio/avatar', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'studio', 'avatar.html'));
+});
+
 // Subscription success page
 app.get('/subscription-success', async (req, res) => {
     try {

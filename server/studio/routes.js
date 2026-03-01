@@ -1324,8 +1324,274 @@ router.delete('/ranking/clip/:filename', requireAuth, (req, res) => {
 router.get('/health', (req, res) => {
     res.json({ 
         status: 'ok',
-        availableFormats: ['skeleton-anatomy', 'ranking']
+        availableFormats: ['skeleton-anatomy', 'ranking', 'avatar']
     });
+});
+
+// === AI AVATAR FORMAT ENDPOINTS ===
+
+const AvatarGenerator = require('./formats/avatar/generator');
+const avatarGenerators = {};
+function getAvatarGenerator() {
+    if (!avatarGenerators.default) avatarGenerators.default = new AvatarGenerator();
+    return avatarGenerators.default;
+}
+
+// Avatar photo upload (multer for multipart)
+const avatarUploadDir = path.join(__dirname, '../public/studio/uploads/avatar');
+if (!fs.existsSync(avatarUploadDir)) fs.mkdirSync(avatarUploadDir, { recursive: true });
+const avatarUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024, files: 30 },
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) cb(null, true);
+        else cb(new Error('Only image files allowed'));
+    }
+});
+
+// List user's characters
+router.get('/avatar/characters', requireAuth, async (req, res) => {
+    try {
+        var userId = String(req.user.userId);
+        var db = await getDb();
+        var chars = await db.collection('avatar_characters')
+            .find({ userId: userId })
+            .sort({ createdAt: -1 })
+            .toArray();
+
+        // Refresh status for any non-completed characters from Higgsfield
+        var gen = getAvatarGenerator();
+        for (var i = 0; i < chars.length; i++) {
+            var c = chars[i];
+            if (c.status !== 'completed' && c.status !== 'failed' && c.higgsId) {
+                try {
+                    var hfChar = await gen.getCharacterStatus(c.higgsId);
+                    if (hfChar.status !== c.status) {
+                        await db.collection('avatar_characters').updateOne(
+                            { _id: c._id },
+                            { $set: { status: hfChar.status, thumbnailUrl: hfChar.thumbnail_url || c.thumbnailUrl, updatedAt: new Date() } }
+                        );
+                        chars[i].status = hfChar.status;
+                        chars[i].thumbnailUrl = hfChar.thumbnail_url || c.thumbnailUrl;
+                    }
+                } catch (e) { /* ignore polling errors */ }
+            }
+        }
+
+        res.json({
+            success: true,
+            characters: chars.map(function(c) {
+                return { id: c._id.toString(), higgsId: c.higgsId, name: c.name, status: c.status, thumbnailUrl: c.thumbnailUrl || null, createdAt: c.createdAt };
+            })
+        });
+    } catch (error) {
+        console.error('Avatar list characters error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Create a new character (upload photos → S3 → Higgsfield)
+router.post('/avatar/characters', requireAuth, avatarUpload.array('photos', 30), async (req, res) => {
+    try {
+        var userId = String(req.user.userId);
+        var name = req.body.name;
+        if (!name || !name.trim()) return res.status(400).json({ error: 'Character name required' });
+        if (!req.files || req.files.length < 5) return res.status(400).json({ error: 'Upload at least 5 photos' });
+
+        var gen = getAvatarGenerator();
+
+        // Upload each photo to S3
+        console.log('🎭 Avatar: uploading ' + req.files.length + ' photos to S3...');
+        var imageUrls = [];
+        for (var i = 0; i < req.files.length; i++) {
+            var f = req.files[i];
+            var url = await gen.uploadToS3(f.buffer, f.originalname, f.mimetype);
+            imageUrls.push(url);
+        }
+
+        // Create character on Higgsfield
+        var hfChar = await gen.createCharacter(name.trim(), imageUrls);
+
+        // Save to our DB
+        var db = await getDb();
+        var doc = {
+            userId: userId,
+            higgsId: hfChar.id,
+            name: name.trim(),
+            status: hfChar.status || 'not_ready',
+            thumbnailUrl: hfChar.thumbnail_url || null,
+            imageUrls: imageUrls,
+            createdAt: new Date()
+        };
+        await db.collection('avatar_characters').insertOne(doc);
+
+        console.log('🎭 Avatar: character created — ' + name + ' (' + req.files.length + ' photos)');
+        res.json({ success: true, id: doc._id || hfChar.id, status: doc.status });
+    } catch (error) {
+        console.error('Avatar create character error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Delete a character
+router.delete('/avatar/characters/:id', requireAuth, async (req, res) => {
+    try {
+        var userId = String(req.user.userId);
+        var db = await getDb();
+        await db.collection('avatar_characters').deleteOne({ _id: new ObjectId(req.params.id), userId: userId });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get available styles
+router.get('/avatar/styles', requireAuth, async (req, res) => {
+    try {
+        var gen = getAvatarGenerator();
+        var styles = await gen.getStyles();
+        res.json({ success: true, styles: styles });
+    } catch (error) {
+        console.error('Avatar styles error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Upload a reference image (for GPT-4o Vision description)
+const refUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+router.post('/avatar/upload-reference', requireAuth, refUpload.single('image'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No image provided' });
+        var gen = getAvatarGenerator();
+        var url = await gen.uploadToS3(req.file.buffer, req.file.originalname, req.file.mimetype);
+        res.json({ success: true, url: url });
+    } catch (error) {
+        console.error('Avatar ref upload error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Generate images
+router.post('/avatar/generate', requireAuth, studioGenerateLimiter, async (req, res) => {
+    try {
+        var userId = String(req.user.userId);
+        var { characterId, prompt, styleId, size, batchSize, referenceImageUrl } = req.body;
+
+        if (!characterId) return res.status(400).json({ error: 'Select a character' });
+
+        // Verify character belongs to user and is ready
+        var db = await getDb();
+        var char = await db.collection('avatar_characters').findOne({ userId: userId, higgsId: characterId });
+        if (!char) {
+            try { char = await db.collection('avatar_characters').findOne({ userId: userId, _id: new ObjectId(characterId) }); } catch(e) {}
+        }
+        if (!char) return res.status(404).json({ error: 'Character not found' });
+        if (char.status !== 'completed') return res.status(400).json({ error: 'Character is still training. Please wait.' });
+
+        var gen = getAvatarGenerator();
+
+        // If reference image, describe it with GPT-4o Vision
+        var finalPrompt = prompt || '';
+        if (referenceImageUrl) {
+            try {
+                finalPrompt = await gen.describeReferenceImage(referenceImageUrl, prompt);
+                console.log('🎭 Avatar: GPT-4o described reference → ' + finalPrompt.substring(0, 80) + '...');
+            } catch (e) {
+                console.warn('GPT-4o Vision failed, using raw prompt:', e.message);
+                if (!finalPrompt) return res.status(400).json({ error: 'Could not describe reference image and no prompt provided' });
+            }
+        }
+
+        if (!finalPrompt) return res.status(400).json({ error: 'Prompt required' });
+
+        // Credit check: 0.5 per image (batch of 4 = 2 credits, single = 0.5)
+        var count = batchSize === 1 ? 1 : 4;
+        var check = await credits.checkCredits(userId, 'image_generation', count);
+        if (!check.allowed) return res.status(402).json({ error: 'Not enough credits', ...check });
+
+        // Generate
+        var result = await gen.generateImages({
+            prompt: finalPrompt,
+            characterId: char.higgsId,
+            styleId: styleId,
+            size: size,
+            batchSize: count
+        });
+
+        // Deduct credits on successful submission
+        await credits.deductCredits(userId, 'image_generation', count, 'Avatar image generation (' + count + ' images)');
+
+        res.json({ success: true, jobSetId: result.jobSetId });
+    } catch (error) {
+        console.error('Avatar generate error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Poll generation status
+router.get('/avatar/poll/:jobSetId', requireAuth, async (req, res) => {
+    try {
+        var gen = getAvatarGenerator();
+        var jobSetId = req.params.jobSetId;
+
+        var pollRes = await axios.get('https://platform.higgsfield.ai/v1/job-sets/' + jobSetId, {
+            headers: gen._hfHeaders(), timeout: 15000
+        });
+        var jobs = pollRes.data.jobs || [];
+        var allDone = jobs.every(function(j) {
+            return j.status === 'completed' || j.status === 'failed' || j.status === 'nsfw';
+        });
+
+        var results = jobs.map(function(j) {
+            var r = { status: j.status, imageUrl: null, rawUrl: null };
+            if (j.status === 'completed' && j.results) {
+                r.imageUrl = j.results.min ? j.results.min.url : null;
+                r.rawUrl = j.results.raw ? j.results.raw.url : null;
+            }
+            return r;
+        });
+
+        // If all done, save to gallery
+        if (allDone) {
+            var userId = String(req.user.userId);
+            var db = await getDb();
+            var completedImages = results.filter(function(r) { return r.status === 'completed' && r.imageUrl; });
+            if (completedImages.length > 0) {
+                await db.collection('avatar_generations').insertOne({
+                    userId: userId,
+                    jobSetId: jobSetId,
+                    images: completedImages,
+                    createdAt: new Date()
+                });
+            }
+            // Refund for failed images
+            var failedCount = results.filter(function(r) { return r.status === 'failed' || r.status === 'nsfw'; }).length;
+            if (failedCount > 0) {
+                try { await credits.refundCredits(userId, 'image_generation', failedCount, 'Avatar generation failed/nsfw'); } catch(e) {}
+            }
+        }
+
+        res.json({ success: true, status: allDone ? 'completed' : 'generating', results: results });
+    } catch (error) {
+        console.error('Avatar poll error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Gallery — list past generations
+router.get('/avatar/gallery', requireAuth, async (req, res) => {
+    try {
+        var userId = String(req.user.userId);
+        var db = await getDb();
+        var gens = await db.collection('avatar_generations')
+            .find({ userId: userId })
+            .sort({ createdAt: -1 })
+            .limit(50)
+            .toArray();
+        res.json({ success: true, generations: gens });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // === BACKGROUND TASK ENDPOINTS ===

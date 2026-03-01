@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>if(!localStorage.getItem("viewhunt_token"))window.location.replace("/");</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Avatar — ViewHunt Studio</title>
+    <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+    <link rel="icon" type="image/png" href="/images/viewhunt_logo.png">
+    <link rel="apple-touch-icon" href="/images/viewhunt_logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+        :root{
+            --bg:#0e0e12;--surface:#18181f;--surface-2:#1f1f28;--surface-3:#262631;
+            --border:#2a2a36;--border-hover:#3a3a4a;
+            --text:#e8e8ed;--text-muted:#8b8b9e;--text-dim:#5c5c6e;
+            --accent:#7c6aef;--accent-hover:#6b58e0;--accent-glow:rgba(124,106,239,0.15);
+            --green:#34d399;--green-dim:rgba(52,211,153,0.12);
+            --amber:#fbbf24;--red:#f87171;
+        }
+        body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+        .app{max-width:860px;margin:0 auto;padding:1.5rem 1.25rem 4rem}
+        .header{display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem}
+        .back-btn{color:var(--text-muted);text-decoration:none;font-size:0.85rem;padding:0.4rem 0.75rem;border-radius:6px;border:1px solid var(--border);transition:all 0.15s}
+        .back-btn:hover{color:var(--text);border-color:var(--border-hover);background:var(--surface)}
+        .logo{font-size:1.1rem;font-weight:700;letter-spacing:-0.02em}
+        .logo span{color:var(--accent)}
+
+        .section{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.5rem;margin-bottom:1.25rem}
+        .section-title{font-size:1rem;font-weight:700;margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem}
+        .section-desc{font-size:0.82rem;color:var(--text-muted);line-height:1.6;margin-bottom:1rem}
+
+        .btn{display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.6rem 1.1rem;border-radius:8px;font-weight:600;font-size:0.88rem;cursor:pointer;border:none;transition:all 0.15s;font-family:inherit}
+        .btn-primary{background:var(--accent);color:white}
+        .btn-primary:hover{background:var(--accent-hover)}
+        .btn-primary:disabled{opacity:0.5;cursor:not-allowed}
+        .btn-secondary{background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border)}
+        .btn-secondary:hover{color:var(--text);border-color:var(--border-hover)}
+        .btn-danger{background:rgba(248,113,113,0.1);color:var(--red);border:1px solid rgba(248,113,113,0.2)}
+        .btn-danger:hover{background:rgba(248,113,113,0.2)}
+
+        input[type="text"],textarea,select{width:100%;padding:0.6rem 0.85rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:0.88rem;outline:none;transition:border-color 0.15s}
+        input:focus,textarea:focus,select:focus{border-color:var(--accent)}
+        textarea{resize:vertical;min-height:80px}
+        label{display:block;font-size:0.82rem;font-weight:600;margin-bottom:0.35rem;color:var(--text-muted)}
+
+        .upload-zone{border:2px dashed var(--border);border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;position:relative}
+        .upload-zone:hover{border-color:var(--accent);background:var(--accent-glow)}
+        .upload-zone.dragover{border-color:var(--accent);background:var(--accent-glow)}
+        .upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer}
+        .upload-zone-text{font-size:0.88rem;color:var(--text-muted)}
+        .upload-zone-text strong{color:var(--text);display:block;margin-bottom:0.25rem}
+
+        .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:0.5rem;margin-top:0.75rem}
+        .photo-thumb{aspect-ratio:1;border-radius:8px;overflow:hidden;position:relative;border:1px solid var(--border);background:var(--surface-2)}
+        .photo-thumb img{width:100%;height:100%;object-fit:cover}
+        .photo-thumb .remove-btn{position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.7);color:white;border:none;font-size:0.7rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+
+        .char-card{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:0.85rem;display:flex;align-items:center;gap:0.85rem;cursor:pointer;transition:all 0.15s;margin-bottom:0.5rem}
+        .char-card:hover{border-color:var(--accent)}
+        .char-card.selected{border-color:var(--accent);background:var(--accent-glow)}
+        .char-card.training{opacity:0.7}
+        .char-avatar{width:48px;height:48px;border-radius:8px;background:var(--surface-3);overflow:hidden;flex-shrink:0}
+        .char-avatar img{width:100%;height:100%;object-fit:cover}
+        .char-info{flex:1;min-width:0}
+        .char-name{font-size:0.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .char-status{font-size:0.72rem;margin-top:0.15rem}
+        .char-status.ready{color:var(--green)}
+        .char-status.training-status{color:var(--amber)}
+        .char-status.failed{color:var(--red)}
+        .char-actions{display:flex;gap:0.3rem}
+
+        .style-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:0.5rem}
+        .style-card{border-radius:8px;overflow:hidden;border:2px solid transparent;cursor:pointer;transition:all 0.15s;position:relative}
+        .style-card:hover{border-color:var(--border-hover)}
+        .style-card.selected{border-color:var(--accent)}
+        .style-card img{width:100%;aspect-ratio:1;object-fit:cover;display:block}
+        .style-card-name{position:absolute;bottom:0;left:0;right:0;padding:0.25rem 0.4rem;background:linear-gradient(transparent,rgba(0,0,0,0.8));font-size:0.65rem;color:white;font-weight:600}
+
+        .gen-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0.75rem;margin-top:0.75rem}
+        .gen-card{border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--surface-2);position:relative}
+        .gen-card img{width:100%;aspect-ratio:9/16;object-fit:cover;display:block;cursor:pointer}
+        .gen-card-actions{padding:0.5rem;display:flex;gap:0.3rem}
+        .gen-card-actions .btn{font-size:0.75rem;padding:0.3rem 0.6rem;flex:1}
+
+        .tabs{display:flex;gap:0.5rem;margin-bottom:1rem}
+        .tab{padding:0.5rem 1rem;border-radius:8px;font-size:0.85rem;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-muted);transition:all 0.15s}
+        .tab:hover{color:var(--text);border-color:var(--border-hover)}
+        .tab.active{background:var(--accent);color:white;border-color:var(--accent)}
+
+        .size-options{display:flex;gap:0.4rem;flex-wrap:wrap}
+        .size-opt{padding:0.35rem 0.7rem;border-radius:6px;font-size:0.78rem;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-muted);transition:all 0.15s}
+        .size-opt:hover{border-color:var(--border-hover);color:var(--text)}
+        .size-opt.selected{border-color:var(--accent);color:var(--accent);background:var(--accent-glow)}
+
+        .spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.6s linear infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
+
+        .toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);padding:0.65rem 1.25rem;border-radius:10px;font-size:0.85rem;font-weight:600;z-index:9999;animation:slideUp 0.3s ease}
+        .toast-error{background:var(--red);color:white}
+        .toast-success{background:var(--green);color:#0e0e12}
+        @keyframes slideUp{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+
+        .ref-upload-zone{border:1px dashed var(--border);border-radius:8px;padding:1rem;text-align:center;cursor:pointer;transition:all 0.15s;font-size:0.82rem;color:var(--text-dim);margin-bottom:0.75rem}
+        .ref-upload-zone:hover{border-color:var(--accent);color:var(--text-muted)}
+        .ref-preview{max-width:120px;border-radius:8px;margin:0.5rem auto;display:block}
+
+        .credit-badge{display:inline-flex;align-items:center;gap:0.25rem;font-size:0.78rem;font-weight:600;color:var(--amber);background:rgba(251,191,36,0.1);padding:0.2rem 0.5rem;border-radius:5px}
+
+        @media(max-width:640px){
+            .app{padding:1rem 0.75rem 3rem}
+            .gen-grid{grid-template-columns:repeat(2,1fr)}
+            .photo-grid{grid-template-columns:repeat(auto-fill,minmax(60px,1fr))}
+        }
+    </style>
+</head>
+<body>
+<div class="app">
+    <header class="header">
+        <a href="/studio" class="back-btn">← Studio</a>
+        <div class="logo">AI <span>Avatar</span></div>
+    </header>
+
+    <!-- Tab Navigation -->
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('characters')" id="tab-characters">🎭 Characters</div>
+        <div class="tab" onclick="switchTab('generate')" id="tab-generate">✨ Generate</div>
+        <div class="tab" onclick="switchTab('gallery')" id="tab-gallery">🖼️ Gallery</div>
+    </div>
+
+    <!-- ===== CHARACTERS TAB ===== -->
+    <div id="panel-characters">
+        <div class="section">
+            <div class="section-title">🎭 My Characters</div>
+            <div class="section-desc">Train an AI avatar on your photos. Upload 5-30 clear photos of the same person — different angles, lighting, and outfits work best. Training takes 5-15 minutes.</div>
+            <div id="characters-list"></div>
+            <button class="btn btn-primary" onclick="showCreateCharacter()" style="margin-top:0.75rem">+ New Character</button>
+        </div>
+
+        <!-- Create Character Panel (hidden by default) -->
+        <div class="section" id="create-char-panel" style="display:none">
+            <div class="section-title">📸 Create New Character</div>
+            <div style="margin-bottom:0.75rem">
+                <label>Character Name</label>
+                <input type="text" id="char-name-input" placeholder="e.g. My Avatar, Brand Character...">
+            </div>
+            <div class="upload-zone" id="photo-upload-zone">
+                <input type="file" id="photo-input" multiple accept="image/*">
+                <div class="upload-zone-text">
+                    <strong>Drop photos here or click to browse</strong>
+                    5-30 photos recommended · Clear face shots from different angles
+                </div>
+            </div>
+            <div class="photo-grid" id="photo-preview-grid"></div>
+            <div style="display:flex;gap:0.5rem;margin-top:1rem">
+                <button class="btn btn-primary" id="create-char-btn" onclick="createCharacter()" disabled>
+                    Train Character · <span class="credit-badge">0 💎</span>
+                </button>
+                <button class="btn btn-secondary" onclick="hideCreateCharacter()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== GENERATE TAB ===== -->
+    <div id="panel-generate" style="display:none">
+        <div class="section" id="no-char-msg" style="display:none">
+            <div style="text-align:center;padding:1.5rem;color:var(--text-dim)">
+                <div style="font-size:2rem;margin-bottom:0.5rem">🎭</div>
+                <div style="font-size:0.9rem;margin-bottom:0.75rem">No characters yet</div>
+                <button class="btn btn-primary" onclick="switchTab('characters');showCreateCharacter()">Create Your First Character</button>
+            </div>
+        </div>
+
+        <!-- Character Selector -->
+        <div class="section" id="char-selector-section">
+            <div class="section-title">🎭 Character</div>
+            <div id="char-selector-list"></div>
+        </div>
+
+        <!-- Style Selector -->
+        <div class="section" id="style-section">
+            <div class="section-title">🎨 Style</div>
+            <div class="section-desc">Choose a visual style for your generated images.</div>
+            <div class="style-grid" id="style-grid">
+                <div style="text-align:center;padding:1rem;color:var(--text-dim);font-size:0.82rem;grid-column:1/-1">Loading styles...</div>
+            </div>
+        </div>
+
+        <!-- Prompt / Reference -->
+        <div class="section">
+            <div class="section-title">✍️ Prompt</div>
+            <div class="section-desc">Describe the scene, pose, outfit, and setting. The AI handles the character's appearance.</div>
+            
+            <div class="ref-upload-zone" id="ref-upload-zone" onclick="document.getElementById('ref-input').click()">
+                📷 Upload a reference image (optional) — AI will describe the scene for you
+                <input type="file" id="ref-input" accept="image/*" style="display:none" onchange="handleRefUpload(this)">
+            </div>
+            <div id="ref-preview-wrap" style="display:none;text-align:center;margin-bottom:0.75rem">
+                <img id="ref-preview-img" class="ref-preview" alt="Reference">
+                <button class="btn btn-secondary" onclick="clearRefImage()" style="font-size:0.75rem;margin-top:0.3rem">Remove reference</button>
+            </div>
+
+            <textarea id="prompt-input" placeholder="Walking through a coffee shop, casual outfit, warm lighting, candid shot..." rows="3"></textarea>
+
+            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:0.75rem;align-items:center">
+                <div>
+                    <label>Size</label>
+                    <div class="size-options" id="size-options">
+                        <div class="size-opt selected" data-size="1152x2048" onclick="selectSize(this)">Portrait</div>
+                        <div class="size-opt" data-size="2048x1152" onclick="selectSize(this)">Landscape</div>
+                        <div class="size-opt" data-size="1536x2048" onclick="selectSize(this)">4:3 Tall</div>
+                        <div class="size-opt" data-size="2048x1536" onclick="selectSize(this)">4:3 Wide</div>
+                    </div>
+                </div>
+                <div>
+                    <label>Count</label>
+                    <div class="size-options">
+                        <div class="size-opt" data-count="1" onclick="selectCount(this)">1</div>
+                        <div class="size-opt selected" data-count="4" onclick="selectCount(this)">4</div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top:1rem;display:flex;align-items:center;gap:0.75rem">
+                <button class="btn btn-primary" id="generate-btn" onclick="generateImages()">
+                    Generate · <span class="credit-badge" id="gen-cost-badge">2 💎</span>
+                </button>
+                <div id="gen-status" style="font-size:0.82rem;color:var(--text-muted)"></div>
+            </div>
+        </div>
+
+        <!-- Generation Results -->
+        <div class="section" id="gen-results-section" style="display:none">
+            <div class="section-title">🖼️ Results</div>
+            <div class="gen-grid" id="gen-results-grid"></div>
+        </div>
+    </div>
+
+    <!-- ===== GALLERY TAB ===== -->
+    <div id="panel-gallery" style="display:none">
+        <div class="section">
+            <div class="section-title">🖼️ Generation History</div>
+            <div class="section-desc">All your generated images. Click to view full size.</div>
+            <div class="gen-grid" id="gallery-grid">
+                <div style="text-align:center;padding:1.5rem;color:var(--text-dim);font-size:0.85rem;grid-column:1/-1">Loading...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lightbox -->
+<div id="lightbox" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.9);backdrop-filter:blur(6px);cursor:pointer;display:none;align-items:center;justify-content:center" onclick="this.style.display='none'">
+    <img id="lightbox-img" style="max-width:90%;max-height:90%;border-radius:12px;object-fit:contain" alt="Full size">
+</div>
+
+<script src="/studio/avatar-app.js?v=20260301a"></script>
+</body>
+</html>
