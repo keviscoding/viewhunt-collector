@@ -491,17 +491,18 @@
     async function assembleVideo() {
         var btn = document.getElementById('btn-assemble');
         var enableCommentary = document.getElementById('commentary-toggle').checked;
-        btn.disabled = true; btn.textContent = 'Trimming clips...';
+        btn.disabled = true; btn.textContent = 'Starting...';
         goToStep(4);
         var pf = document.getElementById('progress-fill'), pt = document.getElementById('progress-text');
         pf.style.width = '0%'; pt.textContent = 'Trimming clips...';
         document.getElementById('assembly-progress').classList.remove('hidden');
 
         try {
+            // Step 1: Trim clips
             var trimmedClips = [];
             for (var i = 0; i < clips.length; i++) {
                 var clip = clips[i];
-                pf.style.width = Math.round(((i + 1) / clips.length) * 30) + '%';
+                pf.style.width = Math.round(((i + 1) / clips.length) * 20) + '%';
                 pt.textContent = 'Trimming clip ' + (i + 1) + ' of ' + clips.length + '...';
                 var needsTrim = clip.startTime > 0.1 || Math.abs(clip.endTime - clip.originalDuration) > 0.1;
                 var filename = clip.filename;
@@ -515,8 +516,9 @@
                 trimmedClips.push({ filename: filename, number: clips.length - i, label: clip.label || '' });
             }
 
-            pf.style.width = '40%';
-            pt.textContent = enableCommentary ? 'Generating AI commentary... this may take a minute' : 'Assembling ranking video...';
+            // Step 2: Submit assembly job (returns immediately with jobId)
+            pf.style.width = '25%';
+            pt.textContent = 'Submitting assembly job...';
 
             var selectedVoice = document.getElementById('voice-picker').value || 'Kore';
             var selectedFont = document.getElementById('subtitle-font').value || 'Arial';
@@ -536,10 +538,44 @@
                     subtitleColor: subtitleColor
                 })
             });
-            var aData = await aRes.json(); if (!aData.success) throw new Error(aData.error || 'Assembly failed');
-            pf.style.width = '100%'; pt.textContent = 'Done!';
-            setTimeout(function() { showResult(aData); }, 400);
-            loadCredits();
+            var aData = await aRes.json();
+            if (!aData.success) throw new Error(aData.error || 'Assembly failed');
+
+            var jobId = aData.jobId;
+            pf.style.width = '30%';
+            pt.textContent = enableCommentary ? 'Generating AI commentary... you can close this tab' : 'Assembling video... you can close this tab';
+
+            // Step 3: Poll for completion
+            var failCount = 0;
+            while (true) {
+                await new Promise(function(r) { setTimeout(r, 3000); });
+                try {
+                    var pollRes = await apiFetch('/api/studio/ranking/assemble/status/' + jobId);
+                    var pollData = await pollRes.json();
+
+                    if (pollData.status === 'complete' && pollData.result) {
+                        pf.style.width = '100%'; pt.textContent = 'Done!';
+                        setTimeout(function() { showResult(pollData.result); }, 400);
+                        loadCredits();
+                        return;
+                    }
+                    if (pollData.status === 'failed') {
+                        throw new Error(pollData.error || 'Assembly failed');
+                    }
+
+                    // Update progress message
+                    var msg = pollData.message || 'Processing...';
+                    pt.textContent = msg + ' (you can close this tab)';
+                    // Animate progress bar between 30-90%
+                    var currentPct = parseInt(pf.style.width) || 30;
+                    if (currentPct < 90) pf.style.width = Math.min(90, currentPct + 3) + '%';
+                    failCount = 0;
+                } catch (e) {
+                    if (e.message && (e.message.includes('Assembly failed') || e.message.includes('Auth failed'))) throw e;
+                    failCount++;
+                    if (failCount >= 20) throw new Error('Lost connection to server');
+                }
+            }
         } catch (err) {
             pf.style.width = '0%'; pt.textContent = 'Error: ' + err.message;
             var cost = enableCommentary ? 7 : 2;

@@ -1222,22 +1222,28 @@ router.post('/ranking/clip-info', requireAuth, async (req, res) => {
     }
 });
 
-// Assemble ranking video
+// Assemble ranking video — BACKGROUND JOB
+// Returns a jobId immediately, frontend polls for status
+var rankingJobs = {}; // In-memory job store (simple, no MongoDB needed)
+
+// Cleanup old ranking jobs every 30 minutes
+setInterval(function() {
+    var now = Date.now();
+    Object.keys(rankingJobs).forEach(function(id) {
+        if (now - rankingJobs[id].createdAt > 30 * 60 * 1000) delete rankingJobs[id];
+    });
+}, 30 * 60 * 1000);
+
 router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req, res) => {
     try {
         var { clips, title, layout, commentary: enableCommentary, voiceName, colorPalette, checkeredMode, subtitleFont, subtitleY, subtitleColor } = req.body;
-        // clips: [{ filename, number, label, startTime, endTime }]
-        // title: { text, highlightWord, highlightColor }
-        // commentary: boolean — if true, generate AI commentary voiceovers
 
         if (!clips || !Array.isArray(clips) || clips.length === 0) {
             return res.status(400).json({ error: 'At least one clip is required' });
         }
 
-        // Credit check — ranking_assembly = 2 credits, commentary adds script_generation cost
         var userId = String(req.user.userId);
-        var creditType = enableCommentary ? 'ranking_assembly' : 'ranking_assembly';
-        var check = await credits.checkCredits(userId, creditType, 1);
+        var check = await credits.checkCredits(userId, 'ranking_assembly', 1);
         if (!check.allowed) {
             return res.status(402).json({ error: 'Not enough credits', ...check });
         }
@@ -1245,65 +1251,95 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
         // Deduct upfront (refund on failure)
         await credits.deductCredits(userId, 'ranking_assembly', 1, 'Ranking video assembly');
 
-        var assembler = new RankingAssembler();
-
-        // Build clip list with full paths
+        // Validate clips exist before starting background job
         var clipList = clips.map(function(c, i) {
             var filePath = path.join(rankingUploadDir, c.filename);
             if (!fs.existsSync(filePath)) throw new Error('Clip not found: ' + c.filename);
-            return {
-                path: filePath,
-                number: c.number || (i + 1),
-                label: c.label || ''
-            };
+            return { path: filePath, number: c.number || (i + 1), label: c.label || '' };
         });
 
-        // Generate AI commentary if enabled
-        var commentaryData = [];
-        if (enableCommentary && title && title.text) {
+        // Create job and return immediately
+        var jobId = 'rj-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+        rankingJobs[jobId] = {
+            status: 'processing',
+            message: enableCommentary ? 'Generating AI commentary...' : 'Normalizing clips...',
+            createdAt: Date.now(),
+            userId: userId
+        };
+
+        res.json({ success: true, jobId: jobId });
+
+        // Run assembly in background
+        (async function() {
             try {
-                console.log('🎙️ Generating AI commentary for ranking video...');
-                var RankingCommentary = require('./formats/ranking/commentary');
-                var commentaryGen = new RankingCommentary();
-                var commentaryResults = await commentaryGen.generateCommentary(clipList, title.text, voiceName || 'Kore');
-                commentaryData = commentaryResults.filter(function(c) { return c.audioPath; });
+                var assembler = new RankingAssembler();
+                var commentaryData = [];
+                var commentaryResults = [];
 
-                // Charge for commentary (script_generation cost)
-                if (commentaryData.length > 0) {
-                    await credits.deductCredits(userId, 'script_generation', 1, 'Ranking AI commentary');
+                // Generate AI commentary if enabled
+                if (enableCommentary && title && title.text) {
+                    try {
+                        rankingJobs[jobId].message = 'Generating AI commentary...';
+                        console.log('🎙️ Generating AI commentary for ranking video...');
+                        var RankingCommentary = require('./formats/ranking/commentary');
+                        var commentaryGen = new RankingCommentary();
+                        commentaryResults = await commentaryGen.generateCommentary(clipList, title.text, voiceName || 'Kore');
+                        commentaryData = commentaryResults.filter(function(c) { return c.audioPath; });
+
+                        if (commentaryData.length > 0) {
+                            await credits.deductCredits(userId, 'script_generation', 1, 'Ranking AI commentary');
+                        }
+                    } catch (commentaryErr) {
+                        console.warn('Commentary generation failed, assembling without:', commentaryErr.message);
+                    }
                 }
-            } catch (commentaryErr) {
-                console.warn('Commentary generation failed, assembling without:', commentaryErr.message);
-                // Don't fail the whole assembly — just skip commentary
+
+                rankingJobs[jobId].message = 'Assembling video (' + clipList.length + ' clips)...';
+
+                var result = await assembler.assemble(clipList, title || {}, {
+                    layout: layout || {},
+                    commentary: commentaryData,
+                    commentaryLines: enableCommentary ? commentaryResults : [],
+                    colorPalette: colorPalette || 'yellow',
+                    checkeredMode: !!checkeredMode,
+                    subtitleFont: subtitleFont || 'Arial',
+                    subtitleY: subtitleY != null ? subtitleY : 55,
+                    subtitleColor: subtitleColor || 'yellow',
+                    hookEnabled: !!enableCommentary
+                });
+
+                console.log('🏆 Ranking video assembled: ' + result.videoUrl + (commentaryData.length > 0 ? ' (with ' + commentaryData.length + ' commentary lines)' : ''));
+                rankingJobs[jobId].status = 'complete';
+                rankingJobs[jobId].result = { ...result, hasCommentary: commentaryData.length > 0 };
+            } catch (error) {
+                console.error('Ranking assembly error:', error.message);
+                rankingJobs[jobId].status = 'failed';
+                rankingJobs[jobId].error = error.message;
+                // Refund on failure
+                try {
+                    await credits.refundCredits(userId, 'ranking_assembly', 1, 'Assembly failed: ' + error.message);
+                } catch (refundErr) {
+                    console.error('Ranking refund error:', refundErr.message);
+                }
             }
-        }
-
-        var result = await assembler.assemble(clipList, title || {}, {
-            layout: layout || {},
-            commentary: commentaryData,
-            commentaryLines: enableCommentary ? commentaryResults || [] : [],
-            colorPalette: colorPalette || 'yellow',
-            checkeredMode: !!checkeredMode,
-            subtitleFont: subtitleFont || 'Arial',
-            subtitleY: subtitleY != null ? subtitleY : 55,
-            subtitleColor: subtitleColor || 'yellow',
-            hookEnabled: !!enableCommentary
-        });
-
-        console.log('🏆 Ranking video assembled: ' + result.videoUrl + (commentaryData.length > 0 ? ' (with ' + commentaryData.length + ' commentary lines)' : ''));
-        res.json({ success: true, ...result, hasCommentary: commentaryData.length > 0 });
+        })();
 
     } catch (error) {
         console.error('Ranking assembly error:', error.message);
-        // Refund on failure
-        try {
-            var userId2 = String(req.user.userId);
-            await credits.refundCredits(userId2, 'ranking_assembly', 1, 'Assembly failed: ' + error.message);
-        } catch (refundErr) {
-            console.error('Ranking refund error:', refundErr.message);
-        }
         res.status(500).json({ error: error.message });
     }
+});
+
+// Poll ranking assembly job status
+router.get('/ranking/assemble/status/:jobId', requireAuth, (req, res) => {
+    var job = rankingJobs[req.params.jobId];
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (job.userId !== String(req.user.userId)) return res.status(403).json({ error: 'Not your job' });
+
+    var response = { status: job.status, message: job.message || '' };
+    if (job.status === 'complete') response.result = job.result;
+    if (job.status === 'failed') response.error = job.error;
+    res.json(response);
 });
 
 // Delete a ranking clip (cleanup)
