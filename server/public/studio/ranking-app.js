@@ -548,9 +548,13 @@
             // Step 3: Poll for completion
             var failCount = 0;
             while (true) {
-                await new Promise(function(r) { setTimeout(r, 3000); });
+                await new Promise(function(r) { setTimeout(r, 4000); });
                 try {
                     var pollRes = await apiFetch('/api/studio/ranking/assemble/status/' + jobId);
+                    if (pollRes.status === 404) {
+                        // Job not found — server may have restarted during assembly
+                        throw new Error('Assembly job was lost (server restarted). Please try again — credits were refunded.');
+                    }
                     var pollData = await pollRes.json();
 
                     if (pollData.status === 'complete' && pollData.result) {
@@ -560,20 +564,20 @@
                         return;
                     }
                     if (pollData.status === 'failed') {
-                        throw new Error(pollData.error || 'Assembly failed');
+                        throw new Error(pollData.error || 'Assembly failed — credits refunded');
                     }
 
                     // Update progress message
                     var msg = pollData.message || 'Processing...';
-                    pt.textContent = msg + ' (you can close this tab)';
+                    pt.textContent = msg;
                     // Animate progress bar between 30-90%
                     var currentPct = parseInt(pf.style.width) || 30;
-                    if (currentPct < 90) pf.style.width = Math.min(90, currentPct + 3) + '%';
+                    if (currentPct < 90) pf.style.width = Math.min(90, currentPct + 2) + '%';
                     failCount = 0;
                 } catch (e) {
-                    if (e.message && (e.message.includes('Assembly failed') || e.message.includes('Auth failed'))) throw e;
+                    if (e.message && (e.message.includes('Assembly') || e.message.includes('Auth failed') || e.message.includes('credits'))) throw e;
                     failCount++;
-                    if (failCount >= 20) throw new Error('Lost connection to server');
+                    if (failCount >= 40) throw new Error('Lost connection to server. Your video may still be processing — check back in a minute.');
                 }
             }
         } catch (err) {

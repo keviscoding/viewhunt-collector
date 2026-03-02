@@ -57,7 +57,7 @@ class RankingAssembler {
         if (duration <= 0) throw new Error('Invalid trim range');
         await this.ffmpeg([
             '-ss', String(startTime), '-i', inputPath, '-t', String(duration),
-            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-threads', '1',
             '-c:a', 'aac', '-b:a', '128k',
             '-avoid_negative_ts', 'make_zero', '-y', outputPath
         ]);
@@ -136,7 +136,7 @@ class RankingAssembler {
             await this.ffmpeg([
                 '-i', concatPath,
                 '-vf', 'ass=' + escapedAss,
-                '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-threads', '1',
                 '-c:a', 'copy', '-y', subtitledPath
             ]);
 
@@ -284,8 +284,8 @@ class RankingAssembler {
             var c = commentary[i];
             var startMs = Math.round((offsets[c.clipIndex] || 0) * 1000);
             inputs.push('-i', c.audioPath);
-            // Normalize commentary volume (loudnorm) then delay to clip start
-            filterParts.push('[' + (i + 1) + ':a]loudnorm=I=-14:TP=-1:LRA=7,adelay=' + startMs + '|' + startMs + ',apad=whole_dur=' + totalDuration.toFixed(2) + '[c' + i + ']');
+            // Delay commentary to clip start (TTS is already normalized during generation)
+            filterParts.push('[' + (i + 1) + ':a]aresample=44100,adelay=' + startMs + '|' + startMs + ',apad=whole_dur=' + totalDuration.toFixed(2) + '[c' + i + ']');
             commentaryLabels.push('[c' + i + ']');
         }
 
@@ -561,7 +561,7 @@ class RankingAssembler {
         ].join(',');
         await this.ffmpeg([
             '-i', inputPath, '-vf', filterStr,
-            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-threads', '1',
             '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
             '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
             '-f', 'mpegts', '-y', outputPath
@@ -570,7 +570,7 @@ class RankingAssembler {
 
     async ffmpeg(args) {
         try {
-            return await execFileAsync(ffmpegPath, args, { timeout: 600000, maxBuffer: 10 * 1024 * 1024 });
+            return await execFileAsync(ffmpegPath, args, { timeout: 600000, maxBuffer: 5 * 1024 * 1024 });
         } catch (error) {
             if (error.code) {
                 var fullStderr = error.stderr || '';

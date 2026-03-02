@@ -1223,16 +1223,23 @@ router.post('/ranking/clip-info', requireAuth, async (req, res) => {
 });
 
 // Assemble ranking video — BACKGROUND JOB
-// Returns a jobId immediately, frontend polls for status
-var rankingJobs = {}; // In-memory job store (simple, no MongoDB needed)
+// Persisted to MongoDB so jobs survive server restarts
 
-// Cleanup old ranking jobs every 30 minutes
-setInterval(function() {
-    var now = Date.now();
-    Object.keys(rankingJobs).forEach(function(id) {
-        if (now - rankingJobs[id].createdAt > 30 * 60 * 1000) delete rankingJobs[id];
-    });
-}, 30 * 60 * 1000);
+async function createRankingJob(userId, status, message) {
+    var db = await getDb();
+    var doc = { userId: userId, status: status, message: message || '', createdAt: new Date() };
+    var result = await db.collection('ranking_jobs').insertOne(doc);
+    return result.insertedId.toString();
+}
+async function updateRankingJob(jobId, update) {
+    var db = await getDb();
+    await db.collection('ranking_jobs').updateOne({ _id: new ObjectId(jobId) }, { $set: update });
+}
+async function getRankingJob(jobId) {
+    var db = await getDb();
+    try { return await db.collection('ranking_jobs').findOne({ _id: new ObjectId(jobId) }); }
+    catch (e) { return null; }
+}
 
 router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req, res) => {
     try {
@@ -1258,14 +1265,8 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             return { path: filePath, number: c.number || (i + 1), label: c.label || '' };
         });
 
-        // Create job and return immediately
-        var jobId = 'rj-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-        rankingJobs[jobId] = {
-            status: 'processing',
-            message: enableCommentary ? 'Generating AI commentary...' : 'Normalizing clips...',
-            createdAt: Date.now(),
-            userId: userId
-        };
+        // Create job in MongoDB and return immediately
+        var jobId = await createRankingJob(userId, 'processing', enableCommentary ? 'Generating AI commentary...' : 'Normalizing clips...');
 
         res.json({ success: true, jobId: jobId });
 
@@ -1279,7 +1280,7 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                 // Generate AI commentary if enabled
                 if (enableCommentary && title && title.text) {
                     try {
-                        rankingJobs[jobId].message = 'Generating AI commentary...';
+                        await updateRankingJob(jobId, { message: 'Generating AI commentary...' });
                         console.log('🎙️ Generating AI commentary for ranking video...');
                         var RankingCommentary = require('./formats/ranking/commentary');
                         var commentaryGen = new RankingCommentary();
@@ -1294,7 +1295,7 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                     }
                 }
 
-                rankingJobs[jobId].message = 'Assembling video (' + clipList.length + ' clips)...';
+                await updateRankingJob(jobId, { message: 'Assembling video (' + clipList.length + ' clips)...' });
 
                 var result = await assembler.assemble(clipList, title || {}, {
                     layout: layout || {},
@@ -1309,12 +1310,10 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                 });
 
                 console.log('🏆 Ranking video assembled: ' + result.videoUrl + (commentaryData.length > 0 ? ' (with ' + commentaryData.length + ' commentary lines)' : ''));
-                rankingJobs[jobId].status = 'complete';
-                rankingJobs[jobId].result = { ...result, hasCommentary: commentaryData.length > 0 };
+                await updateRankingJob(jobId, { status: 'complete', result: { ...result, hasCommentary: commentaryData.length > 0 } });
             } catch (error) {
                 console.error('Ranking assembly error:', error.message);
-                rankingJobs[jobId].status = 'failed';
-                rankingJobs[jobId].error = error.message;
+                await updateRankingJob(jobId, { status: 'failed', error: error.message }).catch(function() {});
                 // Refund on failure
                 try {
                     await credits.refundCredits(userId, 'ranking_assembly', 1, 'Assembly failed: ' + error.message);
@@ -1330,16 +1329,20 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
     }
 });
 
-// Poll ranking assembly job status
-router.get('/ranking/assemble/status/:jobId', requireAuth, (req, res) => {
-    var job = rankingJobs[req.params.jobId];
-    if (!job) return res.status(404).json({ error: 'Job not found' });
-    if (job.userId !== String(req.user.userId)) return res.status(403).json({ error: 'Not your job' });
+// Poll ranking assembly job status (persisted in MongoDB)
+router.get('/ranking/assemble/status/:jobId', requireAuth, async (req, res) => {
+    try {
+        var job = await getRankingJob(req.params.jobId);
+        if (!job) return res.status(404).json({ error: 'Job not found' });
+        if (job.userId !== String(req.user.userId)) return res.status(403).json({ error: 'Not your job' });
 
-    var response = { status: job.status, message: job.message || '' };
-    if (job.status === 'complete') response.result = job.result;
-    if (job.status === 'failed') response.error = job.error;
-    res.json(response);
+        var response = { status: job.status, message: job.message || '' };
+        if (job.status === 'complete') response.result = job.result;
+        if (job.status === 'failed') response.error = job.error;
+        res.json(response);
+    } catch (error) {
+        res.status(500).json({ error: 'Poll error' });
+    }
 });
 
 // Delete a ranking clip (cleanup)
