@@ -466,5 +466,40 @@
     </nav>
 
     <script src="app.js?v=20"></script>
+    <script>
+    // Onboarding video — shows once per user on first visit
+    (function() {
+        if (localStorage.getItem('vh_onboarding_seen')) return;
+        var token = localStorage.getItem('viewhunt_token') || localStorage.getItem('token');
+        if (!token) return; // not logged in yet — they'll see it after login
+
+        localStorage.setItem('vh_onboarding_seen', '1');
+
+        var overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center';
+
+        var box = document.createElement('div');
+        box.style.cssText = 'background:#18181f;border:1px solid #7c6aef;border-radius:20px;max-width:720px;width:94%;padding:1.75rem 1.5rem;position:relative;box-shadow:0 24px 80px rgba(0,0,0,0.6)';
+
+        box.innerHTML = '<div style="text-align:center;margin-bottom:1rem;">' +
+            '<div style="font-size:1.8rem;margin-bottom:0.4rem;">🎓</div>' +
+            '<div style="font-size:1.15rem;font-weight:800;color:#e8e8ed;">Watch This Before You Start</div>' +
+            '<div style="font-size:0.85rem;color:#8b8b9e;margin-top:0.3rem;line-height:1.6;">This walkthrough covers everything — how the niche finder works, how to use Content Studio, and how creators are already making money with this. Please watch it fully before generating.</div>' +
+        '</div>' +
+        '<div style="position:relative;padding-bottom:56.25%;height:0;border-radius:12px;overflow:hidden;background:#000;">' +
+            '<iframe src="https://www.loom.com/embed/511210f93aed4a6ea01c8ff08c019de8?autoplay=1" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen allow="autoplay" style="position:absolute;top:0;left:0;width:100%;height:100%;"></iframe>' +
+        '</div>' +
+        '<div style="text-align:center;margin-top:1.25rem;">' +
+            '<button id="onboarding-close-btn" style="padding:0.65rem 1.5rem;background:#7c6aef;color:white;border:none;border-radius:10px;font-weight:700;font-size:0.9rem;cursor:pointer;font-family:Inter,sans-serif;transition:all 0.15s;">I&#39;ve Watched It — Let&#39;s Go</button>' +
+            '<div style="font-size:0.72rem;color:#5c5c6e;margin-top:0.6rem;">This only shows once</div>' +
+        '</div>';
+
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+
+        document.getElementById('onboarding-close-btn').onclick = function() { overlay.remove(); };
+        overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+    })();
+    </script>
 </body>
 </html>
