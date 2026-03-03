@@ -82,6 +82,9 @@
                     <p>All caught up! Check back later for new channels to review.</p>
                 </div>
 
+                <!-- Guided CTA Banner (shows once for new users) -->
+                <div id="guided-cta-banner"></div>
+
                 <!-- Filters -->
                 <div class="filters" id="filters">
                     <div class="filter-group">
@@ -468,39 +471,69 @@
 
     <script src="app.js?v=21"></script>
     <script>
-    // Layered onboarding — micro-guidance tips + optional video link
-    // Shows once, only after user is logged in
+    // Guided onboarding — CTA banner + micro-tips, shows once after login
     function showOnboarding() {
         if (localStorage.getItem('vh_onboarding_seen')) return;
-        var banner = document.getElementById('welcome-banner');
-        if (!banner) return;
 
-        banner.innerHTML = '<div id="onboarding-tips" style="margin:0 0 1rem;">' +
-            // Dismiss button row
-            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;">' +
-                '<span style="font-size:0.82rem;font-weight:700;color:var(--text-primary,#e8e8ed);">&#128075; Quick tips to get started</span>' +
-                '<button onclick="document.getElementById(\'onboarding-tips\').remove();localStorage.setItem(\'vh_onboarding_seen\',\'1\')" style="background:none;border:none;color:var(--text-secondary,#5c5c6e);font-size:0.82rem;cursor:pointer;padding:2px 6px;">Dismiss</button>' +
-            '</div>' +
-            // Tip 1 — Filters
-            '<div style="padding:0.75rem 0.9rem;border-radius:10px;border:1px solid rgba(124,106,239,0.25);background:rgba(124,106,239,0.06);margin-bottom:0.5rem;display:flex;align-items:flex-start;gap:0.65rem;">' +
-                '<span style="font-size:1.1rem;flex-shrink:0;">&#128269;</span>' +
-                '<div><span style="font-size:0.85rem;font-weight:600;">Filters</span><span style="font-size:0.82rem;color:var(--text-secondary,#8b8b9e);"> — Use the filters above to find viral niches. Sort by ratio, recent average views, and subscriber count to spot high-demand, low-competition channels.</span></div>' +
-            '</div>' +
-            // Tip 2 — Studio
-            '<div style="padding:0.75rem 0.9rem;border-radius:10px;border:1px solid rgba(52,211,153,0.25);background:rgba(52,211,153,0.06);margin-bottom:0.5rem;display:flex;align-items:flex-start;gap:0.65rem;">' +
-                '<span style="font-size:1.1rem;flex-shrink:0;">&#127916;</span>' +
-                '<div><span style="font-size:0.85rem;font-weight:600;">Studio</span><span style="font-size:0.82rem;color:var(--text-secondary,#8b8b9e);"> — Found a niche? Tap Studio in the nav bar to generate viral videos with AI. Paste a script, pick a format, and get a fully produced Short in minutes.</span></div>' +
-            '</div>' +
-            // Tip 3 — Social
-            '<div style="padding:0.75rem 0.9rem;border-radius:10px;border:1px solid rgba(251,191,36,0.25);background:rgba(251,191,36,0.06);margin-bottom:0.5rem;display:flex;align-items:flex-start;gap:0.65rem;">' +
-                '<span style="font-size:1.1rem;flex-shrink:0;">&#11088;</span>' +
-                '<div><span style="font-size:0.85rem;font-weight:600;">Social</span><span style="font-size:0.82rem;color:var(--text-secondary,#8b8b9e);"> — See what niches other creators are saving and which ones are trending right now. Great for inspiration and validation.</span></div>' +
-            '</div>' +
-            // Optional video link
-            '<div style="text-align:center;padding-top:0.25rem;">' +
-                '<a href="https://www.loom.com/share/511210f93aed4a6ea01c8ff08c019de8" target="_blank" rel="noopener" style="font-size:0.78rem;color:var(--text-secondary,#8b8b9e);text-decoration:none;">&#9654; Want the full walkthrough? Watch here</a>' +
-            '</div>' +
-        '</div>';
+        // 1. CTA Banner above filters
+        var ctaEl = document.getElementById('guided-cta-banner');
+        if (ctaEl) {
+            ctaEl.innerHTML = '<div id="cta-card" style="margin:0.5rem 0 0.75rem;padding:1rem 1.15rem;border-radius:14px;border:1px solid rgba(124,106,239,0.4);background:linear-gradient(135deg,rgba(124,106,239,0.12),rgba(52,211,153,0.08));text-align:center;">' +
+                '<div style="font-size:1.3rem;margin-bottom:0.3rem;">&#128640;</div>' +
+                '<div style="font-size:1rem;font-weight:800;margin-bottom:0.25rem;">Find Your First Viral Niche in 30 Seconds</div>' +
+                '<div style="font-size:0.82rem;color:var(--text-secondary,#8b8b9e);margin-bottom:0.75rem;">We&#39;ll set the filters to show the best opportunities — low competition, high views, active channels.</div>' +
+                '<button id="use-recommended-btn" style="padding:0.55rem 1.25rem;background:#7c6aef;color:white;border:none;border-radius:10px;font-weight:700;font-size:0.88rem;cursor:pointer;font-family:Inter,sans-serif;transition:all 0.15s;">&#10024; Use Recommended Filters</button>' +
+            '</div>';
+
+            document.getElementById('use-recommended-btn').onclick = function() {
+                // Set recommended filters
+                var ps = document.getElementById('primary-sort');
+                if (ps) ps.value = 'recent-avg-desc';
+                var ss = document.getElementById('secondary-sort');
+                if (ss) ss.value = 'videos-asc';
+                var ar = document.getElementById('active-recently');
+                if (ar) ar.checked = true;
+                var eo = document.getElementById('enhanced-only');
+                if (eo) eo.checked = true;
+                var maxVid = document.getElementById('max-videos');
+                if (maxVid) maxVid.value = '300';
+                var maxVidSlider = document.getElementById('videos-slider-max');
+                if (maxVidSlider) maxVidSlider.value = '300';
+
+                // Trigger filter apply
+                var applyBtn = document.getElementById('apply-filters-btn');
+                if (applyBtn) applyBtn.click();
+
+                // Remove the CTA card
+                var card = document.getElementById('cta-card');
+                if (card) card.remove();
+            };
+        }
+
+        // 2. Micro-tips between filters and channel grid
+        var banner = document.getElementById('welcome-banner');
+        if (banner) {
+            banner.innerHTML = '<div id="onboarding-tips" style="margin:0 0 0.75rem;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">' +
+                    '<span style="font-size:0.78rem;font-weight:600;color:var(--text-secondary,#8b8b9e);">&#128161; Quick tips</span>' +
+                    '<button onclick="document.getElementById(\'onboarding-tips\').remove();localStorage.setItem(\'vh_onboarding_seen\',\'1\');var c=document.getElementById(\'cta-card\');if(c)c.remove();" style="background:none;border:none;color:var(--text-secondary,#5c5c6e);font-size:0.75rem;cursor:pointer;">Dismiss all</button>' +
+                '</div>' +
+                '<div style="display:flex;gap:0.5rem;overflow-x:auto;padding-bottom:0.25rem;">' +
+                    '<div style="flex:0 0 auto;width:200px;padding:0.6rem 0.75rem;border-radius:10px;border:1px solid rgba(124,106,239,0.2);background:rgba(124,106,239,0.05);font-size:0.78rem;">' +
+                        '<span style="font-weight:600;">&#128269; Filters</span><br><span style="color:var(--text-secondary,#8b8b9e);">Sort and filter to find viral niches with high views and low competition.</span>' +
+                    '</div>' +
+                    '<div style="flex:0 0 auto;width:200px;padding:0.6rem 0.75rem;border-radius:10px;border:1px solid rgba(52,211,153,0.2);background:rgba(52,211,153,0.05);font-size:0.78rem;">' +
+                        '<span style="font-weight:600;">&#127916; Studio</span><br><span style="color:var(--text-secondary,#8b8b9e);">Found a niche? Tap Studio to generate viral videos with AI in minutes.</span>' +
+                    '</div>' +
+                    '<div style="flex:0 0 auto;width:200px;padding:0.6rem 0.75rem;border-radius:10px;border:1px solid rgba(251,191,36,0.2);background:rgba(251,191,36,0.05);font-size:0.78rem;">' +
+                        '<span style="font-weight:600;">&#11088; Social</span><br><span style="color:var(--text-secondary,#8b8b9e);">See what niches other creators are saving and trending right now.</span>' +
+                    '</div>' +
+                '</div>' +
+                '<div style="text-align:center;padding-top:0.4rem;">' +
+                    '<a href="https://www.loom.com/share/511210f93aed4a6ea01c8ff08c019de8" target="_blank" rel="noopener" style="font-size:0.75rem;color:var(--text-secondary,#8b8b9e);text-decoration:none;">&#9654; Full walkthrough video</a>' +
+                '</div>' +
+            '</div>';
+        }
     }
 
     // Show on page load if already logged in
