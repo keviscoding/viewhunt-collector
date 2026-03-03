@@ -300,6 +300,7 @@ async function _executeTask(taskId, generator, userId, signal) {
 
         await credits.deductCredits(userId, 'script_generation', 1, 'Background task: script generation');
         totalCreditsCharged += credits.COSTS.script_generation;
+        await db.collection(COLLECTION).updateOne({ _id: new ObjectId(taskId) }, { $set: { creditsCharged: totalCreditsCharged } });
 
         // Initialize scenes array in task
         const scenesDocs = scenes.map((s, i) => ({
@@ -386,6 +387,7 @@ async function _executeTask(taskId, generator, userId, signal) {
         if (imagesCompleted > 0) {
             await credits.deductCredits(userId, 'image_generation', imagesCompleted, `Background task: ${imagesCompleted} images`);
             totalCreditsCharged += credits.COSTS.image_generation * imagesCompleted;
+            await db.collection(COLLECTION).updateOne({ _id: new ObjectId(taskId) }, { $set: { creditsCharged: totalCreditsCharged } });
         }
 
         const finalFailedImages = scenes.filter(s => !s.imageUrl).length;
@@ -469,6 +471,7 @@ async function _executeTask(taskId, generator, userId, signal) {
             if (videosCompleted > 0) {
                 await credits.deductCredits(userId, 'video_generation', videosCompleted, `Background task: ${videosCompleted} videos`);
                 totalCreditsCharged += credits.COSTS.video_generation * videosCompleted;
+                await db.collection(COLLECTION).updateOne({ _id: new ObjectId(taskId) }, { $set: { creditsCharged: totalCreditsCharged } });
             }
         }
 
@@ -498,6 +501,7 @@ async function _executeTask(taskId, generator, userId, signal) {
                 // Charge assembly credits upfront (refund on failure)
                 await credits.deductCredits(userId, 'assembly', 1, 'Background task: auto-assembly');
                 totalCreditsCharged += credits.COSTS.assembly;
+                await db.collection(COLLECTION).updateOne({ _id: new ObjectId(taskId) }, { $set: { creditsCharged: totalCreditsCharged } });
 
                 const jobId = assemblyQueue.submit(config.script, assemblyScenes, 'Charon', userId);
 
@@ -612,24 +616,146 @@ async function cleanupOldTasks(maxAgeDays) {
 }
 
 /**
- * On server startup: mark any 'running' or 'pending' tasks as failed.
- * (Server restarted, those tasks are gone.)
+ * On server startup: find all orphaned 'running'/'pending' tasks,
+ * refund credits for work that wasn't delivered, then mark as failed.
+ * 
+ * Credit refund logic:
+ *   - Script generation: charged on success → if task was past 'claude' step, script was delivered, no refund
+ *   - Image generation: charged per successful image → count images with URLs, refund nothing (already delivered)
+ *   - Video generation: charged per successful video → count videos with URLs, refund nothing (already delivered)
+ *   - Assembly: charged upfront → if no assemblyVideoUrl, refund assembly credits
+ * 
+ * The key insight: credits are charged AFTER each step succeeds in _executeTask.
+ * So if the server dies mid-step, that step's credits were never charged.
+ * The only case where we need to refund is if creditsCharged > value delivered.
+ * 
+ * But the user's complaint is simpler: they see "running" tasks that never complete.
+ * We mark them failed and tell the user what was saved (images/videos still accessible).
  */
 async function recoverStaleTasks() {
     const db = await getDb();
-    const result = await db.collection(COLLECTION).updateMany(
-        { status: { $in: ['pending', 'running'] } },
-        {
-            $set: {
-                status: 'failed',
-                error: 'Server restarted during generation. Please try again.',
-                completedAt: new Date(),
-                updatedAt: new Date()
+    
+    // 1. Recover skeleton/storytelling generation tasks
+    const staleTasks = await db.collection(COLLECTION).find({
+        status: { $in: ['pending', 'running'] }
+    }).toArray();
+
+    for (var i = 0; i < staleTasks.length; i++) {
+        var task = staleTasks[i];
+        var userId = task.userId;
+        var scenes = task.scenes || [];
+        var imagesDelivered = scenes.filter(function(s) { return s.imageUrl; }).length;
+        var videosDelivered = scenes.filter(function(s) { return s.videoUrl; }).length;
+        var charged = task.creditsCharged || 0;
+
+        // Calculate value of what was actually delivered
+        var valueDelivered = 0;
+        var progress = task.progress || {};
+        // If we got past claude step, script generation was charged and delivered
+        if (progress.step && progress.step !== 'queued' && progress.step !== 'claude') {
+            valueDelivered += credits.COSTS.script_generation;
+        }
+        valueDelivered += credits.COSTS.image_generation * imagesDelivered;
+        valueDelivered += credits.COSTS.video_generation * videosDelivered;
+        // Assembly: only count if assemblyVideoUrl exists
+        if (task.assemblyVideoUrl) {
+            valueDelivered += credits.COSTS.assembly;
+        }
+
+        var refundAmount = Math.max(0, charged - valueDelivered);
+
+        // Build a useful message
+        var msg = 'Server restarted during generation.';
+        if (imagesDelivered > 0 || videosDelivered > 0) {
+            msg += ' Your ' + imagesDelivered + ' image(s) and ' + videosDelivered + ' video(s) are still available.';
+        }
+        if (refundAmount > 0) {
+            msg += ' ' + refundAmount + ' credits have been refunded.';
+        } else if (charged === 0) {
+            msg += ' No credits were charged.';
+        } else {
+            msg += ' Credits were only charged for completed work.';
+        }
+
+        // Refund if needed
+        if (refundAmount > 0) {
+            try {
+                // Use direct DB update for refund since we don't know which action type to refund
+                var creditDoc = await db.collection('studio_credits').findOne({ userId: String(userId) });
+                if (creditDoc) {
+                    await db.collection('studio_credits').updateOne(
+                        { userId: String(userId) },
+                        { $inc: { balance: refundAmount, totalUsed: -refundAmount } }
+                    );
+                    await db.collection('credit_transactions').insertOne({
+                        userId: String(userId),
+                        type: 'refund',
+                        action: 'server_restart_recovery',
+                        amount: refundAmount,
+                        reason: 'Server restarted during task ' + task._id + '. Refunded undelivered work.',
+                        createdAt: new Date()
+                    });
+                    console.log('💳 Refunded ' + refundAmount + ' credits to user ' + userId + ' (task ' + task._id + ')');
+                }
+            } catch (refundErr) {
+                console.error('Recovery refund failed for task ' + task._id + ':', refundErr.message);
             }
         }
-    );
-    if (result.modifiedCount > 0) {
-        console.log(`📋 Recovered ${result.modifiedCount} stale tasks after restart`);
+
+        // Mark task as failed with informative message
+        await db.collection(COLLECTION).updateOne(
+            { _id: task._id },
+            {
+                $set: {
+                    status: 'failed',
+                    error: msg,
+                    completedAt: new Date(),
+                    updatedAt: new Date()
+                }
+            }
+        );
+        console.log('📋 Recovered task ' + task._id + ': ' + imagesDelivered + ' imgs, ' + videosDelivered + ' vids, refunded ' + refundAmount + ' credits');
+    }
+
+    // 2. Recover ranking assembly jobs stuck in 'processing'
+    var staleRankingJobs = await db.collection('ranking_jobs').find({
+        status: 'processing'
+    }).toArray();
+
+    for (var j = 0; j < staleRankingJobs.length; j++) {
+        var rJob = staleRankingJobs[j];
+        // Refund ranking_assembly credits (2 credits)
+        try {
+            var rUserId = rJob.userId;
+            var rCreditDoc = await db.collection('studio_credits').findOne({ userId: String(rUserId) });
+            if (rCreditDoc) {
+                await db.collection('studio_credits').updateOne(
+                    { userId: String(rUserId) },
+                    { $inc: { balance: credits.COSTS.ranking_assembly, totalUsed: -credits.COSTS.ranking_assembly } }
+                );
+                await db.collection('credit_transactions').insertOne({
+                    userId: String(rUserId),
+                    type: 'refund',
+                    action: 'server_restart_recovery',
+                    amount: credits.COSTS.ranking_assembly,
+                    reason: 'Server restarted during ranking assembly ' + rJob._id,
+                    createdAt: new Date()
+                });
+                console.log('💳 Refunded ' + credits.COSTS.ranking_assembly + ' ranking credits to user ' + rUserId);
+            }
+        } catch (rRefundErr) {
+            console.error('Ranking recovery refund failed:', rRefundErr.message);
+        }
+
+        await db.collection('ranking_jobs').updateOne(
+            { _id: rJob._id },
+            { $set: { status: 'failed', error: 'Server restarted during assembly. Credits refunded — please try again.', updatedAt: new Date() } }
+        );
+    }
+
+    var totalRecovered = staleTasks.length + staleRankingJobs.length;
+    if (totalRecovered > 0) {
+        console.log('📋 Recovered ' + totalRecovered + ' stale tasks/jobs after restart (with credit refunds)');
     }
 }
 
