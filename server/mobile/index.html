@@ -466,31 +466,47 @@
         </button>
     </nav>
 
-    <script src="app.js?v=20"></script>
+    <script src="app.js?v=21"></script>
     <script>
-    // Soft onboarding banner — non-blocking, dismissible, shows once
-    (function() {
+    // Layered onboarding — micro-guidance tips + optional video link
+    // Shows once, only after user is logged in
+    function showOnboarding() {
         if (localStorage.getItem('vh_onboarding_seen')) return;
-        var token = localStorage.getItem('viewhunt_token') || localStorage.getItem('token');
-        if (!token) return;
-
         var banner = document.getElementById('welcome-banner');
         if (!banner) return;
 
-        banner.innerHTML = '<div id="onboarding-card" style="margin:0 0 1rem;padding:1rem 1.15rem;border-radius:14px;border:1px solid rgba(124,106,239,0.35);background:linear-gradient(135deg,rgba(124,106,239,0.08),rgba(52,211,153,0.06));position:relative;">' +
-            '<button onclick="document.getElementById(\'onboarding-card\').remove();localStorage.setItem(\'vh_onboarding_seen\',\'1\')" style="position:absolute;top:8px;right:10px;background:none;border:none;color:#5c5c6e;font-size:1rem;cursor:pointer;padding:4px;">&#10005;</button>' +
-            '<div style="display:flex;align-items:flex-start;gap:0.85rem;">' +
-                '<div style="font-size:1.6rem;flex-shrink:0;margin-top:2px;">🎬</div>' +
-                '<div style="flex:1;min-width:0;">' +
-                    '<div style="font-size:0.95rem;font-weight:700;margin-bottom:0.25rem;">New here? See how creators are making $10K+/mo</div>' +
-                    '<div style="font-size:0.82rem;color:var(--text-secondary,#8b8b9e);line-height:1.55;margin-bottom:0.75rem;">Quick walkthrough: how the niche finder works, how to generate your first viral short, and real results from real users.</div>' +
-                    '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;">' +
-                        '<a href="https://www.loom.com/share/511210f93aed4a6ea01c8ff08c019de8" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.45rem 0.9rem;background:#7c6aef;color:white;border-radius:8px;font-weight:600;font-size:0.82rem;text-decoration:none;font-family:Inter,sans-serif;">&#9654; Watch Quick Start</a>' +
-                        '<button onclick="document.getElementById(\'onboarding-card\').remove();localStorage.setItem(\'vh_onboarding_seen\',\'1\')" style="padding:0.45rem 0.9rem;background:transparent;color:var(--text-secondary,#8b8b9e);border:1px solid var(--border,#2a2a36);border-radius:8px;font-weight:600;font-size:0.82rem;cursor:pointer;font-family:Inter,sans-serif;">Skip for now</button>' +
-                    '</div>' +
-                '</div>' +
+        banner.innerHTML = '<div id="onboarding-tips" style="margin:0 0 1rem;">' +
+            // Dismiss button row
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;">' +
+                '<span style="font-size:0.82rem;font-weight:700;color:var(--text-primary,#e8e8ed);">&#128075; Quick tips to get started</span>' +
+                '<button onclick="document.getElementById(\'onboarding-tips\').remove();localStorage.setItem(\'vh_onboarding_seen\',\'1\')" style="background:none;border:none;color:var(--text-secondary,#5c5c6e);font-size:0.82rem;cursor:pointer;padding:2px 6px;">Dismiss</button>' +
+            '</div>' +
+            // Tip 1 — Filters
+            '<div style="padding:0.75rem 0.9rem;border-radius:10px;border:1px solid rgba(124,106,239,0.25);background:rgba(124,106,239,0.06);margin-bottom:0.5rem;display:flex;align-items:flex-start;gap:0.65rem;">' +
+                '<span style="font-size:1.1rem;flex-shrink:0;">&#128269;</span>' +
+                '<div><span style="font-size:0.85rem;font-weight:600;">Filters</span><span style="font-size:0.82rem;color:var(--text-secondary,#8b8b9e);"> — Use the filters above to find viral niches. Sort by ratio, recent average views, and subscriber count to spot high-demand, low-competition channels.</span></div>' +
+            '</div>' +
+            // Tip 2 — Studio
+            '<div style="padding:0.75rem 0.9rem;border-radius:10px;border:1px solid rgba(52,211,153,0.25);background:rgba(52,211,153,0.06);margin-bottom:0.5rem;display:flex;align-items:flex-start;gap:0.65rem;">' +
+                '<span style="font-size:1.1rem;flex-shrink:0;">&#127916;</span>' +
+                '<div><span style="font-size:0.85rem;font-weight:600;">Studio</span><span style="font-size:0.82rem;color:var(--text-secondary,#8b8b9e);"> — Found a niche? Tap Studio in the nav bar to generate viral videos with AI. Paste a script, pick a format, and get a fully produced Short in minutes.</span></div>' +
+            '</div>' +
+            // Tip 3 — Social
+            '<div style="padding:0.75rem 0.9rem;border-radius:10px;border:1px solid rgba(251,191,36,0.25);background:rgba(251,191,36,0.06);margin-bottom:0.5rem;display:flex;align-items:flex-start;gap:0.65rem;">' +
+                '<span style="font-size:1.1rem;flex-shrink:0;">&#11088;</span>' +
+                '<div><span style="font-size:0.85rem;font-weight:600;">Social</span><span style="font-size:0.82rem;color:var(--text-secondary,#8b8b9e);"> — See what niches other creators are saving and which ones are trending right now. Great for inspiration and validation.</span></div>' +
+            '</div>' +
+            // Optional video link
+            '<div style="text-align:center;padding-top:0.25rem;">' +
+                '<a href="https://www.loom.com/share/511210f93aed4a6ea01c8ff08c019de8" target="_blank" rel="noopener" style="font-size:0.78rem;color:var(--text-secondary,#8b8b9e);text-decoration:none;">&#9654; Want the full walkthrough? Watch here</a>' +
             '</div>' +
         '</div>';
+    }
+
+    // Show on page load if already logged in
+    (function() {
+        var token = localStorage.getItem('viewhunt_token') || localStorage.getItem('token');
+        if (token) showOnboarding();
     })();
     </script>
 </body>

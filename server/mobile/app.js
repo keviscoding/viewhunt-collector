@@ -1723,6 +1723,9 @@ class ViewHuntApp {
                 this.updateSubscriptionUI();
                 await this.loadStats();
                 await this.loadChannels();
+
+                // Show onboarding tips if first time
+                if (typeof showOnboarding === 'function') showOnboarding();
             } else {
                 this.showToast(data.error || 'Login failed ❌');
             }
@@ -1817,6 +1820,9 @@ class ViewHuntApp {
                 this.updateSubscriptionUI();
                 await this.loadStats();
                 await this.loadChannels();
+
+                // Show onboarding tips if first time
+                if (typeof showOnboarding === 'function') showOnboarding();
             } else {
                 this.showToast(data.error || 'Registration failed ❌');
             }
