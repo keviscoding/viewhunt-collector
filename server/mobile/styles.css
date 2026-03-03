@@ -1110,9 +1110,11 @@ body {
 .auth-modal {
     background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
     border-radius: 24px;
-    padding: 2.5rem;
+    padding: 2rem 2rem 1.5rem;
     width: 100%;
     max-width: 420px;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
     position: relative;
     box-shadow: 
         0 20px 60px rgba(0, 0, 0, 0.12),
@@ -1135,13 +1137,13 @@ body {
 }
 
 .auth-form h2 {
-    font-size: 2rem;
+    font-size: 1.6rem;
     font-weight: 800;
     background: linear-gradient(135deg, #667eea, #764ba2);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.3rem;
     text-align: center;
     letter-spacing: -0.02em;
 }
@@ -1149,22 +1151,22 @@ body {
 .auth-subtitle {
     color: #64748b;
     text-align: center;
-    margin-bottom: 2.5rem;
-    font-size: 1rem;
+    margin-bottom: 1.25rem;
+    font-size: 0.9rem;
     font-weight: 500;
     line-height: 1.5;
 }
 
 .form-group {
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.85rem;
 }
 
 .form-group input {
     width: 100%;
-    padding: 1.25rem 1rem;
+    padding: 0.85rem 0.9rem;
     border: 2px solid #e2e8f0;
-    border-radius: 16px;
-    font-size: 1rem;
+    border-radius: 12px;
+    font-size: 0.95rem;
     font-weight: 500;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     background: rgba(248, 250, 252, 0.8);
@@ -1196,24 +1198,24 @@ body {
 
 .auth-btn {
     width: 100%;
-    padding: 1rem;
+    padding: 0.8rem;
     border: none;
     border-radius: 12px;
-    font-size: 1rem;
+    font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
-    margin-bottom: 1rem;
+    margin-bottom: 0.6rem;
 }
 
 .auth-btn-primary {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     border: none;
-    border-radius: 16px;
-    padding: 1.25rem;
+    border-radius: 12px;
+    padding: 0.85rem;
     font-weight: 700;
-    font-size: 1.1rem;
+    font-size: 1rem;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 
         0 4px 15px rgba(102, 126, 234, 0.4),
@@ -1263,9 +1265,9 @@ body {
 .auth-divider {
     display: flex;
     align-items: center;
-    margin: 2rem 0;
+    margin: 0.75rem 0;
     color: #64748b;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 600;
     position: relative;
 }
@@ -1296,9 +1298,9 @@ body {
 .auth-switch {
     text-align: center;
     color: #64748b;
-    font-size: 0.95rem;
+    font-size: 0.88rem;
     font-weight: 500;
-    margin-top: 1.5rem;
+    margin-top: 0.75rem;
     line-height: 1.6;
 }
 
