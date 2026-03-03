@@ -610,6 +610,35 @@ router.get('/credits/transactions', requireAuth, async (req, res) => {
     }
 });
 
+// Check for recent refunds (server restart recovery) — last 24h
+router.get('/credits/recent-refunds', requireAuth, async (req, res) => {
+    try {
+        const db = await getDb();
+        const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const refunds = await db.collection('credit_transactions').find({
+            userId: String(req.user.userId),
+            type: 'refund',
+            action: 'server_restart_recovery',
+            createdAt: { $gte: cutoff },
+            notified: { $ne: true }
+        }).sort({ createdAt: -1 }).limit(10).toArray();
+
+        // Mark them as seen so we don't show them again
+        if (refunds.length > 0) {
+            var ids = refunds.map(function(r) { return r._id; });
+            await db.collection('credit_transactions').updateMany(
+                { _id: { $in: ids } },
+                { $set: { notified: true } }
+            );
+        }
+
+        res.json({ success: true, refunds: refunds });
+    } catch (err) {
+        console.error('Recent refunds error:', err);
+        res.json({ success: true, refunds: [] });
+    }
+});
+
 // Check if user has enough credits for an action
 router.post('/credits/check', requireAuth, async (req, res) => {
     try {
@@ -1257,6 +1286,7 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
 
         // Deduct upfront (refund on failure)
         await credits.deductCredits(userId, 'ranking_assembly', 1, 'Ranking video assembly');
+        var rankingCreditsCharged = credits.COSTS.ranking_assembly;
 
         // Validate clips exist before starting background job
         var clipList = clips.map(function(c, i) {
@@ -1267,6 +1297,8 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
 
         // Create job in MongoDB and return immediately
         var jobId = await createRankingJob(userId, 'processing', enableCommentary ? 'Generating AI commentary...' : 'Normalizing clips...');
+        // Save initial credits charged
+        await updateRankingJob(jobId, { creditsCharged: rankingCreditsCharged });
 
         res.json({ success: true, jobId: jobId });
 
@@ -1289,6 +1321,8 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
 
                         if (commentaryData.length > 0) {
                             await credits.deductCredits(userId, 'script_generation', 1, 'Ranking AI commentary');
+                            rankingCreditsCharged += credits.COSTS.script_generation;
+                            await updateRankingJob(jobId, { creditsCharged: rankingCreditsCharged });
                         }
                     } catch (commentaryErr) {
                         console.warn('Commentary generation failed, assembling without:', commentaryErr.message);
@@ -1314,9 +1348,14 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             } catch (error) {
                 console.error('Ranking assembly error:', error.message);
                 await updateRankingJob(jobId, { status: 'failed', error: error.message }).catch(function() {});
-                // Refund on failure
+                // Refund ALL credits charged for this job
                 try {
                     await credits.refundCredits(userId, 'ranking_assembly', 1, 'Assembly failed: ' + error.message);
+                    if (rankingCreditsCharged > credits.COSTS.ranking_assembly) {
+                        // Also refund commentary credits if they were charged
+                        var extraRefund = rankingCreditsCharged - credits.COSTS.ranking_assembly;
+                        await credits.refundCredits(userId, 'script_generation', 1, 'Commentary refund (assembly failed)');
+                    }
                 } catch (refundErr) {
                     console.error('Ranking refund error:', refundErr.message);
                 }

@@ -724,24 +724,24 @@ async function recoverStaleTasks() {
 
     for (var j = 0; j < staleRankingJobs.length; j++) {
         var rJob = staleRankingJobs[j];
-        // Refund ranking_assembly credits (2 credits)
+        var rRefundAmount = rJob.creditsCharged || credits.COSTS.ranking_assembly; // fallback to 2 if not tracked
         try {
             var rUserId = rJob.userId;
             var rCreditDoc = await db.collection('studio_credits').findOne({ userId: String(rUserId) });
             if (rCreditDoc) {
                 await db.collection('studio_credits').updateOne(
                     { userId: String(rUserId) },
-                    { $inc: { balance: credits.COSTS.ranking_assembly, totalUsed: -credits.COSTS.ranking_assembly } }
+                    { $inc: { balance: rRefundAmount, totalUsed: -rRefundAmount } }
                 );
                 await db.collection('credit_transactions').insertOne({
                     userId: String(rUserId),
                     type: 'refund',
                     action: 'server_restart_recovery',
-                    amount: credits.COSTS.ranking_assembly,
+                    amount: rRefundAmount,
                     reason: 'Server restarted during ranking assembly ' + rJob._id,
                     createdAt: new Date()
                 });
-                console.log('💳 Refunded ' + credits.COSTS.ranking_assembly + ' ranking credits to user ' + rUserId);
+                console.log('💳 Refunded ' + rRefundAmount + ' ranking credits to user ' + rUserId);
             }
         } catch (rRefundErr) {
             console.error('Ranking recovery refund failed:', rRefundErr.message);

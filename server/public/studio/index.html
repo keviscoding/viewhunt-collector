@@ -730,6 +730,58 @@ function timeAgo(dateStr) {
 // Load tasks on page load (after auth check)
 setTimeout(loadTasks, 500);
 
+// Check for recent refunds and show popup
+setTimeout(checkRecentRefunds, 1000);
+
+async function checkRecentRefunds() {
+    var token = getAuthToken();
+    if (!token) return;
+    try {
+        var res = await fetch('/api/studio/credits/recent-refunds', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!res.ok) return;
+        var data = await res.json();
+        if (!data.refunds || data.refunds.length === 0) return;
+
+        var totalRefunded = 0;
+        data.refunds.forEach(function(r) { totalRefunded += (r.amount || 0); });
+        if (totalRefunded === 0) return;
+
+        // Build refund details
+        var lines = '';
+        data.refunds.forEach(function(r) {
+            var when = timeAgo(r.createdAt);
+            lines += '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.4rem 0;border-bottom:1px solid rgba(255,255,255,0.06);">' +
+                '<span style="font-size:0.82rem;color:#8b8b9e;">' + escHtml(r.reason || 'Server restart recovery') + '</span>' +
+                '<span style="font-size:0.82rem;font-weight:700;color:#34d399;">+' + r.amount + ' 💎</span>' +
+            '</div>';
+        });
+
+        var overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;animation:fadeIn 0.3s ease';
+        overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+        overlay.innerHTML = '<div style="background:linear-gradient(145deg,#18181f,#1f1f28);border:1px solid #34d399;border-radius:16px;max-width:440px;width:92%;padding:1.75rem 1.5rem;position:relative;box-shadow:0 16px 50px rgba(0,0,0,0.5);">' +
+            '<button onclick="this.parentElement.parentElement.remove()" style="position:absolute;top:10px;right:12px;background:none;border:none;color:#5c5c6e;font-size:1.1rem;cursor:pointer;">✕</button>' +
+            '<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:1rem;">' +
+                '<div style="font-size:1.5rem;">🛡️</div>' +
+                '<div><div style="font-size:1rem;font-weight:700;color:#e8e8ed;">Credits Refunded</div>' +
+                '<div style="font-size:0.78rem;color:#8b8b9e;">We noticed a disruption during your generation</div></div>' +
+            '</div>' +
+            '<div style="background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.15);border-radius:10px;padding:0.75rem 1rem;margin-bottom:1rem;">' +
+                '<div style="font-size:0.78rem;color:#8b8b9e;margin-bottom:0.5rem;">Refund details</div>' +
+                lines +
+                '<div style="display:flex;justify-content:space-between;align-items:center;padding-top:0.6rem;margin-top:0.3rem;">' +
+                    '<span style="font-size:0.88rem;font-weight:700;color:#e8e8ed;">Total refunded</span>' +
+                    '<span style="font-size:1rem;font-weight:800;color:#34d399;">+' + totalRefunded + ' 💎</span>' +
+                '</div>' +
+            '</div>' +
+            '<div style="font-size:0.78rem;color:#5c5c6e;line-height:1.5;text-align:center;">Your credits are safe. We only charge for work that was delivered successfully.</div>' +
+        '</div>';
+        document.body.appendChild(overlay);
+    } catch (e) {
+        // Silent fail — don't disrupt the page
+    }
+}
+
 // === Free course promo — shows once after first assembled video ===
 function maybeShowCoursePromo() {
     if (localStorage.getItem('vh_course_promo_seen')) return;
