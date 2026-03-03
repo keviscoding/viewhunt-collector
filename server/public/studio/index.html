@@ -100,6 +100,9 @@
         <a href="/pricing" class="btn btn-primary">View Plans — Starting at $29/mo</a>
     </div>
 
+    <!-- Quick Start Card (shows once for new users) -->
+    <div id="studio-quickstart"></div>
+
     <div class="formats" id="formats-grid"></div>
 
     <!-- My Tasks Panel -->
@@ -726,6 +729,24 @@ function timeAgo(dateStr) {
     if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
     return Math.floor(diff / 86400) + 'd ago';
 }
+
+// Studio quick-start card — contextual, non-blocking, shows once
+(function() {
+    if (localStorage.getItem('vh_studio_quickstart_seen')) return;
+    var el = document.getElementById('studio-quickstart');
+    if (!el) return;
+    el.innerHTML = '<div id="qs-card" style="background:var(--surface);border:1px solid var(--accent);border-radius:14px;padding:1.15rem 1.25rem;margin-bottom:1.5rem;position:relative;">' +
+        '<button onclick="document.getElementById(\'qs-card\').remove();localStorage.setItem(\'vh_studio_quickstart_seen\',\'1\')" style="position:absolute;top:8px;right:10px;background:none;border:none;color:var(--text-dim);font-size:1rem;cursor:pointer;">&#10005;</button>' +
+        '<div style="display:flex;align-items:flex-start;gap:0.85rem;">' +
+            '<div style="font-size:1.4rem;flex-shrink:0;margin-top:2px;">&#9889;</div>' +
+            '<div style="flex:1;">' +
+                '<div style="font-size:0.92rem;font-weight:700;margin-bottom:0.2rem;">First time in the Studio?</div>' +
+                '<div style="font-size:0.82rem;color:var(--text-muted);line-height:1.55;margin-bottom:0.65rem;">Pick a format below, paste your script, and hit generate. Your first video takes about 5 minutes. Need a walkthrough first?</div>' +
+                '<a href="https://www.loom.com/share/511210f93aed4a6ea01c8ff08c019de8" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.82rem;color:var(--accent);font-weight:600;text-decoration:none;">&#9654; Watch quick start guide</a>' +
+            '</div>' +
+        '</div>' +
+    '</div>';
+})();
 
 // Load tasks on page load (after auth check)
 setTimeout(loadTasks, 500);
