@@ -85,17 +85,29 @@
     </header>
 
     <h1>🏗️ Time-Lapse Construction</h1>
-    <p class="subtitle">Describe a surreal construction concept and watch it come to life in 4 stages. AI generates consistent images and smooth transition videos between each stage.</p>
+    <p class="subtitle">Describe a surreal construction concept and watch it come to life stage by stage. AI generates consistent images and smooth transition videos between each milestone.</p>
 
     <div class="credits-bar">
         💎 <span class="bal" id="credit-balance">—</span> credits
-        <span style="margin-left:auto;font-size:0.75rem;">~19 credits per video</span>
+        <span style="margin-left:auto;font-size:0.75rem;" id="cost-estimate">~32 credits (5 stages)</span>
     </div>
 
     <!-- Step 1: Concept Input -->
     <div class="section" id="concept-section">
         <div class="section-title">💡 Your Concept</div>
         <textarea id="concept-input" placeholder="Describe your time-lapse construction concept...&#10;&#10;Examples:&#10;• Building a cozy living room inside a giant tree trunk&#10;• Carving a luxury underground bunker into a concrete floor&#10;• Transforming an abandoned van into a tiny home&#10;• Creating a hidden garden room inside a massive boulder" rows="4"></textarea>
+
+        <div style="margin-top:0.75rem;display:flex;align-items:center;gap:0.75rem;">
+            <label for="stage-count-select" style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">Stages:</label>
+            <select id="stage-count-select" onchange="updateStageCount(this.value)" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;padding:0.4rem 0.6rem;outline:none;cursor:pointer;">
+                <option value="4">4 stages — Quick build</option>
+                <option value="5" selected>5 stages — Recommended</option>
+                <option value="6">6 stages — Detailed</option>
+                <option value="7">7 stages — Extended</option>
+                <option value="8">8 stages — Epic build</option>
+            </select>
+        </div>
+
         <div style="margin-top:0.75rem;">
             <button class="btn btn-primary" id="generate-prompts-btn" onclick="generatePrompts()">
                 Generate Stage Prompts · Free
@@ -113,7 +125,7 @@
     <!-- Step 3: Video Generation -->
     <div id="videos-section" style="display:none;">
         <div class="section-title">🎬 Transition Videos</div>
-        <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem;">Generating smooth transitions between your 4 stages using start+end frame interpolation.</p>
+        <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem;">Generating smooth transitions between your stages using start+end frame interpolation.</p>
         <div id="transitions-list"></div>
     </div>
 
@@ -124,6 +136,6 @@
     <div id="final-section" style="display:none;"></div>
 </div>
 
-<script src="/studio/timelapse-app.js?v=20260306a"></script>
+<script src="/studio/timelapse-app.js?v=20260306b"></script>
 </body>
 </html>

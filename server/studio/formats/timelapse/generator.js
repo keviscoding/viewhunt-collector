@@ -2,13 +2,13 @@
  * Timelapse Generator — "Surreal Time-Lapse Construction" format
  * 
  * Pipeline:
- *   1. Gemini generates 4 stage image prompts from user concept
- *   2. Nano-banana-2 generates images (each uses previous as reference)
- *   3. Seedance 1.5 Pro (Kie.ai) generates 3 transition videos (start+end frame via input_urls)
- *   4. FFmpeg stitches 3 clips into final video
+ *   1. Gemini generates N stage image prompts (4-8) from user concept
+ *   2. Nano-banana-2 generates 4 images per stage (user picks best)
+ *      - Each stage after the first uses the previous selected image as reference
+ *   3. Seedance 1.5 Pro (Kie.ai) generates N-1 transition videos (start+end frame)
+ *   4. FFmpeg stitches clips into final video
  * 
- * Credits: ~19 total (4 images × 0.5 = 2, 3 videos × 5 = 15, assembly = 2)
- * Seedance cost per video: 720p 8s with audio = 56 Kie.ai credits ($0.28)
+ * Seedance cost: 720p 8s with audio = 56 Kie.ai credits ($0.28)
  */
 const axios = require('axios');
 const { GoogleGenAI } = require('@google/genai');
@@ -19,35 +19,80 @@ const ffmpegPath = require('ffmpeg-static');
 
 class TimelapseGenerator {
     constructor() {
-            this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-            this.kieApiKey = process.env.KIEAI_API_KEY;
-            this.kieBaseUrl = 'https://api.kie.ai';
-            this.outputDir = path.join(__dirname, '../../../public/studio/generated/timelapse');
-            if (!fs.existsSync(this.outputDir)) fs.mkdirSync(this.outputDir, { recursive: true });
-        }
+        this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        this.kieApiKey = process.env.KIEAI_API_KEY;
+        this.kieBaseUrl = 'https://api.kie.ai';
+        this.outputDir = path.join(__dirname, '../../../public/studio/generated/timelapse');
+        if (!fs.existsSync(this.outputDir)) fs.mkdirSync(this.outputDir, { recursive: true });
+    }
 
     /**
-     * Step 1: Generate 4 stage prompts + 3 transition prompts using Gemini
+     * Step 1: Generate N stage prompts + (N-1) transition prompts using Gemini
+     * @param {string} concept - User's construction concept
+     * @param {number} stageCount - Number of stages (4-8)
      */
-    async generateStagePrompts(concept) {
-        console.log('🧠 Timelapse: Generating stage prompts with Gemini...');
+    async generateStagePrompts(concept, stageCount) {
+        stageCount = Math.max(4, Math.min(8, stageCount || 4));
+        console.log('🧠 Timelapse: Generating ' + stageCount + ' stage prompts with Gemini...');
+
+        var stageExamples = '';
+        if (stageCount === 4) {
+            stageExamples = `Stage 1: THE ESTABLISHING SHOT — Wide exterior showing the full scale of the environment/object. The protagonist stands nearby, giving a sense of how massive it is. This is the HOOK — it must look impressive and set the scene.
+Stage 2: THE FIRST CUT — The protagonist makes the first incision/mark/opening. The beginning of the transformation.
+Stage 3: THE BUILD — Major structural work is underway. Framing, flooring, walls, plumbing — real progress is visible.
+Stage 4: THE COZY FINISH / REVEAL — The space is fully furnished, lit, and livable. The protagonist relaxes in the finished space.`;
+        } else if (stageCount === 5) {
+            stageExamples = `Stage 1: THE ESTABLISHING SHOT — Wide exterior showing the full scale. The protagonist stands nearby. This is the HOOK.
+Stage 2: THE FIRST CUT — The protagonist makes the first incision/opening.
+Stage 3: THE EXCAVATION — Clearing out material, revealing the void/space.
+Stage 4: THE STRUCTURAL BUILD — Framing, flooring, walls going up. Real progress.
+Stage 5: THE COZY FINISH / REVEAL — Fully furnished, lit, livable. Protagonist relaxes inside.`;
+        } else if (stageCount === 6) {
+            stageExamples = `Stage 1: THE ESTABLISHING SHOT — Wide exterior showing the full scale. This is the HOOK.
+Stage 2: THE FIRST CUT — Making the first incision/opening.
+Stage 3: THE EXCAVATION — Clearing out material, revealing the void.
+Stage 4: THE FOUNDATION — Laying groundwork: flooring, base structure, waterproofing.
+Stage 5: THE BUILD-OUT — Walls, ceiling, fixtures, plumbing, electrical.
+Stage 6: THE COZY FINISH / REVEAL — Fully furnished, decorated, lit. Protagonist relaxes.`;
+        } else if (stageCount === 7) {
+            stageExamples = `Stage 1: THE ESTABLISHING SHOT — Wide exterior showing the full scale. This is the HOOK.
+Stage 2: THE FIRST CUT — Making the first incision/opening.
+Stage 3: THE EXCAVATION — Clearing out material, revealing the void.
+Stage 4: THE FOUNDATION — Laying groundwork: flooring, base structure.
+Stage 5: THE FRAMING — Walls going up, structural skeleton visible.
+Stage 6: THE FINISHING — Surfaces, paint, fixtures, lighting installed.
+Stage 7: THE COZY REVEAL — Fully furnished, decorated. Protagonist relaxes.`;
+        } else {
+            stageExamples = `Stage 1: THE ESTABLISHING SHOT — Wide exterior showing the full scale. This is the HOOK.
+Stage 2: THE FIRST CUT — Making the first incision/opening.
+Stage 3: THE EXCAVATION — Clearing out material, revealing the void.
+Stage 4: THE FOUNDATION — Laying groundwork: flooring, base structure.
+Stage 5: THE FRAMING — Walls going up, structural skeleton visible.
+Stage 6: THE UTILITIES — Plumbing, electrical, insulation.
+Stage 7: THE FINISHING — Surfaces, paint, fixtures, lighting installed.
+Stage 8: THE COZY REVEAL — Fully furnished, decorated, cozy. Protagonist relaxes.`;
+        }
 
         const systemPrompt = `You are an expert AI image prompt engineer specializing in surreal time-lapse construction videos.
 
-Your job: Given a user's concept, generate 4 chronological image prompts representing the 4 stages of a construction/transformation time-lapse, plus 3 video transition prompts.
+Your job: Given a user's concept, generate exactly ${stageCount} chronological image prompts representing the stages of a construction/transformation time-lapse, plus ${stageCount - 1} video transition prompts.
 
-THE 4 STAGES (always in this order):
-1. THE PRISTINE STATE & THE CUT — The untouched environment. The protagonist approaches and makes the first cut/mark.
-2. THE EXCAVATION — The protagonist removes material, revealing a void or clearing space.
-3. THE STRUCTURAL BUILD — The protagonist adds structure: framing, flooring, walls, plumbing, etc.
-4. THE COZY FINISH / REVEAL — The space is furnished, lit, and livable. The protagonist relaxes in the finished space.
+THE ${stageCount} STAGES:
+${stageExamples}
+
+CRITICAL — STAGE 1 MUST BE AN ESTABLISHING SHOT:
+- Stage 1 is ALWAYS a wide exterior shot showing the FULL SCALE of the environment or object
+- The protagonist should be visible but small compared to the environment, showing how massive it is
+- This is the HOOK — it needs to look impressive, surreal, and make viewers want to see what happens next
+- Do NOT start inside or already cutting — start OUTSIDE showing the whole thing
 
 THE GOLDEN RULE:
-- Character description (clothing, body type, appearance) must be IDENTICAL in ALL 4 prompts
-- Camera angle must be IDENTICAL (static tripod, same position)
+- Character description (clothing, body type, appearance) must be IDENTICAL in ALL prompts
+- Camera angle must be IDENTICAL (static tripod, same position) — except Stage 1 which can be slightly wider
 - Lighting conditions must be IDENTICAL (same time of day, same light source)
 - Background environment must be IDENTICAL (same surroundings)
 - ONLY the construction state changes between stages
+- Each stage must represent a SIGNIFICANT milestone — not small incremental progress
 
 CRITICAL PROMPT RULES:
 - Every prompt must be fully self-contained (no references to "previous" or "next")
@@ -61,8 +106,9 @@ VIDEO TRANSITION PROMPTS:
 - Include: tools being used, materials flying, debris being removed, items being placed
 - Always mention "time-lapse speed" or "sped-up construction footage"
 - Keep the same character and camera descriptions
+- MUST include: "No music. No talking. No dialogue. Only construction sounds and foley."
 
-IMPORTANT: Be holistic. The concept could be ANYTHING — building inside a tree, carving a room in concrete, renovating a van, creating a garden in a rooftop, etc. Adapt the 4 stages to fit whatever the user describes.
+IMPORTANT: Be holistic. The concept could be ANYTHING — building inside a tree, carving a room in concrete, renovating a van, creating a garden on a rooftop, etc. Adapt the stages to fit whatever the user describes. Each stage should feel like a MAJOR achievement, not a tiny step.
 
 Return JSON:
 {
@@ -72,53 +118,29 @@ Return JSON:
   "stages": [
     {
       "stage": 1,
-      "name": "The Pristine State & The Cut",
+      "name": "Stage name",
       "imagePrompt": "Full self-contained image prompt...",
       "description": "Brief description of what this stage shows"
-    },
-    {
-      "stage": 2,
-      "name": "The Excavation",
-      "imagePrompt": "Full self-contained image prompt...",
-      "description": "..."
-    },
-    {
-      "stage": 3,
-      "name": "The Structural Build",
-      "imagePrompt": "Full self-contained image prompt...",
-      "description": "..."
-    },
-    {
-      "stage": 4,
-      "name": "The Cozy Finish",
-      "imagePrompt": "Full self-contained image prompt...",
-      "description": "..."
     }
   ],
   "transitions": [
     {
       "from": 1,
       "to": 2,
-      "videoPrompt": "Time-lapse transition prompt describing the action..."
-    },
-    {
-      "from": 2,
-      "to": 3,
-      "videoPrompt": "..."
-    },
-    {
-      "from": 3,
-      "to": 4,
-      "videoPrompt": "..."
+      "videoPrompt": "Time-lapse transition prompt... No music. No talking. No dialogue. Only construction sounds and foley."
     }
   ]
 }`;
 
-        const userPrompt = `Generate the 4-stage time-lapse construction prompts for this concept:
+        const userPrompt = `Generate ${stageCount}-stage time-lapse construction prompts for this concept:
 
 ${concept}
 
-Remember: Lock the character, camera, lighting, and background across ALL prompts. Only the construction state changes.`;
+Remember:
+- Stage 1 = wide establishing shot showing the full scale (the HOOK)
+- Lock the character, camera, lighting, and background across ALL prompts
+- Each stage = a MAJOR milestone, not a small step
+- All video prompts must end with: "No music. No talking. No dialogue. Only construction sounds and foley."`;
 
         try {
             const response = await this.ai.models.generateContent({
@@ -140,14 +162,14 @@ Remember: Lock the character, camera, lighting, and background across ALL prompt
             }
 
             const data = JSON.parse(jsonText.trim());
-            if (!data.stages || data.stages.length !== 4) {
-                throw new Error('Expected exactly 4 stages, got ' + (data.stages?.length || 0));
+            if (!data.stages || data.stages.length !== stageCount) {
+                throw new Error('Expected ' + stageCount + ' stages, got ' + (data.stages?.length || 0));
             }
-            if (!data.transitions || data.transitions.length !== 3) {
-                throw new Error('Expected exactly 3 transitions, got ' + (data.transitions?.length || 0));
+            if (!data.transitions || data.transitions.length !== stageCount - 1) {
+                throw new Error('Expected ' + (stageCount - 1) + ' transitions, got ' + (data.transitions?.length || 0));
             }
 
-            console.log(`✅ Generated prompts: "${data.title}"`);
+            console.log('✅ Generated ' + stageCount + ' stage prompts: "' + data.title + '"');
             return data;
         } catch (error) {
             console.error('Gemini prompt generation error:', error.message);
@@ -156,20 +178,42 @@ Remember: Lock the character, camera, lighting, and background across ALL prompt
     }
 
     /**
-     * Step 2: Generate image with nano-banana-2
+     * Step 2: Generate 4 image variants with nano-banana-2
      * @param {string} imagePrompt - The image prompt
-     * @param {number} stageNumber - 1-4
-     * @param {string|null} referenceImageUrl - Previous stage image URL for consistency
+     * @param {number} stageNumber - Stage number
+     * @param {string|null} referenceImageUrl - Previous stage's selected image for consistency
+     * @returns {string[]} Array of 4 image URLs
      */
-    async generateImage(imagePrompt, stageNumber, referenceImageUrl) {
-        console.log(`🖼️ Timelapse: Generating image for stage ${stageNumber}...`);
-        const maxRetries = 3;
+    async generateImages(imagePrompt, stageNumber, referenceImageUrl) {
+        console.log('🖼️ Timelapse: Generating 4 images for stage ' + stageNumber + '...');
+        var results = [];
+        var promises = [];
 
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        for (var i = 0; i < 4; i++) {
+            promises.push(this._generateSingleImage(imagePrompt, stageNumber, referenceImageUrl, i + 1));
+        }
+
+        var settled = await Promise.allSettled(promises);
+        for (var j = 0; j < settled.length; j++) {
+            if (settled[j].status === 'fulfilled') {
+                results.push(settled[j].value);
+            } else {
+                console.warn('  Image ' + (j + 1) + '/4 failed: ' + settled[j].reason?.message);
+                results.push(null);
+            }
+        }
+
+        var successCount = results.filter(function(r) { return r !== null; }).length;
+        console.log('✅ Stage ' + stageNumber + ': ' + successCount + '/4 images generated');
+        return results;
+    }
+
+    async _generateSingleImage(imagePrompt, stageNumber, referenceImageUrl, variantNum) {
+        var maxRetries = 3;
+
+        for (var attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                console.log(`  Kie.ai nano-banana-2 - Stage ${stageNumber} (attempt ${attempt}/${maxRetries})`);
-
-                const input = {
+                var input = {
                     prompt: imagePrompt,
                     image_input: referenceImageUrl ? [referenceImageUrl] : [],
                     aspect_ratio: '9:16',
@@ -177,45 +221,44 @@ Remember: Lock the character, camera, lighting, and background across ALL prompt
                     output_format: 'png'
                 };
 
-                const createResponse = await axios.post(
-                    `${this.kieBaseUrl}/api/v1/jobs/createTask`,
-                    { model: 'nano-banana-2', input },
+                var createResponse = await axios.post(
+                    this.kieBaseUrl + '/api/v1/jobs/createTask',
+                    { model: 'nano-banana-2', input: input },
                     {
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${this.kieApiKey}`
+                            'Authorization': 'Bearer ' + this.kieApiKey
                         },
                         timeout: 30000
                     }
                 );
 
-                const respData = createResponse.data;
-                const taskId = respData?.data?.taskId;
+                var respData = createResponse.data;
+                var taskId = respData?.data?.taskId;
 
                 if (!taskId) {
-                    const code = respData?.code || respData?.status;
-                    const msg = respData?.msg || respData?.message || '';
+                    var code = respData?.code || respData?.status;
+                    var msg = respData?.msg || respData?.message || '';
                     if (code === 402 || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('quota')) {
                         throw new Error('Out of Kie.ai credits.');
                     }
                     if (attempt < maxRetries) {
-                        await new Promise(r => setTimeout(r, attempt * 3000));
+                        await new Promise(function(r) { setTimeout(r, attempt * 3000); });
                         continue;
                     }
-                    throw new Error(`Kie.ai image failed after ${maxRetries} attempts`);
+                    throw new Error('Kie.ai image failed after ' + maxRetries + ' attempts');
                 }
 
-                console.log(`  Task created: ${taskId}`);
-                const imageUrl = await this.pollKieTask(taskId, 'image');
-                console.log(`✅ Stage ${stageNumber} image generated`);
+                var imageUrl = await this.pollKieTask(taskId, 'image');
+                console.log('  Stage ' + stageNumber + ' variant ' + variantNum + ' done');
                 return imageUrl;
 
             } catch (error) {
                 if (error.message.includes('credit') || error.message.includes('quota')) throw error;
-                const status = error.response?.status;
-                const isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
+                var status = error.response?.status;
+                var isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
                 if (isRetryable && attempt < maxRetries) {
-                    await new Promise(r => setTimeout(r, attempt * 3000));
+                    await new Promise(function(r) { setTimeout(r, attempt * 3000); });
                     continue;
                 }
                 throw error;
@@ -225,169 +268,172 @@ Remember: Lock the character, camera, lighting, and background across ALL prompt
 
     /**
      * Step 3: Generate transition video using Seedance 1.5 Pro (Kie.ai)
-     * Takes start frame (stage N) and end frame (stage N+1) via input_urls [start, end]
+     * Takes start frame and end frame via input_urls [start, end]
      */
-    /**
-         * Step 3: Generate transition video using Seedance 1.5 Pro (Kie.ai)
-         * Takes start frame (stage N) and end frame (stage N+1) via input_urls [start, end]
-         */
-        async generateTransitionVideo(startImageUrl, endImageUrl, videoPrompt, transitionNumber) {
-            console.log(`🎬 Timelapse: Generating transition ${transitionNumber} video (Seedance 1.5 Pro)...`);
-            const maxRetries = 3;
+    async generateTransitionVideo(startImageUrl, endImageUrl, videoPrompt, transitionNumber) {
+        console.log('🎬 Timelapse: Generating transition ' + transitionNumber + ' video (Seedance 1.5 Pro)...');
+        var maxRetries = 3;
 
-            for (let attempt = 1; attempt <= maxRetries; attempt++) {
-                try {
-                    console.log(`  Seedance 1.5 Pro - Transition ${transitionNumber} (attempt ${attempt}/${maxRetries})`);
+        for (var attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log('  Seedance 1.5 Pro - Transition ' + transitionNumber + ' (attempt ' + attempt + '/' + maxRetries + ')');
 
-                    const createResponse = await axios.post(
-                        `${this.kieBaseUrl}/api/v1/jobs/createTask`,
-                        {
-                            model: 'bytedance/seedance-1.5-pro',
-                            input: {
-                                prompt: videoPrompt,
-                                input_urls: [startImageUrl, endImageUrl],
-                                aspect_ratio: '9:16',
-                                resolution: '720p',
-                                duration: '8',
-                                fixed_lens: true,
-                                generate_audio: true
-                            }
+                // Append no-music directive to prompt if not already there
+                var fullPrompt = videoPrompt;
+                if (fullPrompt.indexOf('No music') === -1) {
+                    fullPrompt += ' No music. No talking. No dialogue. Only construction sounds and foley.';
+                }
+
+                var createResponse = await axios.post(
+                    this.kieBaseUrl + '/api/v1/jobs/createTask',
+                    {
+                        model: 'bytedance/seedance-1.5-pro',
+                        input: {
+                            prompt: fullPrompt,
+                            input_urls: [startImageUrl, endImageUrl],
+                            aspect_ratio: '9:16',
+                            resolution: '720p',
+                            duration: '8',
+                            fixed_lens: true,
+                            generate_audio: true
+                        }
+                    },
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + this.kieApiKey
                         },
-                        {
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${this.kieApiKey}`
-                            },
-                            timeout: 30000
-                        }
-                    );
-
-                    const respData = createResponse.data;
-                    const taskId = respData?.data?.taskId;
-
-                    if (!taskId) {
-                        const code = respData?.code || respData?.status;
-                        const msg = respData?.msg || respData?.message || '';
-                        if (code === 402 || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('quota')) {
-                            throw new Error('Out of Kie.ai credits.');
-                        }
-                        console.warn(`  Transition ${transitionNumber}: No taskId (attempt ${attempt}/${maxRetries}). Code: ${code}, Msg: ${msg}`);
-                        if (attempt < maxRetries) {
-                            await new Promise(r => setTimeout(r, attempt * 3000));
-                            continue;
-                        }
-                        throw new Error(`Seedance video failed after ${maxRetries} attempts`);
+                        timeout: 30000
                     }
+                );
 
-                    console.log(`  Seedance task created: ${taskId}`);
-                    const videoUrl = await this.pollKieTask(taskId, 'video');
-                    console.log(`✅ Transition ${transitionNumber} video generated (Seedance 1.5 Pro)`);
-                    return videoUrl;
+                var respData = createResponse.data;
+                var taskId = respData?.data?.taskId;
 
-                } catch (error) {
-                    if (error.message.includes('credit') || error.message.includes('quota') || error.message.includes('authentication')) {
-                        throw error;
+                if (!taskId) {
+                    var code = respData?.code || respData?.status;
+                    var msg = respData?.msg || respData?.message || '';
+                    if (code === 402 || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('quota')) {
+                        throw new Error('Out of Kie.ai credits.');
                     }
-                    const status = error.response?.status;
-                    const isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
-                    if (isRetryable && attempt < maxRetries) {
-                        await new Promise(r => setTimeout(r, attempt * 3000));
+                    if (attempt < maxRetries) {
+                        await new Promise(function(r) { setTimeout(r, attempt * 3000); });
                         continue;
                     }
+                    throw new Error('Seedance video failed after ' + maxRetries + ' attempts');
+                }
+
+                console.log('  Seedance task created: ' + taskId);
+                var videoUrl = await this.pollKieTask(taskId, 'video');
+                console.log('✅ Transition ' + transitionNumber + ' video generated (Seedance 1.5 Pro)');
+                return videoUrl;
+
+            } catch (error) {
+                if (error.message.includes('credit') || error.message.includes('quota') || error.message.includes('authentication')) {
                     throw error;
                 }
+                var status = error.response?.status;
+                var isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
+                if (isRetryable && attempt < maxRetries) {
+                    await new Promise(function(r) { setTimeout(r, attempt * 3000); });
+                    continue;
+                }
+                throw error;
             }
         }
+    }
 
     /**
      * Poll Kie.ai task for image or video result
      */
-    async pollKieTask(taskId, type = 'image', timeout = 600000) {
-        const startTime = Date.now();
-        const pollInterval = 5000;
-        let pollCount = 0;
+    async pollKieTask(taskId, type, timeout) {
+        type = type || 'image';
+        timeout = timeout || 600000;
+        var startTime = Date.now();
+        var pollInterval = 5000;
+        var pollCount = 0;
 
         while (Date.now() - startTime < timeout) {
             pollCount++;
-            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            var elapsed = Math.floor((Date.now() - startTime) / 1000);
 
             try {
-                const response = await axios.get(
-                    `${this.kieBaseUrl}/api/v1/jobs/recordInfo`,
+                var response = await axios.get(
+                    this.kieBaseUrl + '/api/v1/jobs/recordInfo',
                     {
-                        params: { taskId },
-                        headers: { 'Authorization': `Bearer ${this.kieApiKey}` }
+                        params: { taskId: taskId },
+                        headers: { 'Authorization': 'Bearer ' + this.kieApiKey }
                     }
                 );
 
                 if (response.data.code !== 200) {
-                    throw new Error(`Kie.ai API error: ${response.data.msg}`);
+                    throw new Error('Kie.ai API error: ' + response.data.msg);
                 }
 
-                const state = response.data.data.state;
+                var state = response.data.data.state;
 
                 if (pollCount % 6 === 0) {
-                    console.log(`  Kie.ai ${type} task ${taskId}: ${state} (${elapsed}s)`);
+                    console.log('  Kie.ai ' + type + ' task ' + taskId + ': ' + state + ' (' + elapsed + 's)');
                 }
 
                 if (state === 'success') {
-                    const resultJson = JSON.parse(response.data.data.resultJson);
-                    const urls = resultJson.resultUrls || resultJson.videoUrls || [];
-                    if (urls.length === 0) throw new Error(`Kie.ai returned success but no ${type} URLs`);
-                    console.log(`  Kie.ai ${type} task completed in ${elapsed}s`);
+                    var resultJson = JSON.parse(response.data.data.resultJson);
+                    var urls = resultJson.resultUrls || resultJson.videoUrls || [];
+                    if (urls.length === 0) throw new Error('Kie.ai returned success but no ' + type + ' URLs');
+                    console.log('  Kie.ai ' + type + ' task completed in ' + elapsed + 's');
                     return urls[0];
                 }
 
                 if (state === 'fail') {
-                    const msg = response.data.data.failMsg || 'Unknown error';
-                    throw new Error(`Kie.ai ${type} generation failed: ${msg}`);
+                    var failMsg = response.data.data.failMsg || 'Unknown error';
+                    throw new Error('Kie.ai ' + type + ' generation failed: ' + failMsg);
                 }
 
-                await new Promise(resolve => setTimeout(resolve, pollInterval));
+                await new Promise(function(resolve) { setTimeout(resolve, pollInterval); });
 
             } catch (error) {
                 if (error.response?.status === 401) throw new Error('Kie.ai auth failed.');
                 if (error.response?.status === 402) throw new Error('Out of Kie.ai credits.');
                 if (error.response?.status === 429) {
-                    await new Promise(resolve => setTimeout(resolve, 10000));
+                    await new Promise(function(resolve) { setTimeout(resolve, 10000); });
                 } else if (error.message.includes('Kie.ai') || error.message.includes('failed')) {
                     throw error;
                 } else {
-                    await new Promise(resolve => setTimeout(resolve, pollInterval));
+                    await new Promise(function(resolve) { setTimeout(resolve, pollInterval); });
                 }
             }
         }
 
-        throw new Error(`Kie.ai ${type} task timeout after ${Math.floor(timeout / 1000)}s`);
+        throw new Error('Kie.ai ' + type + ' task timeout after ' + Math.floor(timeout / 1000) + 's');
     }
 
     /**
-     * Step 4: Assemble 3 transition clips into final video
+     * Step 4: Assemble transition clips into final video
      */
     async assembleVideo(videoUrls) {
         console.log('🎬 Timelapse: Assembling final video from ' + videoUrls.length + ' clips...');
 
-        const timestamp = Date.now();
-        const tempDir = path.join(this.outputDir, 'temp_' + timestamp);
+        var timestamp = Date.now();
+        var tempDir = path.join(this.outputDir, 'temp_' + timestamp);
         if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
         try {
             // Download all clips
-            const clipPaths = [];
-            for (let i = 0; i < videoUrls.length; i++) {
-                const clipPath = path.join(tempDir, 'clip_' + (i + 1) + '.mp4');
-                const response = await axios.get(videoUrls[i], { responseType: 'arraybuffer', timeout: 60000 });
-                fs.writeFileSync(clipPath, Buffer.from(response.data));
+            var clipPaths = [];
+            for (var i = 0; i < videoUrls.length; i++) {
+                var clipPath = path.join(tempDir, 'clip_' + (i + 1) + '.mp4');
+                var dlResponse = await axios.get(videoUrls[i], { responseType: 'arraybuffer', timeout: 60000 });
+                fs.writeFileSync(clipPath, Buffer.from(dlResponse.data));
                 clipPaths.push(clipPath);
-                console.log(`  Downloaded clip ${i + 1}/${videoUrls.length}`);
+                console.log('  Downloaded clip ' + (i + 1) + '/' + videoUrls.length);
             }
 
-            // Normalize clips to consistent format
-            const normalizedPaths = [];
-            for (let i = 0; i < clipPaths.length; i++) {
-                const normPath = path.join(tempDir, 'norm_' + (i + 1) + '.mp4');
+            // Normalize clips
+            var normalizedPaths = [];
+            for (var j = 0; j < clipPaths.length; j++) {
+                var normPath = path.join(tempDir, 'norm_' + (j + 1) + '.mp4');
                 await this._runFFmpeg([
-                    '-i', clipPaths[i],
+                    '-i', clipPaths[j],
                     '-vf', 'scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2',
                     '-c:v', 'libx264', '-preset', 'ultrafast', '-threads', '1',
                     '-r', '30', '-ar', '44100', '-ac', '2',
@@ -397,13 +443,12 @@ Remember: Lock the character, camera, lighting, and background across ALL prompt
                 normalizedPaths.push(normPath);
             }
 
-            // Create concat file
-            const concatFile = path.join(tempDir, 'concat.txt');
-            const concatContent = normalizedPaths.map(p => "file '" + p + "'").join('\n');
+            // Concat
+            var concatFile = path.join(tempDir, 'concat.txt');
+            var concatContent = normalizedPaths.map(function(p) { return "file '" + p + "'"; }).join('\n');
             fs.writeFileSync(concatFile, concatContent);
 
-            // Concatenate
-            const outputPath = path.join(this.outputDir, 'timelapse_' + timestamp + '.mp4');
+            var outputPath = path.join(this.outputDir, 'timelapse_' + timestamp + '.mp4');
             await this._runFFmpeg([
                 '-f', 'concat', '-safe', '0', '-i', concatFile,
                 '-c:v', 'libx264', '-preset', 'ultrafast', '-threads', '1',
@@ -412,12 +457,9 @@ Remember: Lock the character, camera, lighting, and background across ALL prompt
                 '-y', outputPath
             ]);
 
-            // Cleanup temp
-            try {
-                fs.rmSync(tempDir, { recursive: true, force: true });
-            } catch (e) { /* ignore */ }
+            try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
 
-            const publicPath = '/studio/generated/timelapse/timelapse_' + timestamp + '.mp4';
+            var publicPath = '/studio/generated/timelapse/timelapse_' + timestamp + '.mp4';
             console.log('✅ Final video assembled: ' + publicPath);
             return publicPath;
 
@@ -428,11 +470,11 @@ Remember: Lock the character, camera, lighting, and background across ALL prompt
     }
 
     _runFFmpeg(args) {
-        return new Promise((resolve, reject) => {
-            const proc = execFile(ffmpegPath, args, { timeout: 300000 });
-            let stderr = '';
-            proc.stderr.on('data', d => { stderr += d; });
-            proc.on('close', code => {
+        return new Promise(function(resolve, reject) {
+            var proc = execFile(ffmpegPath, args, { timeout: 300000 });
+            var stderr = '';
+            proc.stderr.on('data', function(d) { stderr += d; });
+            proc.on('close', function(code) {
                 if (code === 0) resolve();
                 else reject(new Error('FFmpeg exit ' + code + ': ' + stderr.slice(-500)));
             });

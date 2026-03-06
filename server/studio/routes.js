@@ -1901,12 +1901,13 @@ function getTimelapseGenerator() {
 // Step 1: Generate stage prompts (Gemini) — FREE
 router.post('/timelapse/prompts', requireAuth, async (req, res) => {
     try {
-        var { concept } = req.body;
+        var { concept, stageCount } = req.body;
         if (!concept || concept.length < 20) {
             return res.status(400).json({ error: 'Please provide a detailed concept (at least 20 characters).' });
         }
+        stageCount = Math.max(4, Math.min(8, parseInt(stageCount) || 4));
         var gen = getTimelapseGenerator();
-        var data = await gen.generateStagePrompts(concept);
+        var data = await gen.generateStagePrompts(concept, stageCount);
         res.json(data);
     } catch (error) {
         console.error('Timelapse prompts error:', error.message);
@@ -1914,37 +1915,35 @@ router.post('/timelapse/prompts', requireAuth, async (req, res) => {
     }
 });
 
-// Step 2: Generate image for a single stage (0.5 credits)
-router.post('/timelapse/generate-image', requireAuth, studioGenerateLimiter, async (req, res) => {
+// Step 2: Generate 4 images for a single stage (4 × 0.5 = 2 credits)
+router.post('/timelapse/generate-images', requireAuth, studioGenerateLimiter, async (req, res) => {
     try {
         var { imagePrompt, stageNumber, referenceImageUrl } = req.body;
         if (!imagePrompt) return res.status(400).json({ error: 'Missing imagePrompt' });
-        if (!stageNumber || stageNumber < 1 || stageNumber > 4) {
-            return res.status(400).json({ error: 'stageNumber must be 1-4' });
+        if (!stageNumber || stageNumber < 1 || stageNumber > 8) {
+            return res.status(400).json({ error: 'stageNumber must be 1-8' });
         }
 
         var userId = String(req.user.userId);
 
-        // Check credits
-        var check = await credits.checkCredits(userId, 'image_generation', 1);
+        // 4 images × 0.5 = 2 credits
+        var check = await credits.checkCredits(userId, 'image_generation', 4);
         if (!check.allowed) {
-            return res.status(402).json({ error: 'Not enough credits. Need 0.5, have ' + check.totalAvailable });
+            return res.status(402).json({ error: 'Not enough credits. Need 2, have ' + check.totalAvailable });
         }
 
-        // Deduct upfront
-        await credits.deductCredits(userId, 'image_generation', 1, 'Timelapse stage ' + stageNumber + ' image');
+        await credits.deductCredits(userId, 'image_generation', 4, 'Timelapse stage ' + stageNumber + ' images (4x)');
 
         try {
             var gen = getTimelapseGenerator();
-            var imageUrl = await gen.generateImage(imagePrompt, stageNumber, referenceImageUrl || null);
-            res.json({ imageUrl: imageUrl, stageNumber: stageNumber });
+            var imageUrls = await gen.generateImages(imagePrompt, stageNumber, referenceImageUrl || null);
+            res.json({ imageUrls: imageUrls, stageNumber: stageNumber });
         } catch (genError) {
-            // Refund on failure
-            await credits.refundCredits(userId, 'image_generation', 1, 'Timelapse stage ' + stageNumber + ' image failed');
+            await credits.refundCredits(userId, 'image_generation', 4, 'Timelapse stage ' + stageNumber + ' images failed');
             throw genError;
         }
     } catch (error) {
-        console.error('Timelapse image error:', error.message);
+        console.error('Timelapse images error:', error.message);
         res.status(error.message.includes('credits') ? 402 : 500).json({ error: error.message });
     }
 });
