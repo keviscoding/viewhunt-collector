@@ -38,39 +38,39 @@ class TimelapseGenerator {
         var stageExamples = '';
         if (stageCount === 4) {
             stageExamples = `Stage 1: THE ESTABLISHING SHOT — Wide exterior showing the full scale of the environment/object. The protagonist stands nearby, giving a sense of how massive it is. This is the HOOK — it must look impressive and set the scene.
-Stage 2: THE FIRST CUT — The protagonist makes the first incision/mark/opening. The beginning of the transformation.
-Stage 3: THE BUILD — Major structural work is underway. Framing, flooring, walls, plumbing — real progress is visible.
-Stage 4: THE COZY FINISH / REVEAL — The space is fully furnished, lit, and livable. The protagonist relaxes in the finished space.`;
+Stage 2: THE FIRST MAJOR CUT — A huge opening has been carved/created. Raw interior exposed. Debris everywhere. The protagonist is deep in demolition work with heavy tools.
+Stage 3: THE STRUCTURAL BUILD — Walls are paneled, floor is laid, a window or door frame is installed. The space is recognizably becoming a room. Lumber, tools, and building materials visible. Protagonist is installing something.
+Stage 4: THE COZY REVEAL — Completely finished and furnished. Warm lighting, rugs, furniture, decorations, plants. Looks like a magazine photo. The protagonist relaxes in the finished space. Should look like a COMPLETELY DIFFERENT PLACE from Stage 2.`;
         } else if (stageCount === 5) {
             stageExamples = `Stage 1: THE ESTABLISHING SHOT — Wide exterior showing the full scale. The protagonist stands nearby. This is the HOOK.
-Stage 2: THE FIRST CUT — The protagonist makes the first incision/opening.
-Stage 3: THE EXCAVATION — Clearing out material, revealing the void/space.
-Stage 4: THE STRUCTURAL BUILD — Framing, flooring, walls going up. Real progress.
-Stage 5: THE COZY FINISH / REVEAL — Fully furnished, lit, livable. Protagonist relaxes inside.`;
+Stage 2: THE FIRST MAJOR CUT — A huge opening carved out. Raw interior exposed, debris everywhere. Heavy demolition tools in use.
+Stage 3: THE EXCAVATION COMPLETE — The full void is hollowed out and cleaned. Bare but spacious. The shape of the future room is clear. Protagonist measures or plans.
+Stage 4: THE STRUCTURAL BUILD — Floor laid, walls paneled, window/door frames installed, electrical wires visible. Clearly becoming a livable space. Protagonist uses power tools.
+Stage 5: THE COZY REVEAL — Fully furnished with warm lighting, rugs, furniture, art, plants, cozy details. Looks like a completely different world from Stage 2. Protagonist relaxes inside.`;
         } else if (stageCount === 6) {
             stageExamples = `Stage 1: THE ESTABLISHING SHOT — Wide exterior showing the full scale. This is the HOOK.
-Stage 2: THE FIRST CUT — Making the first incision/opening.
-Stage 3: THE EXCAVATION — Clearing out material, revealing the void.
-Stage 4: THE FOUNDATION — Laying groundwork: flooring, base structure, waterproofing.
-Stage 5: THE BUILD-OUT — Walls, ceiling, fixtures, plumbing, electrical.
-Stage 6: THE COZY FINISH / REVEAL — Fully furnished, decorated, lit. Protagonist relaxes.`;
+Stage 2: THE FIRST MAJOR CUT — Huge opening carved. Raw interior, debris, heavy tools.
+Stage 3: THE FULL EXCAVATION — Entire void hollowed out and cleaned. Bare spacious interior. Shape of future room visible.
+Stage 4: THE FOUNDATION — Subfloor framing laid, moisture barrier down, base structure built. Stacks of lumber and materials.
+Stage 5: THE BUILD-OUT — Walls fully paneled, ceiling done, window installed, light fixtures mounted, plumbing visible. Recognizably a room.
+Stage 6: THE COZY REVEAL — Fully furnished, decorated, warm lighting, rugs, art, plants, cozy blankets. A completely transformed space. Protagonist relaxes.`;
         } else if (stageCount === 7) {
             stageExamples = `Stage 1: THE ESTABLISHING SHOT — Wide exterior showing the full scale. This is the HOOK.
-Stage 2: THE FIRST CUT — Making the first incision/opening.
-Stage 3: THE EXCAVATION — Clearing out material, revealing the void.
-Stage 4: THE FOUNDATION — Laying groundwork: flooring, base structure.
-Stage 5: THE FRAMING — Walls going up, structural skeleton visible.
-Stage 6: THE FINISHING — Surfaces, paint, fixtures, lighting installed.
-Stage 7: THE COZY REVEAL — Fully furnished, decorated. Protagonist relaxes.`;
+Stage 2: THE FIRST MAJOR CUT — Huge opening carved. Raw interior exposed, debris everywhere.
+Stage 3: THE FULL EXCAVATION — Entire void hollowed out. Clean, bare, spacious.
+Stage 4: THE FOUNDATION — Subfloor framing, moisture barrier, base structure built.
+Stage 5: THE FRAMING — Wall studs up, ceiling joists in, door/window frames installed. Skeleton of a room.
+Stage 6: THE FINISHING — Walls paneled/painted, floor laid, light fixtures, plumbing fixtures, shelving installed.
+Stage 7: THE COZY REVEAL — Fully furnished, decorated, warm lighting, completely transformed. Protagonist relaxes.`;
         } else {
             stageExamples = `Stage 1: THE ESTABLISHING SHOT — Wide exterior showing the full scale. This is the HOOK.
-Stage 2: THE FIRST CUT — Making the first incision/opening.
-Stage 3: THE EXCAVATION — Clearing out material, revealing the void.
-Stage 4: THE FOUNDATION — Laying groundwork: flooring, base structure.
-Stage 5: THE FRAMING — Walls going up, structural skeleton visible.
-Stage 6: THE UTILITIES — Plumbing, electrical, insulation.
-Stage 7: THE FINISHING — Surfaces, paint, fixtures, lighting installed.
-Stage 8: THE COZY REVEAL — Fully furnished, decorated, cozy. Protagonist relaxes.`;
+Stage 2: THE FIRST MAJOR CUT — Huge opening carved. Raw interior, debris, heavy tools.
+Stage 3: THE FULL EXCAVATION — Entire void hollowed out and cleaned. Bare spacious interior.
+Stage 4: THE FOUNDATION — Subfloor framing, moisture barrier, base structure.
+Stage 5: THE FRAMING — Wall studs, ceiling joists, door/window frames. Skeleton of a room.
+Stage 6: THE UTILITIES — Electrical wiring, plumbing pipes, insulation batts installed between studs.
+Stage 7: THE FINISHING — Walls paneled/painted, floor laid, fixtures mounted, shelving built.
+Stage 8: THE COZY REVEAL — Fully furnished, decorated, warm lighting, plants, art, rugs. Completely transformed. Protagonist relaxes.`;
         }
 
         const systemPrompt = `You are an expert AI image prompt engineer specializing in surreal time-lapse construction videos.
@@ -86,20 +86,31 @@ CRITICAL — STAGE 1 MUST BE AN ESTABLISHING SHOT:
 - This is the HOOK — it needs to look impressive, surreal, and make viewers want to see what happens next
 - Do NOT start inside or already cutting — start OUTSIDE showing the whole thing
 
-THE GOLDEN RULE:
+THE GOLDEN RULE — CONSISTENCY:
 - Character description (clothing, body type, appearance) must be IDENTICAL in ALL prompts
 - Camera angle must be IDENTICAL (static tripod, same position) — except Stage 1 which can be slightly wider
 - Lighting conditions must be IDENTICAL (same time of day, same light source)
 - Background environment must be IDENTICAL (same surroundings)
 - ONLY the construction state changes between stages
-- Each stage must represent a SIGNIFICANT milestone — not small incremental progress
+
+CRITICAL — MASSIVE VISUAL CHANGE BETWEEN STAGES:
+- Each stage MUST look dramatically different from the previous one at a GLANCE
+- At least 30-50% of the visible scene should be DIFFERENT between consecutive stages
+- Think of it like skipping WEEKS of work between each photo — not hours
+- BAD: Stage 2 = clearing debris, Stage 3 = more clearing debris (too similar)
+- GOOD: Stage 2 = raw hollow carved out, Stage 3 = full wooden floor + framed walls + window installed
+- The character should be doing a COMPLETELY DIFFERENT activity in each stage (different tools, different posture, different area of the space)
+- New MATERIALS and OBJECTS must appear in each stage (lumber, tools, furniture, fixtures, paint, lighting)
+- The SURFACES should visibly transform (raw wood → sanded → paneled → painted → decorated)
+- If two stages could be confused for each other in a thumbnail, they are TOO SIMILAR — fix it
+- The final stage should look like a COMPLETELY DIFFERENT PLACE from stage 2
 
 CRITICAL PROMPT RULES:
 - Every prompt must be fully self-contained (no references to "previous" or "next")
 - Include the FULL character description in EVERY prompt
 - Include the FULL camera/environment description in EVERY prompt
 - Format: 9:16 vertical, hyper-realistic photography style
-- The character should be actively doing something in each stage (not just standing)
+- The character should be actively doing something DIFFERENT in each stage (different tool, different position, different task)
 
 VIDEO TRANSITION PROMPTS:
 - Describe the fast-paced time-lapse ACTION between two stages
@@ -108,7 +119,7 @@ VIDEO TRANSITION PROMPTS:
 - Keep the same character and camera descriptions
 - MUST include: "No music. No talking. No dialogue. Only construction sounds and foley."
 
-IMPORTANT: Be holistic. The concept could be ANYTHING — building inside a tree, carving a room in concrete, renovating a van, creating a garden on a rooftop, etc. Adapt the stages to fit whatever the user describes. Each stage should feel like a MAJOR achievement, not a tiny step.
+IMPORTANT: Be holistic. The concept could be ANYTHING — building inside a tree, carving a room in concrete, renovating a van, creating a garden on a rooftop, etc. Adapt the stages to fit whatever the user describes. Each stage must show a DRAMATIC visual transformation — imagine skipping weeks of work between each photo. The viewer should immediately see massive progress at every step.
 
 Return JSON:
 {
@@ -139,7 +150,11 @@ ${concept}
 Remember:
 - Stage 1 = wide establishing shot showing the full scale (the HOOK)
 - Lock the character, camera, lighting, and background across ALL prompts
-- Each stage = a MAJOR milestone, not a small step
+- Each stage MUST look DRAMATICALLY different from the previous — at least 30-50% of the visible scene changes
+- The character must be doing a DIFFERENT activity with DIFFERENT tools in each stage
+- New materials, objects, and surfaces must appear in each stage
+- If two consecutive stages could be confused in a thumbnail, they are TOO SIMILAR
+- The final reveal should look like a COMPLETELY DIFFERENT PLACE from the early stages
 - All video prompts must end with: "No music. No talking. No dialogue. Only construction sounds and foley."`;
 
         try {
