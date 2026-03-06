@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>if(!localStorage.getItem("viewhunt_token"))window.location.replace("/");</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time-Lapse Construction — ViewHunt Studio</title>
+    <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+    <link rel="icon" type="image/png" href="/images/viewhunt_logo.png">
+    <link rel="apple-touch-icon" href="/images/viewhunt_logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+        :root{
+            --bg:#0e0e12;--surface:#18181f;--surface-2:#1f1f28;--surface-3:#262631;
+            --border:#2a2a36;--border-hover:#3a3a4a;
+            --text:#e8e8ed;--text-muted:#8b8b9e;--text-dim:#5c5c6e;
+            --accent:#7c6aef;--accent-hover:#6b58e0;--accent-glow:rgba(124,106,239,0.15);
+            --green:#34d399;--green-dim:rgba(52,211,153,0.12);
+            --amber:#fbbf24;--red:#f87171;
+        }
+        body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+        .app{max-width:720px;margin:0 auto;padding:1.5rem 1.25rem 4rem}
+        .header{display:flex;align-items:center;gap:0.75rem;margin-bottom:2rem}
+        .back-btn{color:var(--text-muted);text-decoration:none;font-size:0.85rem;padding:0.4rem 0.75rem;border-radius:6px;border:1px solid var(--border);transition:all 0.15s}
+        .back-btn:hover{color:var(--text);border-color:var(--border-hover);background:var(--surface)}
+        .logo{font-size:1.1rem;font-weight:700;letter-spacing:-0.02em}
+        .logo span{color:var(--accent)}
+        h1{font-size:1.4rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.3rem}
+        .subtitle{color:var(--text-muted);font-size:0.88rem;line-height:1.6;margin-bottom:1.5rem}
+        .credits-bar{display:flex;align-items:center;gap:0.5rem;font-size:0.82rem;color:var(--text-muted);margin-bottom:1.5rem}
+        .credits-bar .bal{color:var(--green);font-weight:700}
+        .section{margin-bottom:1.5rem}
+        .section-title{font-size:0.88rem;font-weight:700;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.4rem}
+        textarea{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit;font-size:0.88rem;padding:0.85rem 1rem;resize:vertical;min-height:100px;outline:none;transition:border-color 0.15s}
+        textarea:focus{border-color:var(--accent)}
+        textarea::placeholder{color:var(--text-dim)}
+        .btn{display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.65rem 1.25rem;border-radius:8px;font-weight:600;font-size:0.88rem;cursor:pointer;border:none;transition:all 0.15s;font-family:inherit}
+        .btn-primary{background:var(--accent);color:white;width:100%}
+        .btn-primary:hover{background:var(--accent-hover);transform:translateY(-1px)}
+        .btn-primary:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+        .btn-sm{padding:0.4rem 0.8rem;font-size:0.78rem;border-radius:6px}
+        .btn-outline{background:transparent;color:var(--text-muted);border:1px solid var(--border)}
+        .btn-outline:hover{color:var(--text);border-color:var(--border-hover)}
+        .btn-green{background:var(--green);color:#0e0e12}
+        .btn-green:hover{opacity:0.9}
+        .stage-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem;margin-bottom:0.75rem;transition:border-color 0.15s}
+        .stage-card.active{border-color:var(--accent)}
+        .stage-card.done{border-color:var(--green)}
+        .stage-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem}
+        .stage-num{font-size:0.78rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.04em}
+        .stage-status{font-size:0.7rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:4px;text-transform:uppercase;letter-spacing:0.04em}
+        .status-pending{background:var(--surface-3);color:var(--text-dim)}
+        .status-generating{background:var(--accent-glow);color:var(--accent)}
+        .status-review{background:rgba(251,191,36,0.12);color:var(--amber)}
+        .status-done{background:var(--green-dim);color:var(--green)}
+        .stage-desc{font-size:0.82rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.5rem}
+        .stage-images{display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem}
+        .stage-img{width:100px;aspect-ratio:9/16;border-radius:8px;overflow:hidden;border:2px solid transparent;cursor:pointer;position:relative;background:var(--surface-2)}
+        .stage-img.selected{border-color:var(--green)}
+        .stage-img img{width:100%;height:100%;object-fit:cover}
+        .stage-img .check{position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:var(--green);color:#0e0e12;display:none;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700}
+        .stage-img.selected .check{display:flex}
+        .tweak-box{margin-top:0.5rem;display:flex;gap:0.4rem}
+        .tweak-box input{flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.82rem;padding:0.4rem 0.6rem;outline:none}
+        .tweak-box input:focus{border-color:var(--accent)}
+        .video-section{margin-top:1.5rem}
+        .transition-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem;margin-bottom:0.75rem}
+        .transition-card video{width:100%;max-width:200px;border-radius:8px;margin-top:0.5rem}
+        .final-section{background:var(--surface);border:1px solid var(--green);border-radius:14px;padding:1.5rem;text-align:center;margin-top:1.5rem}
+        .final-section video{width:100%;max-width:300px;border-radius:10px;margin:0.75rem auto;display:block}
+        .progress-msg{text-align:center;padding:1rem;color:var(--text-muted);font-size:0.88rem}
+        .spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-right:0.4rem;vertical-align:middle}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .cost-note{font-size:0.75rem;color:var(--text-dim);text-align:center;margin-top:0.5rem}
+        @media(max-width:640px){.app{padding:1rem 0.75rem 3rem}.stage-img{width:80px}}
+    </style>
+</head>
+<body>
+<div class="app">
+    <header class="header">
+        <a href="/studio" class="back-btn">← Studio</a>
+        <div class="logo">View<span>Hunt</span></div>
+    </header>
+
+    <h1>🏗️ Time-Lapse Construction</h1>
+    <p class="subtitle">Describe a surreal construction concept and watch it come to life in 4 stages. AI generates consistent images and smooth transition videos between each stage.</p>
+
+    <div class="credits-bar">
+        💎 <span class="bal" id="credit-balance">—</span> credits
+        <span style="margin-left:auto;font-size:0.75rem;">~19 credits per video</span>
+    </div>
+
+    <!-- Step 1: Concept Input -->
+    <div class="section" id="concept-section">
+        <div class="section-title">💡 Your Concept</div>
+        <textarea id="concept-input" placeholder="Describe your time-lapse construction concept...&#10;&#10;Examples:&#10;• Building a cozy living room inside a giant tree trunk&#10;• Carving a luxury underground bunker into a concrete floor&#10;• Transforming an abandoned van into a tiny home&#10;• Creating a hidden garden room inside a massive boulder" rows="4"></textarea>
+        <div style="margin-top:0.75rem;">
+            <button class="btn btn-primary" id="generate-prompts-btn" onclick="generatePrompts()">
+                Generate Stage Prompts · Free
+            </button>
+        </div>
+    </div>
+
+    <!-- Step 2: Stage Images (sequential review) -->
+    <div id="stages-section" style="display:none;">
+        <div class="section-title">🎨 Stage Images</div>
+        <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem;">Review each stage sequentially. Accept or tweak the prompt and regenerate. Each image uses the previous as reference for consistency.</p>
+        <div id="stages-list"></div>
+    </div>
+
+    <!-- Step 3: Video Generation -->
+    <div id="videos-section" style="display:none;">
+        <div class="section-title">🎬 Transition Videos</div>
+        <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem;">Generating smooth transitions between your 4 stages using start+end frame interpolation.</p>
+        <div id="transitions-list"></div>
+    </div>
+
+    <!-- Step 4: Assembly -->
+    <div id="assembly-section" style="display:none;"></div>
+
+    <!-- Final Result -->
+    <div id="final-section" style="display:none;"></div>
+</div>
+
+<script src="/studio/timelapse-app.js?v=20260306a"></script>
+</body>
+</html>

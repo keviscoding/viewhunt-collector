@@ -199,6 +199,11 @@ app.get('/studio/avatar', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'studio', 'avatar.html'));
 });
 
+// Studio Timelapse page route
+app.get('/studio/timelapse', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'studio', 'timelapse.html'));
+});
+
 // Subscription success page
 app.get('/subscription-success', async (req, res) => {
     try {

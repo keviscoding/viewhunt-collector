@@ -16,6 +16,7 @@ const assemblyQueue = require('./editor/job-queue');
 const { saveSfx, listSfx, loadAllSfx } = require('./editor/sfx-store');
 const credits = require('./credits');
 const taskManager = require('./task-manager');
+const TimelapseGenerator = require('./formats/timelapse/generator');
 const rateLimit = require('express-rate-limit');
 
 // Rate limiters for studio endpoints
@@ -1883,6 +1884,129 @@ router.delete('/tasks/:id', requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Task cancel error:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================================
+// TIMELAPSE ROUTES
+// ============================================================
+
+// Lazy-init timelapse generator
+var _timelapseGen = null;
+function getTimelapseGenerator() {
+    if (!_timelapseGen) _timelapseGen = new TimelapseGenerator();
+    return _timelapseGen;
+}
+
+// Step 1: Generate stage prompts (Gemini) — FREE
+router.post('/timelapse/prompts', requireAuth, async (req, res) => {
+    try {
+        var { concept } = req.body;
+        if (!concept || concept.length < 20) {
+            return res.status(400).json({ error: 'Please provide a detailed concept (at least 20 characters).' });
+        }
+        var gen = getTimelapseGenerator();
+        var data = await gen.generateStagePrompts(concept);
+        res.json(data);
+    } catch (error) {
+        console.error('Timelapse prompts error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Step 2: Generate image for a single stage (0.5 credits)
+router.post('/timelapse/generate-image', requireAuth, studioGenerateLimiter, async (req, res) => {
+    try {
+        var { imagePrompt, stageNumber, referenceImageUrl } = req.body;
+        if (!imagePrompt) return res.status(400).json({ error: 'Missing imagePrompt' });
+        if (!stageNumber || stageNumber < 1 || stageNumber > 4) {
+            return res.status(400).json({ error: 'stageNumber must be 1-4' });
+        }
+
+        var userId = String(req.user.userId);
+
+        // Check credits
+        var check = await credits.checkCredits(userId, 'image_generation', 1);
+        if (!check.allowed) {
+            return res.status(402).json({ error: 'Not enough credits. Need 0.5, have ' + check.totalAvailable });
+        }
+
+        // Deduct upfront
+        await credits.deductCredits(userId, 'image_generation', 1, 'Timelapse stage ' + stageNumber + ' image');
+
+        try {
+            var gen = getTimelapseGenerator();
+            var imageUrl = await gen.generateImage(imagePrompt, stageNumber, referenceImageUrl || null);
+            res.json({ imageUrl: imageUrl, stageNumber: stageNumber });
+        } catch (genError) {
+            // Refund on failure
+            await credits.refundCredits(userId, 'image_generation', 1, 'Timelapse stage ' + stageNumber + ' image failed');
+            throw genError;
+        }
+    } catch (error) {
+        console.error('Timelapse image error:', error.message);
+        res.status(error.message.includes('credits') ? 402 : 500).json({ error: error.message });
+    }
+});
+
+// Step 3: Generate transition video (5 credits) — start+end frame interpolation
+router.post('/timelapse/generate-video', requireAuth, studioGenerateLimiter, async (req, res) => {
+    try {
+        var { startImageUrl, endImageUrl, videoPrompt, transitionNumber } = req.body;
+        if (!startImageUrl || !endImageUrl) return res.status(400).json({ error: 'Missing start or end image URL' });
+        if (!videoPrompt) return res.status(400).json({ error: 'Missing videoPrompt' });
+
+        var userId = String(req.user.userId);
+
+        var check = await credits.checkCredits(userId, 'video_generation', 1);
+        if (!check.allowed) {
+            return res.status(402).json({ error: 'Not enough credits. Need 5, have ' + check.totalAvailable });
+        }
+
+        await credits.deductCredits(userId, 'video_generation', 1, 'Timelapse transition ' + (transitionNumber || '?') + ' video');
+
+        try {
+            var gen = getTimelapseGenerator();
+            var videoUrl = await gen.generateTransitionVideo(startImageUrl, endImageUrl, videoPrompt, transitionNumber || 1);
+            res.json({ videoUrl: videoUrl, transitionNumber: transitionNumber });
+        } catch (genError) {
+            await credits.refundCredits(userId, 'video_generation', 1, 'Timelapse transition ' + (transitionNumber || '?') + ' video failed');
+            throw genError;
+        }
+    } catch (error) {
+        console.error('Timelapse video error:', error.message);
+        res.status(error.message.includes('credits') ? 402 : 500).json({ error: error.message });
+    }
+});
+
+// Step 4: Assemble final video (2 credits)
+router.post('/timelapse/assemble', requireAuth, studioAssemblyLimiter, async (req, res) => {
+    try {
+        var { videoUrls } = req.body;
+        if (!videoUrls || !Array.isArray(videoUrls) || videoUrls.length < 2) {
+            return res.status(400).json({ error: 'Need at least 2 video URLs to assemble' });
+        }
+
+        var userId = String(req.user.userId);
+
+        var check = await credits.checkCredits(userId, 'assembly', 1);
+        if (!check.allowed) {
+            return res.status(402).json({ error: 'Not enough credits. Need 2, have ' + check.totalAvailable });
+        }
+
+        await credits.deductCredits(userId, 'assembly', 1, 'Timelapse assembly');
+
+        try {
+            var gen = getTimelapseGenerator();
+            var videoPath = await gen.assembleVideo(videoUrls);
+            res.json({ videoUrl: videoPath });
+        } catch (genError) {
+            await credits.refundCredits(userId, 'assembly', 1, 'Timelapse assembly failed');
+            throw genError;
+        }
+    } catch (error) {
+        console.error('Timelapse assembly error:', error.message);
+        res.status(error.message.includes('credits') ? 402 : 500).json({ error: error.message });
     }
 });
 
