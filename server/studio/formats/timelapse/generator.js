@@ -4,10 +4,11 @@
  * Pipeline:
  *   1. Gemini generates 4 stage image prompts from user concept
  *   2. Nano-banana-2 generates images (each uses previous as reference)
- *   3. Wan-2.1 FLF2V (fal.ai) generates 3 transition videos (start+end frame)
+ *   3. Seedance 1.5 Pro (Kie.ai) generates 3 transition videos (start+end frame via input_urls)
  *   4. FFmpeg stitches 3 clips into final video
  * 
  * Credits: ~19 total (4 images × 0.5 = 2, 3 videos × 5 = 15, assembly = 2)
+ * Seedance cost per video: 720p 8s with audio = 56 Kie.ai credits ($0.28)
  */
 const axios = require('axios');
 const { GoogleGenAI } = require('@google/genai');
@@ -18,14 +19,12 @@ const ffmpegPath = require('ffmpeg-static');
 
 class TimelapseGenerator {
     constructor() {
-        this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        this.kieApiKey = process.env.KIEAI_API_KEY;
-        this.kieBaseUrl = 'https://api.kie.ai';
-        this.falApiKey = process.env.FAL_API_KEY;
-        this.falBaseUrl = 'https://queue.fal.run';
-        this.outputDir = path.join(__dirname, '../../../public/studio/generated/timelapse');
-        if (!fs.existsSync(this.outputDir)) fs.mkdirSync(this.outputDir, { recursive: true });
-    }
+            this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+            this.kieApiKey = process.env.KIEAI_API_KEY;
+            this.kieBaseUrl = 'https://api.kie.ai';
+            this.outputDir = path.join(__dirname, '../../../public/studio/generated/timelapse');
+            if (!fs.existsSync(this.outputDir)) fs.mkdirSync(this.outputDir, { recursive: true });
+        }
 
     /**
      * Step 1: Generate 4 stage prompts + 3 transition prompts using Gemini
@@ -225,135 +224,83 @@ Remember: Lock the character, camera, lighting, and background across ALL prompt
     }
 
     /**
-     * Step 3: Generate transition video using fal.ai Wan-2.1 FLF2V
-     * Takes start frame (stage N) and end frame (stage N+1) and interpolates
+     * Step 3: Generate transition video using Seedance 1.5 Pro (Kie.ai)
+     * Takes start frame (stage N) and end frame (stage N+1) via input_urls [start, end]
      */
-    async generateTransitionVideo(startImageUrl, endImageUrl, videoPrompt, transitionNumber) {
-        console.log(`🎬 Timelapse: Generating transition ${transitionNumber} video (fal.ai Wan-2.1 FLF2V)...`);
-        const maxRetries = 3;
+    /**
+         * Step 3: Generate transition video using Seedance 1.5 Pro (Kie.ai)
+         * Takes start frame (stage N) and end frame (stage N+1) via input_urls [start, end]
+         */
+        async generateTransitionVideo(startImageUrl, endImageUrl, videoPrompt, transitionNumber) {
+            console.log(`🎬 Timelapse: Generating transition ${transitionNumber} video (Seedance 1.5 Pro)...`);
+            const maxRetries = 3;
 
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                console.log(`  fal.ai Wan FLF2V - Transition ${transitionNumber} (attempt ${attempt}/${maxRetries})`);
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    console.log(`  Seedance 1.5 Pro - Transition ${transitionNumber} (attempt ${attempt}/${maxRetries})`);
 
-                // Submit to fal.ai queue
-                const submitResponse = await axios.post(
-                    `${this.falBaseUrl}/fal-ai/wan-flf2v`,
-                    {
-                        prompt: videoPrompt,
-                        start_image_url: startImageUrl,
-                        end_image_url: endImageUrl,
-                        num_frames: 81,
-                        frames_per_second: 16,
-                        resolution: '720p',
-                        aspect_ratio: '9:16',
-                        enable_prompt_expansion: false,
-                        acceleration: 'regular'
-                    },
-                    {
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Key ${this.falApiKey}`
+                    const createResponse = await axios.post(
+                        `${this.kieBaseUrl}/api/v1/jobs/createTask`,
+                        {
+                            model: 'bytedance/seedance-1.5-pro',
+                            input: {
+                                prompt: videoPrompt,
+                                input_urls: [startImageUrl, endImageUrl],
+                                aspect_ratio: '9:16',
+                                resolution: '720p',
+                                duration: '8',
+                                fixed_lens: true,
+                                generate_audio: true
+                            }
                         },
-                        timeout: 30000
-                    }
-                );
+                        {
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${this.kieApiKey}`
+                            },
+                            timeout: 30000
+                        }
+                    );
 
-                const requestId = submitResponse.data?.request_id;
-                if (!requestId) {
-                    console.warn(`  No request_id (attempt ${attempt}). Response: ${JSON.stringify(submitResponse.data).substring(0, 300)}`);
-                    if (attempt < maxRetries) {
+                    const respData = createResponse.data;
+                    const taskId = respData?.data?.taskId;
+
+                    if (!taskId) {
+                        const code = respData?.code || respData?.status;
+                        const msg = respData?.msg || respData?.message || '';
+                        if (code === 402 || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('quota')) {
+                            throw new Error('Out of Kie.ai credits.');
+                        }
+                        console.warn(`  Transition ${transitionNumber}: No taskId (attempt ${attempt}/${maxRetries}). Code: ${code}, Msg: ${msg}`);
+                        if (attempt < maxRetries) {
+                            await new Promise(r => setTimeout(r, attempt * 3000));
+                            continue;
+                        }
+                        throw new Error(`Seedance video failed after ${maxRetries} attempts`);
+                    }
+
+                    console.log(`  Seedance task created: ${taskId}`);
+                    const videoUrl = await this.pollKieTask(taskId, 'video');
+                    console.log(`✅ Transition ${transitionNumber} video generated (Seedance 1.5 Pro)`);
+                    return videoUrl;
+
+                } catch (error) {
+                    if (error.message.includes('credit') || error.message.includes('quota') || error.message.includes('authentication')) {
+                        throw error;
+                    }
+                    const status = error.response?.status;
+                    const isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
+                    if (isRetryable && attempt < maxRetries) {
                         await new Promise(r => setTimeout(r, attempt * 3000));
                         continue;
                     }
-                    throw new Error('fal.ai failed to create video task');
-                }
-
-                console.log(`  fal.ai request submitted: ${requestId}`);
-                const videoUrl = await this.pollFalTask(requestId);
-                console.log(`✅ Transition ${transitionNumber} video generated`);
-                return videoUrl;
-
-            } catch (error) {
-                if (error.message.includes('credit') || error.message.includes('balance') || error.message.includes('authentication')) {
                     throw error;
                 }
-                const status = error.response?.status;
-                const isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
-                if (isRetryable && attempt < maxRetries) {
-                    await new Promise(r => setTimeout(r, attempt * 3000));
-                    continue;
-                }
-                throw error;
-            }
-        }
-    }
-
-    /**
-     * Poll fal.ai queue for result
-     */
-    async pollFalTask(requestId, timeout = 600000) {
-        const startTime = Date.now();
-        const pollInterval = 5000;
-        let pollCount = 0;
-
-        while (Date.now() - startTime < timeout) {
-            pollCount++;
-            const elapsed = Math.floor((Date.now() - startTime) / 1000);
-
-            try {
-                const response = await axios.get(
-                    `${this.falBaseUrl}/fal-ai/wan-flf2v/requests/${requestId}/status`,
-                    {
-                        headers: { 'Authorization': `Key ${this.falApiKey}` },
-                        timeout: 15000
-                    }
-                );
-
-                const status = response.data?.status;
-
-                if (pollCount % 6 === 0) {
-                    console.log(`  fal.ai task ${requestId}: ${status} (${elapsed}s)`);
-                }
-
-                if (status === 'COMPLETED') {
-                    // Fetch the result
-                    const resultResponse = await axios.get(
-                        `${this.falBaseUrl}/fal-ai/wan-flf2v/requests/${requestId}`,
-                        {
-                            headers: { 'Authorization': `Key ${this.falApiKey}` },
-                            timeout: 15000
-                        }
-                    );
-                    const videoUrl = resultResponse.data?.video?.url;
-                    if (!videoUrl) throw new Error('fal.ai returned success but no video URL');
-                    console.log(`  fal.ai task completed in ${elapsed}s`);
-                    return videoUrl;
-                }
-
-                if (status === 'FAILED') {
-                    const error = response.data?.error || 'Unknown error';
-                    throw new Error(`fal.ai video generation failed: ${error}`);
-                }
-
-                // IN_QUEUE or IN_PROGRESS — keep polling
-                await new Promise(resolve => setTimeout(resolve, pollInterval));
-
-            } catch (error) {
-                if (error.response?.status === 401) {
-                    throw new Error('fal.ai authentication failed. Check FAL_API_KEY.');
-                }
-                if (error.message.includes('fal.ai')) throw error;
-                console.error('  fal.ai polling error:', error.message);
-                await new Promise(resolve => setTimeout(resolve, pollInterval));
             }
         }
 
-        throw new Error(`fal.ai video task timeout after ${Math.floor(timeout / 1000)}s`);
-    }
-
     /**
-     * Poll Kie.ai task for image result
+     * Poll Kie.ai task for image or video result
      */
     async pollKieTask(taskId, type = 'image', timeout = 600000) {
         const startTime = Date.now();
