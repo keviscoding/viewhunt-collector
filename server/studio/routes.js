@@ -1915,31 +1915,37 @@ router.post('/timelapse/prompts', requireAuth, async (req, res) => {
     }
 });
 
-// Step 2: Generate 4 images for a single stage (4 × 0.5 = 2 credits)
+// Step 2: Generate images for a single stage (count × 0.5 credits; count=4 for director, count=1 for auto)
 router.post('/timelapse/generate-images', requireAuth, studioGenerateLimiter, async (req, res) => {
     try {
-        var { imagePrompt, stageNumber, referenceImageUrl } = req.body;
+        var { imagePrompt, stageNumber, referenceImageUrl, count } = req.body;
         if (!imagePrompt) return res.status(400).json({ error: 'Missing imagePrompt' });
         if (!stageNumber || stageNumber < 1 || stageNumber > 8) {
             return res.status(400).json({ error: 'stageNumber must be 1-8' });
         }
 
+        count = Math.max(1, Math.min(4, parseInt(count) || 4));
         var userId = String(req.user.userId);
 
-        // 4 images × 0.5 = 2 credits
-        var check = await credits.checkCredits(userId, 'image_generation', 4);
+        var check = await credits.checkCredits(userId, 'image_generation', count);
         if (!check.allowed) {
-            return res.status(402).json({ error: 'Not enough credits. Need 2, have ' + check.totalAvailable });
+            return res.status(402).json({ error: 'Not enough credits. Need ' + (count * 0.5) + ', have ' + check.totalAvailable });
         }
 
-        await credits.deductCredits(userId, 'image_generation', 4, 'Timelapse stage ' + stageNumber + ' images (4x)');
+        await credits.deductCredits(userId, 'image_generation', count, 'Timelapse stage ' + stageNumber + ' images (' + count + 'x)');
 
         try {
             var gen = getTimelapseGenerator();
-            var imageUrls = await gen.generateImages(imagePrompt, stageNumber, referenceImageUrl || null);
+            var imageUrls;
+            if (count === 1) {
+                var singleUrl = await gen._generateSingleImage(imagePrompt, stageNumber, referenceImageUrl || null, 1);
+                imageUrls = [singleUrl];
+            } else {
+                imageUrls = await gen.generateImages(imagePrompt, stageNumber, referenceImageUrl || null);
+            }
             res.json({ imageUrls: imageUrls, stageNumber: stageNumber });
         } catch (genError) {
-            await credits.refundCredits(userId, 'image_generation', 4, 'Timelapse stage ' + stageNumber + ' images failed');
+            await credits.refundCredits(userId, 'image_generation', count, 'Timelapse stage ' + stageNumber + ' images failed');
             throw genError;
         }
     } catch (error) {

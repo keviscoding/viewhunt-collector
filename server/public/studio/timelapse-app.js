@@ -1,4 +1,4 @@
-/* Timelapse Construction — Frontend App */
+/* Timelapse Construction — Frontend App (Director + Auto modes) */
 (function() {
     var token = localStorage.getItem('viewhunt_token') || localStorage.getItem('token');
     if (!token) { window.location.replace('/'); return; }
@@ -6,12 +6,14 @@
     var state = {
         concept: '',
         stageCount: 5,
+        mode: 'director',  // 'director' or 'auto'
         promptData: null,
-        stageImageSets: {},  // { 1: [url, url, url, url], 2: [...], ... }
-        stageSelected: {},   // { 1: url, 2: url, ... }
+        stageImageSets: {},
+        stageSelected: {},
         currentStage: 1,
         transitionVideos: {},
-        finalVideoUrl: null
+        finalVideoUrl: null,
+        autoRunning: false
     };
 
     // Load credit balance
@@ -23,7 +25,13 @@
         })
         .catch(function() {});
 
-    // Update cost display when stage count changes
+    window.setMode = function(mode) {
+        state.mode = mode;
+        document.getElementById('mode-director').className = 'mode-btn' + (mode === 'director' ? ' active' : '');
+        document.getElementById('mode-auto').className = 'mode-btn' + (mode === 'auto' ? ' active' : '');
+        updateCostDisplay();
+    };
+
     window.updateStageCount = function(val) {
         state.stageCount = parseInt(val) || 5;
         updateCostDisplay();
@@ -31,14 +39,25 @@
 
     function updateCostDisplay() {
         var n = state.stageCount;
-        var imgCost = n * 2;           // 4 images × 0.5 = 2 per stage
-        var vidCost = (n - 1) * 5;     // N-1 transitions × 5
+        var isAuto = state.mode === 'auto';
+        var imgCost = isAuto ? n * 0.5 : n * 2;
+        var vidCost = (n - 1) * 5;
         var asmCost = 2;
         var total = imgCost + vidCost + asmCost;
         var el = document.getElementById('cost-estimate');
-        if (el) el.textContent = '~' + total + ' credits (' + n + ' stages × 2💎 images + ' + (n - 1) + ' videos × 5💎 + 2💎 assembly)';
+        if (el) {
+            var label = isAuto ? 'Auto' : 'Director';
+            el.textContent = '~' + total + ' credits · ' + label + ' (' + n + ' stages)';
+        }
     }
 
+    function updateBalance(cost) {
+        var balEl = document.getElementById('credit-balance');
+        var curBal = parseFloat(balEl.textContent) || 0;
+        balEl.textContent = Math.max(0, curBal - cost);
+    }
+
+    // ========== GENERATE PROMPTS (shared) ==========
     window.generatePrompts = async function() {
         var concept = document.getElementById('concept-input').value.trim();
         if (!concept) return alert('Please describe your concept first.');
@@ -66,10 +85,16 @@
             state.stageImageSets = {};
             state.stageSelected = {};
             state.transitionVideos = {};
-            renderStages();
-            document.getElementById('stages-section').style.display = 'block';
-            document.getElementById('stages-section').scrollIntoView({ behavior: 'smooth' });
-            generateStageImages(1);
+            state.finalVideoUrl = null;
+
+            if (state.mode === 'auto') {
+                runAutoMode();
+            } else {
+                renderStages();
+                document.getElementById('stages-section').style.display = 'block';
+                document.getElementById('stages-section').scrollIntoView({ behavior: 'smooth' });
+                generateStageImages(1);
+            }
         } catch (e) {
             alert('Error: ' + e.message);
         } finally {
@@ -78,6 +103,128 @@
         }
     };
 
+    // ========== AUTO MODE ==========
+    async function runAutoMode() {
+        state.autoRunning = true;
+        var stages = state.promptData.stages;
+        var transitions = state.promptData.transitions;
+        var totalSteps = stages.length + transitions.length + 1; // images + videos + assembly
+        var currentStep = 0;
+
+        // Show auto progress UI
+        document.getElementById('stages-section').style.display = 'none';
+        document.getElementById('videos-section').style.display = 'none';
+        document.getElementById('assembly-section').style.display = 'none';
+        document.getElementById('final-section').style.display = 'none';
+
+        var autoEl = document.getElementById('auto-progress');
+        autoEl.style.display = 'block';
+        autoEl.scrollIntoView({ behavior: 'smooth' });
+
+        function updateAutoProgress(msg, step) {
+            currentStep = step;
+            var pct = Math.round((currentStep / totalSteps) * 100);
+            autoEl.innerHTML = '<div style="text-align:center;padding:1.5rem;">' +
+                '<div class="section-title" style="justify-content:center;">🤖 Auto Mode Running</div>' +
+                '<div style="background:var(--surface-2);border-radius:8px;height:8px;margin:1rem 0;overflow:hidden;">' +
+                '<div style="background:var(--accent);height:100%;width:' + pct + '%;transition:width 0.3s;border-radius:8px;"></div></div>' +
+                '<div class="progress-msg"><span class="spinner"></span> ' + escHtml(msg) + '</div>' +
+                '<div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.5rem;">Step ' + currentStep + '/' + totalSteps + ' · ' + pct + '%</div>' +
+                '</div>';
+        }
+
+        try {
+            // Phase 1: Generate 1 image per stage (sequential for reference chaining)
+            for (var i = 0; i < stages.length; i++) {
+                var s = stages[i];
+                updateAutoProgress('Generating image for Stage ' + s.stage + '/' + stages.length + ' — ' + s.name, i + 1);
+
+                var referenceUrl = null;
+                if (s.stage > 1 && state.stageSelected[s.stage - 1]) {
+                    referenceUrl = state.stageSelected[s.stage - 1];
+                }
+
+                var imgRes = await fetch('/api/studio/timelapse/generate-images', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({
+                        imagePrompt: s.imagePrompt,
+                        stageNumber: s.stage,
+                        referenceImageUrl: referenceUrl,
+                        count: 1
+                    })
+                });
+                if (!imgRes.ok) {
+                    var imgErr = await imgRes.json().catch(function() { return {}; });
+                    throw new Error('Stage ' + s.stage + ' image failed: ' + (imgErr.error || 'Unknown error'));
+                }
+                var imgData = await imgRes.json();
+                var url = (imgData.imageUrls || [])[0];
+                if (!url) throw new Error('Stage ' + s.stage + ' returned no image');
+                state.stageSelected[s.stage] = url;
+                state.stageImageSets[s.stage] = [url];
+                updateBalance(0.5);
+            }
+
+            // Phase 2: Generate all transition videos
+            for (var j = 0; j < transitions.length; j++) {
+                var t = transitions[j];
+                updateAutoProgress('Generating video ' + (j + 1) + '/' + transitions.length + ' — Stage ' + t.from + ' → ' + t.to, stages.length + j + 1);
+
+                var vidRes = await fetch('/api/studio/timelapse/generate-video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({
+                        startImageUrl: state.stageSelected[t.from],
+                        endImageUrl: state.stageSelected[t.to],
+                        videoPrompt: t.videoPrompt,
+                        transitionNumber: j + 1
+                    })
+                });
+                if (!vidRes.ok) {
+                    var vidErr = await vidRes.json().catch(function() { return {}; });
+                    throw new Error('Transition ' + t.from + '→' + t.to + ' failed: ' + (vidErr.error || 'Unknown error'));
+                }
+                var vidData = await vidRes.json();
+                state.transitionVideos[t.from + '-' + t.to] = vidData.videoUrl;
+                updateBalance(5);
+            }
+
+            // Phase 3: Assemble
+            updateAutoProgress('Assembling final video...', totalSteps);
+            var videoUrls = [];
+            for (var k = 0; k < transitions.length; k++) {
+                videoUrls.push(state.transitionVideos[transitions[k].from + '-' + transitions[k].to]);
+            }
+
+            var asmRes = await fetch('/api/studio/timelapse/assemble', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ videoUrls: videoUrls })
+            });
+            if (!asmRes.ok) {
+                var asmErr = await asmRes.json().catch(function() { return {}; });
+                throw new Error('Assembly failed: ' + (asmErr.error || 'Unknown error'));
+            }
+            var asmData = await asmRes.json();
+            state.finalVideoUrl = asmData.videoUrl;
+            updateBalance(2);
+
+            autoEl.style.display = 'none';
+            showFinalResult();
+
+        } catch (e) {
+            autoEl.innerHTML = '<div style="text-align:center;padding:1.5rem;">' +
+                '<div style="color:var(--red);font-size:0.88rem;font-weight:600;margin-bottom:0.5rem;">❌ Auto Mode Failed</div>' +
+                '<div style="color:var(--text-muted);font-size:0.82rem;margin-bottom:1rem;">' + escHtml(e.message) + '</div>' +
+                '<button class="btn btn-primary" style="max-width:280px;margin:0 auto;" onclick="generatePrompts()">Try Again</button>' +
+                '</div>';
+        } finally {
+            state.autoRunning = false;
+        }
+    }
+
+    // ========== DIRECTOR MODE FUNCTIONS ==========
     function renderStages() {
         var list = document.getElementById('stages-list');
         var totalStages = state.promptData.stages.length;
@@ -88,7 +235,6 @@
             var selected = state.stageSelected[stageNum];
             var isActive = stageNum === state.currentStage;
             var isDone = !!selected;
-            var isPending = stageNum > state.currentStage;
             var statusClass = isDone ? 'done' : (isActive ? 'active' : '');
             var statusBadge = isDone ? '<span class="stage-status status-done">Selected</span>' :
                 (isActive && images.length > 0 ? '<span class="stage-status status-review">Pick one</span>' :
@@ -102,40 +248,30 @@
             html += '</div>';
             html += '<div class="stage-desc">' + escHtml(s.description) + '</div>';
 
-            // Show image grid (4 images or selected single)
             if (isDone) {
-                html += '<div class="stage-images">';
-                html += '<div class="stage-img selected">';
-                html += '<img src="' + selected + '" alt="Stage ' + stageNum + '">';
-                html += '<div class="check">✓</div>';
-                html += '</div>';
-                html += '</div>';
+                html += '<div class="stage-images"><div class="stage-img selected">';
+                html += '<img src="' + selected + '" alt="Stage ' + stageNum + '"><div class="check">✓</div></div></div>';
             } else if (images.length > 0) {
                 html += '<div class="stage-images">';
                 for (var i = 0; i < images.length; i++) {
                     if (images[i]) {
                         html += '<div class="stage-img" onclick="selectStageImage(' + stageNum + ',' + i + ')">';
-                        html += '<img src="' + images[i] + '" alt="Option ' + (i + 1) + '">';
-                        html += '<div class="check">✓</div>';
-                        html += '</div>';
+                        html += '<img src="' + images[i] + '" alt="Option ' + (i + 1) + '"><div class="check">✓</div></div>';
                     }
                 }
                 html += '</div>';
             }
 
-            // Progress indicator
             if (isActive && images.length === 0) {
                 html += '<div id="stage-progress-' + stageNum + '" class="progress-msg"><span class="spinner"></span> Generating 4 images for Stage ' + stageNum + '...</div>';
             }
 
-            // Tweak + regenerate
             if (isActive || isDone) {
                 html += '<div class="tweak-box" id="tweak-' + stageNum + '">';
                 html += '<input type="text" placeholder="Tweak prompt (optional)..." id="tweak-input-' + stageNum + '">';
                 html += '<button class="btn btn-sm btn-outline" onclick="regenerateStage(' + stageNum + ')">🔄 Regen · 2 💎</button>';
                 html += '</div>';
             }
-
             html += '</div>';
         });
         list.innerHTML = html;
@@ -154,7 +290,6 @@
             var card = document.getElementById('stage-card-' + (stageNum + 1));
             if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
         } else {
-            // All stages done
             state.currentStage = totalStages + 1;
             renderStages();
             showVideoSection();
@@ -193,7 +328,8 @@
                 body: JSON.stringify({
                     imagePrompt: prompt,
                     stageNumber: stageNum,
-                    referenceImageUrl: referenceUrl
+                    referenceImageUrl: referenceUrl,
+                    count: 4
                 })
             });
             if (!res.ok) {
@@ -203,19 +339,17 @@
             var data = await res.json();
             state.stageImageSets[stageNum] = data.imageUrls || [];
             renderStages();
-
-            var balEl = document.getElementById('credit-balance');
-            var curBal = parseFloat(balEl.textContent) || 0;
-            balEl.textContent = Math.max(0, curBal - 2);
+            updateBalance(2);
         } catch (e) {
             if (progressEl) progressEl.innerHTML = '<span style="color:var(--red);">❌ ' + escHtml(e.message) + '</span>';
         }
     }
 
+    // ========== VIDEO / ASSEMBLY / FINAL (shared by director mode) ==========
     function showVideoSection() {
         var transitions = state.promptData.transitions;
         var html = '<div class="section-title">🎬 Transition Videos</div>';
-        html += '<p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem;">Generating ' + transitions.length + ' smooth transitions between your stages using Seedance 1.5 Pro (start+end frame interpolation).</p>';
+        html += '<p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem;">Generating ' + transitions.length + ' smooth transitions between your stages using Seedance 1.5 Pro.</p>';
 
         transitions.forEach(function(t) {
             var vid = state.transitionVideos[t.from + '-' + t.to];
@@ -229,9 +363,7 @@
             }
             html += '</div>';
             html += '<div class="stage-desc" style="font-size:0.78rem;">' + escHtml(t.videoPrompt).substring(0, 120) + '...</div>';
-            if (vid) {
-                html += '<video src="' + vid + '" controls playsinline></video>';
-            }
+            if (vid) { html += '<video src="' + vid + '" controls playsinline></video>'; }
             html += '</div>';
         });
 
@@ -275,11 +407,7 @@
                 }
                 var data = await res.json();
                 state.transitionVideos[key] = data.videoUrl;
-
-                var balEl = document.getElementById('credit-balance');
-                var curBal = parseFloat(balEl.textContent) || 0;
-                balEl.textContent = Math.max(0, curBal - 5);
-
+                updateBalance(5);
                 showVideoSection();
             } catch (e) {
                 if (statusEl) { statusEl.className = 'stage-status'; statusEl.style.cssText = 'background:rgba(248,113,113,0.12);color:var(--red)'; statusEl.textContent = 'Failed'; }
@@ -288,7 +416,6 @@
                 return;
             }
         }
-
         showAssemblySection();
     };
 
@@ -298,7 +425,6 @@
         html += '<p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem;">All ' + transitions.length + ' transition videos are ready. Stitch them into one seamless time-lapse.</p>';
         html += '<button class="btn btn-green" id="assemble-btn" onclick="assembleVideo()">Assemble Final Video · 2 💎</button>';
         html += '<div class="cost-note">FFmpeg stitching — fast</div>';
-
         document.getElementById('assembly-section').innerHTML = html;
         document.getElementById('assembly-section').style.display = 'block';
         document.getElementById('assembly-section').scrollIntoView({ behavior: 'smooth' });
@@ -329,11 +455,7 @@
             }
             var data = await res.json();
             state.finalVideoUrl = data.videoUrl;
-
-            var balEl = document.getElementById('credit-balance');
-            var curBal = parseFloat(balEl.textContent) || 0;
-            balEl.textContent = Math.max(0, curBal - 2);
-
+            updateBalance(2);
             showFinalResult();
         } catch (e) {
             alert('Assembly failed: ' + e.message);
@@ -343,13 +465,13 @@
 
     function showFinalResult() {
         var stageCount = state.promptData.stages.length;
+        var modeLabel = state.mode === 'auto' ? 'Auto Mode' : 'Director Mode';
         var html = '<div class="final-section">';
         html += '<div class="section-title" style="justify-content:center;">🎉 Your Time-Lapse is Ready</div>';
         html += '<video src="' + state.finalVideoUrl + '" controls playsinline style="width:100%;max-width:300px;border-radius:10px;margin:0.75rem auto;display:block;"></video>';
-        html += '<p style="font-size:0.82rem;color:var(--text-muted);margin:0.5rem 0;">' + stageCount + ' stages · ' + (stageCount - 1) + ' transitions · Seedance 1.5 Pro</p>';
+        html += '<p style="font-size:0.82rem;color:var(--text-muted);margin:0.5rem 0;">' + stageCount + ' stages · ' + (stageCount - 1) + ' transitions · ' + modeLabel + '</p>';
         html += '<a href="' + state.finalVideoUrl + '" download class="btn btn-primary" style="max-width:280px;margin:0.5rem auto;">⬇ Download Video</a>';
         html += '</div>';
-
         document.getElementById('final-section').innerHTML = html;
         document.getElementById('final-section').style.display = 'block';
         document.getElementById('final-section').scrollIntoView({ behavior: 'smooth' });

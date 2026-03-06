@@ -74,6 +74,8 @@
         .spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-right:0.4rem;vertical-align:middle}
         @keyframes spin{to{transform:rotate(360deg)}}
         .cost-note{font-size:0.75rem;color:var(--text-dim);text-align:center;margin-top:0.5rem}
+        .mode-btn.active{background:var(--accent)!important;color:white!important;border-color:var(--accent)!important}
+        .mode-btn:not(.active):hover{background:var(--surface-2)!important;color:var(--text)!important;border-color:var(--border-hover)!important}
         @media(max-width:640px){.app{padding:1rem 0.75rem 3rem}.stage-img{width:80px}}
     </style>
 </head>
@@ -85,11 +87,17 @@
     </header>
 
     <h1>🏗️ Time-Lapse Construction</h1>
-    <p class="subtitle">Describe a surreal construction concept and watch it come to life stage by stage. AI generates consistent images and smooth transition videos between each milestone.</p>
+    <p class="subtitle">Describe a surreal construction concept and watch it come to life stage by stage.</p>
+
+    <!-- Mode Toggle -->
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+        <button class="mode-btn active" id="mode-director" onclick="setMode('director')" style="flex:1;padding:0.6rem;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;border:1px solid var(--border);font-family:inherit;transition:all 0.15s;background:var(--accent);color:white;">🎬 Director Mode</button>
+        <button class="mode-btn" id="mode-auto" onclick="setMode('auto')" style="flex:1;padding:0.6rem;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;border:1px solid var(--border);font-family:inherit;transition:all 0.15s;background:var(--surface);color:var(--text-muted);">🤖 Auto Mode</button>
+    </div>
 
     <div class="credits-bar">
         💎 <span class="bal" id="credit-balance">—</span> credits
-        <span style="margin-left:auto;font-size:0.75rem;" id="cost-estimate">~32 credits (5 stages)</span>
+        <span style="margin-left:auto;font-size:0.75rem;" id="cost-estimate">~32 credits · Director (5 stages)</span>
     </div>
 
     <!-- Step 1: Concept Input -->
@@ -115,10 +123,13 @@
         </div>
     </div>
 
-    <!-- Step 2: Stage Images (sequential review) -->
+    <!-- Auto Mode Progress -->
+    <div id="auto-progress" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:14px;margin-bottom:1.5rem;"></div>
+
+    <!-- Step 2: Stage Images (director mode) -->
     <div id="stages-section" style="display:none;">
         <div class="section-title">🎨 Stage Images</div>
-        <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem;">Review each stage sequentially. Accept or tweak the prompt and regenerate. Each image uses the previous as reference for consistency.</p>
+        <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem;">Review each stage. Pick your favorite from 4 options, or tweak and regenerate.</p>
         <div id="stages-list"></div>
     </div>
 
@@ -136,6 +147,6 @@
     <div id="final-section" style="display:none;"></div>
 </div>
 
-<script src="/studio/timelapse-app.js?v=20260306b"></script>
+<script src="/studio/timelapse-app.js?v=20260306c"></script>
 </body>
 </html>
