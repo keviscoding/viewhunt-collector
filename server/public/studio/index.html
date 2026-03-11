@@ -177,6 +177,7 @@ var formats = [
         banner: '/images/timelapse-studio-preview.jpg',
         emoji: '🏗️',
         live: true,
+        freeAccess: true,
         url: '/studio/timelapse'
     }
 ];
@@ -228,6 +229,7 @@ function renderFormats() {
         }
         var badgeClass = f.maintenance ? 'badge-maintenance' : (f.live ? 'badge-live' : 'badge-soon');
         var badgeText = f.maintenance ? 'Maintenance' : (f.live ? 'Live' : 'Coming Soon');
+        if (!hasPaidAccess && f.freeAccess) { badgeClass = 'badge-live'; badgeText = 'Free Prompts'; }
         html += '<span class="format-badge ' + badgeClass + '">' + badgeText + '</span>';
         html += '</div>';
         html += '<div class="format-info">';
@@ -245,7 +247,7 @@ function openFormat(id, isLive) {
     
     var format = formats.find(function(f) { return f.id === id; });
     
-    if (!hasPaidAccess) {
+    if (!hasPaidAccess && !(format && format.freeAccess)) {
         var banner = document.getElementById('upgrade-banner');
         banner.style.display = 'block';
         banner.scrollIntoView({ behavior: 'smooth', block: 'center' });

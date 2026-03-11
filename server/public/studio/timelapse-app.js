@@ -14,8 +14,23 @@
         transitionVideos: {},
         finalVideoUrl: null,
         voiceoverScript: null,
-        autoRunning: false
+        autoRunning: false,
+        hasPaidAccess: false
     };
+
+    // Check paid access
+    fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + token } })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var sub = d.subscription || {};
+            state.hasPaidAccess = sub.type === 'admin' || sub.type === 'stripe' || sub.type === 'beta' || sub.type === 'invite';
+            if (sub.type === 'stripe' && !sub.hasAccess) state.hasPaidAccess = false;
+            if (!state.hasPaidAccess) {
+                document.getElementById('cost-estimate').textContent = 'Free Prompt Generator';
+                document.getElementById('credit-balance').textContent = '0';
+            }
+        })
+        .catch(function() {});
 
     // Load credit balance
     fetch('/api/studio/credits/balance', { headers: { 'Authorization': 'Bearer ' + token } })
@@ -90,12 +105,20 @@
             state.voiceoverScript = null;
 
             if (state.mode === 'auto') {
-                runAutoMode();
+                if (!state.hasPaidAccess) {
+                    showFreePromptResults();
+                } else {
+                    runAutoMode();
+                }
             } else {
-                renderStages();
-                document.getElementById('stages-section').style.display = 'block';
-                document.getElementById('stages-section').scrollIntoView({ behavior: 'smooth' });
-                generateStageImages(1);
+                if (!state.hasPaidAccess) {
+                    showFreePromptResults();
+                } else {
+                    renderStages();
+                    document.getElementById('stages-section').style.display = 'block';
+                    document.getElementById('stages-section').scrollIntoView({ behavior: 'smooth' });
+                    generateStageImages(1);
+                }
             }
         } catch (e) {
             alert('Error: ' + e.message);
@@ -103,6 +126,70 @@
             btn.disabled = false;
             btn.innerHTML = 'Generate Stage Prompts · Free';
         }
+    };
+
+    // ========== FREE PROMPT RESULTS ==========
+    function showFreePromptResults() {
+        var data = state.promptData;
+        var html = '<div style="background:var(--surface);border:1px solid var(--green);border-radius:14px;padding:1.5rem;margin-bottom:1.5rem;">';
+        html += '<div class="section-title" style="justify-content:center;margin-bottom:0.25rem;">🎉 Your Prompts Are Ready</div>';
+        html += '<p style="font-size:0.82rem;color:var(--text-muted);text-align:center;margin-bottom:1rem;">Copy these prompts and use them in any AI image/video tool.</p>';
+
+        // Title
+        html += '<div style="font-size:0.92rem;font-weight:700;margin-bottom:1rem;text-align:center;">' + escHtml(data.title) + '</div>';
+
+        // Stage prompts
+        data.stages.forEach(function(s) {
+            html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:0.85rem;margin-bottom:0.6rem;">';
+            html += '<div style="font-size:0.78rem;font-weight:700;color:var(--accent);margin-bottom:0.3rem;">STAGE ' + s.stage + ' — ' + escHtml(s.name) + '</div>';
+            html += '<div style="font-size:0.78rem;color:var(--text-dim);margin-bottom:0.4rem;">' + escHtml(s.description) + '</div>';
+            html += '<div style="font-size:0.8rem;color:var(--text-muted);line-height:1.5;white-space:pre-wrap;background:var(--bg);border-radius:6px;padding:0.6rem;font-family:monospace;font-size:0.75rem;">' + escHtml(s.imagePrompt) + '</div>';
+            html += '</div>';
+        });
+
+        // Transition prompts
+        html += '<div style="font-size:0.82rem;font-weight:700;margin:1rem 0 0.5rem;color:var(--text);">🎬 Video Transition Prompts</div>';
+        data.transitions.forEach(function(t) {
+            html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:0.85rem;margin-bottom:0.6rem;">';
+            html += '<div style="font-size:0.78rem;font-weight:700;color:var(--accent);margin-bottom:0.3rem;">TRANSITION ' + t.from + ' → ' + t.to + '</div>';
+            html += '<div style="font-size:0.8rem;color:var(--text-muted);line-height:1.5;white-space:pre-wrap;background:var(--bg);border-radius:6px;padding:0.6rem;font-family:monospace;font-size:0.75rem;">' + escHtml(t.videoPrompt) + '</div>';
+            html += '</div>';
+        });
+
+        // Copy all button
+        html += '<button class="btn btn-primary" style="margin-top:1rem;" onclick="copyAllPrompts()">📋 Copy All Prompts</button>';
+
+        // Upgrade CTA
+        html += '<div style="margin-top:1.25rem;padding:1rem;background:linear-gradient(135deg,var(--surface-2),var(--surface-3));border:1px solid var(--accent);border-radius:10px;text-align:center;">';
+        html += '<div style="font-size:0.88rem;font-weight:700;margin-bottom:0.3rem;">Want AI to generate the images & videos for you?</div>';
+        html += '<div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;">Subscribe to generate everything automatically — images, videos, voiceover, and final assembly.</div>';
+        html += '<a href="/pricing" class="btn btn-primary" style="max-width:260px;margin:0 auto;text-decoration:none;">View Plans</a>';
+        html += '</div>';
+
+        html += '</div>';
+
+        document.getElementById('stages-section').innerHTML = html;
+        document.getElementById('stages-section').style.display = 'block';
+        document.getElementById('stages-section').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    window.copyAllPrompts = function() {
+        var data = state.promptData;
+        var text = '🏗️ ' + data.title + '\n\n';
+        text += '=== IMAGE PROMPTS ===\n\n';
+        data.stages.forEach(function(s) {
+            text += 'STAGE ' + s.stage + ' — ' + s.name + '\n';
+            text += s.imagePrompt + '\n\n';
+        });
+        text += '=== VIDEO TRANSITION PROMPTS ===\n\n';
+        data.transitions.forEach(function(t) {
+            text += 'TRANSITION ' + t.from + ' → ' + t.to + '\n';
+            text += t.videoPrompt + '\n\n';
+        });
+        navigator.clipboard.writeText(text).then(function() {
+            var btn = document.querySelector('[onclick="copyAllPrompts()"]');
+            if (btn) { btn.textContent = '✅ Copied!'; setTimeout(function() { btn.textContent = '📋 Copy All Prompts'; }, 2000); }
+        }).catch(function() { alert('Copy failed — please select and copy manually.'); });
     };
 
     // ========== AUTO MODE ==========
