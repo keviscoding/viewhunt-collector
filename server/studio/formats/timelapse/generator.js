@@ -8,7 +8,7 @@
  *   3. Seedance 1.5 Pro (Kie.ai) generates N-1 transition videos (start+end frame)
  *   4. FFmpeg stitches clips into final video
  * 
- * Seedance cost: 720p 8s with audio = 56 Kie.ai credits ($0.28)
+ * Seedance cost: 720p 5s with audio = ~35 Kie.ai credits ($0.175)
  */
 const axios = require('axios');
 const { GoogleGenAI } = require('@google/genai');
@@ -308,7 +308,7 @@ Remember:
                             input_urls: [startImageUrl, endImageUrl],
                             aspect_ratio: '9:16',
                             resolution: '720p',
-                            duration: '8',
+                            duration: '5',
                             fixed_lens: true,
                             generate_audio: true
                         }
