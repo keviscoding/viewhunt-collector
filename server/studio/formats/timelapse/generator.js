@@ -308,7 +308,7 @@ Remember:
                             input_urls: [startImageUrl, endImageUrl],
                             aspect_ratio: '9:16',
                             resolution: '720p',
-                            duration: '8',
+                            duration: '5',
                             fixed_lens: true,
                             generate_audio: true
                         }
@@ -440,7 +440,7 @@ Remember:
             var clipPaths = [];
             for (var i = 0; i < videoUrls.length; i++) {
                 var clipPath = path.join(tempDir, 'clip_' + (i + 1) + '.mp4');
-                var dlResponse = await axios.get(videoUrls[i], { responseType: 'arraybuffer', timeout: 60000 });
+                var dlResponse = await axios.get(videoUrls[i], { responseType: 'arraybuffer', timeout: 120000 });
                 fs.writeFileSync(clipPath, Buffer.from(dlResponse.data));
                 clipPaths.push(clipPath);
                 console.log('  Downloaded clip ' + (i + 1) + '/' + videoUrls.length);
@@ -627,7 +627,7 @@ Return ONLY the script text, nothing else. No stage markers, no timestamps, no f
                     var hours = parseInt(match[1]);
                     var mins = parseInt(match[2]);
                     var secs = parseInt(match[3]);
-                    var frac = parseInt(match[4]) / 100;
+                    var frac = parseFloat('0.' + match[4]);
                     resolve(hours * 3600 + mins * 60 + secs + frac);
                 } else {
                     reject(new Error('Could not parse duration from ffmpeg output'));
@@ -663,7 +663,7 @@ Return ONLY the script text, nothing else. No stage markers, no timestamps, no f
             var clipPaths = [];
             for (var i = 0; i < videoUrls.length; i++) {
                 var clipPath = path.join(tempDir, 'clip_' + (i + 1) + '.mp4');
-                var dlResponse = await axios.get(videoUrls[i], { responseType: 'arraybuffer', timeout: 60000 });
+                var dlResponse = await axios.get(videoUrls[i], { responseType: 'arraybuffer', timeout: 120000 });
                 fs.writeFileSync(clipPath, Buffer.from(dlResponse.data));
                 clipPaths.push(clipPath);
                 console.log('  Downloaded clip ' + (i + 1) + '/' + videoUrls.length);
@@ -710,6 +710,9 @@ Return ONLY the script text, nothing else. No stage markers, no timestamps, no f
             console.log('  TTS duration: ' + ttsDuration.toFixed(1) + 's vs video: ' + videoDuration.toFixed(1) + 's');
 
             // Step 6: Speed-adjust TTS to match video duration
+            if (ttsDuration < 3) {
+                throw new Error('TTS audio too short (' + ttsDuration.toFixed(1) + 's) — Gemini may have returned incomplete audio. Please retry.');
+            }
             var atempo = ttsDuration / videoDuration;
             // Clamp atempo to reasonable range (0.8x to 1.5x)
             atempo = Math.max(0.8, Math.min(1.5, atempo));
@@ -723,19 +726,47 @@ Return ONLY the script text, nothing else. No stage markers, no timestamps, no f
             ]);
 
             // Step 7: Mix — voiceover at full volume, original construction audio at 45% volume (ASMR construction sounds)
+            // Check if base video has audio stream (Seedance clips sometimes lack audio)
+            var hasAudio = true;
+            try {
+                await new Promise(function(resolve, reject) {
+                    execFile(ffmpegPath, ['-i', baseVideoPath, '-af', 'anull', '-f', 'null', '-'], { timeout: 15000 }, function(err, stdout, stderr) {
+                        var output = (stderr || '') + (stdout || '');
+                        if (output.indexOf('Audio:') === -1) hasAudio = false;
+                        resolve();
+                    });
+                });
+            } catch (e) { hasAudio = false; }
+
             var outputPath = path.join(this.outputDir, 'timelapse_vo_' + timestamp + '.mp4');
-            await this._runFFmpeg([
-                '-i', baseVideoPath,
-                '-i', adjustedTtsPath,
-                '-filter_complex', '[0:a]volume=0.45[bg];[1:a]aresample=44100[vo];[bg][vo]amix=inputs=2:duration=first:dropout_transition=2[aout]',
-                '-map', '0:v',
-                '-map', '[aout]',
-                '-c:v', 'copy',
-                '-c:a', 'aac', '-b:a', '192k',
-                '-movflags', '+faststart',
-                '-threads', '1',
-                '-y', outputPath
-            ]);
+            if (hasAudio) {
+                await this._runFFmpeg([
+                    '-i', baseVideoPath,
+                    '-i', adjustedTtsPath,
+                    '-filter_complex', '[0:a]volume=0.45[bg];[1:a]aresample=44100[vo];[bg][vo]amix=inputs=2:duration=first:dropout_transition=2[aout]',
+                    '-map', '0:v',
+                    '-map', '[aout]',
+                    '-c:v', 'copy',
+                    '-c:a', 'aac', '-b:a', '192k',
+                    '-movflags', '+faststart',
+                    '-threads', '1',
+                    '-y', outputPath
+                ]);
+            } else {
+                console.log('  Base video has no audio — using voiceover only');
+                await this._runFFmpeg([
+                    '-i', baseVideoPath,
+                    '-i', adjustedTtsPath,
+                    '-map', '0:v',
+                    '-map', '1:a',
+                    '-c:v', 'copy',
+                    '-c:a', 'aac', '-b:a', '192k',
+                    '-shortest',
+                    '-movflags', '+faststart',
+                    '-threads', '1',
+                    '-y', outputPath
+                ]);
+            }
 
             try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
 
