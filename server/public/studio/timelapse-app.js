@@ -439,7 +439,7 @@
         html += '<label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;cursor:pointer;font-size:0.85rem;">';
         html += '<input type="checkbox" id="voiceover-toggle" style="accent-color:var(--accent);width:16px;height:16px;">';
         html += '<span>🎙️ Add AI Voiceover</span>';
-        html += '<span style="font-size:0.75rem;color:var(--text-dim);">— Free (Gemini TTS)</span>';
+        html += '<span style="font-size:0.75rem;color:var(--text-dim);">— Free · Gemini TTS</span>';
         html += '</label>';
         html += '<button class="btn btn-green" id="assemble-btn" onclick="assembleVideo()">Assemble Final Video · 2 💎</button>';
         html += '<div class="cost-note">FFmpeg stitching — voiceover adds ~30s extra</div>';

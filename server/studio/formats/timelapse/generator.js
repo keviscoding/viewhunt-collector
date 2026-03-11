@@ -308,7 +308,7 @@ Remember:
                             input_urls: [startImageUrl, endImageUrl],
                             aspect_ratio: '9:16',
                             resolution: '720p',
-                            duration: '5',
+                            duration: 5,
                             fixed_lens: true,
                             generate_audio: true
                         }
@@ -328,6 +328,7 @@ Remember:
                 if (!taskId) {
                     var code = respData?.code || respData?.status;
                     var msg = respData?.msg || respData?.message || '';
+                    console.error('  Seedance createTask failed (attempt ' + attempt + '): code=' + code + ' msg=' + msg + ' full=' + JSON.stringify(respData).substring(0, 500));
                     if (code === 402 || msg.toLowerCase().includes('credit') || msg.toLowerCase().includes('quota')) {
                         throw new Error('Out of Kie.ai credits.');
                     }
@@ -335,7 +336,7 @@ Remember:
                         await new Promise(function(r) { setTimeout(r, attempt * 3000); });
                         continue;
                     }
-                    throw new Error('Seedance video failed after ' + maxRetries + ' attempts');
+                    throw new Error('Seedance video failed after ' + maxRetries + ' attempts: ' + (msg || 'no taskId returned'));
                 }
 
                 console.log('  Seedance task created: ' + taskId);
@@ -348,6 +349,8 @@ Remember:
                     throw error;
                 }
                 var status = error.response?.status;
+                var respBody = error.response?.data ? JSON.stringify(error.response.data).substring(0, 500) : 'no body';
+                console.error('  Seedance HTTP error (attempt ' + attempt + '): status=' + status + ' body=' + respBody + ' msg=' + error.message);
                 var isRetryable = !status || status >= 500 || status === 429 || error.code === 'ECONNABORTED';
                 if (isRetryable && attempt < maxRetries) {
                     await new Promise(function(r) { setTimeout(r, attempt * 3000); });
