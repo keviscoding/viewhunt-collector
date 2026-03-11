@@ -614,15 +614,23 @@ Return ONLY the script text, nothing else. No stage markers, no timestamps, no f
      */
     async getAudioDuration(filePath) {
         return new Promise(function(resolve, reject) {
-            var ffprobePath = ffmpegPath.replace('ffmpeg', 'ffprobe');
-            execFile(ffprobePath, [
-                '-v', 'error',
-                '-show_entries', 'format=duration',
-                '-of', 'default=noprint_wrappers=1:nokey=1',
-                filePath
-            ], function(err, stdout) {
-                if (err) reject(new Error('ffprobe failed: ' + err.message));
-                else resolve(parseFloat(stdout.trim()) || 0);
+            // Use ffmpeg -i to get duration (avoids needing ffprobe binary)
+            execFile(ffmpegPath, [
+                '-i', filePath,
+                '-f', 'null', '-'
+            ], { timeout: 30000 }, function(err, stdout, stderr) {
+                // ffmpeg writes info to stderr even on "error" (no output file)
+                var output = (stderr || '') + (stdout || '');
+                var match = output.match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/);
+                if (match) {
+                    var hours = parseInt(match[1]);
+                    var mins = parseInt(match[2]);
+                    var secs = parseInt(match[3]);
+                    var frac = parseInt(match[4]) / 100;
+                    resolve(hours * 3600 + mins * 60 + secs + frac);
+                } else {
+                    reject(new Error('Could not parse duration from ffmpeg output'));
+                }
             });
         });
     }
