@@ -308,7 +308,7 @@ Remember:
                             input_urls: [startImageUrl, endImageUrl],
                             aspect_ratio: '9:16',
                             resolution: '720p',
-                            duration: 5,
+                            duration: '4',
                             fixed_lens: true,
                             generate_audio: true
                         }
