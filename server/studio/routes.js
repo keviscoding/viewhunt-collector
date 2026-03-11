@@ -2018,7 +2018,7 @@ router.post('/timelapse/assemble', requireAuth, studioAssemblyLimiter, async (re
 // Step 4b: Assemble with voiceover (2 credits — same as regular assembly, voiceover is free via Gemini)
 router.post('/timelapse/assemble-voiceover', requireAuth, studioAssemblyLimiter, async (req, res) => {
     try {
-        var { videoUrls, promptData } = req.body;
+        var { videoUrls, promptData, voiceName } = req.body;
         if (!videoUrls || !Array.isArray(videoUrls) || videoUrls.length < 2) {
             return res.status(400).json({ error: 'Need at least 2 video URLs to assemble' });
         }
@@ -2037,7 +2037,7 @@ router.post('/timelapse/assemble-voiceover', requireAuth, studioAssemblyLimiter,
 
         try {
             var gen = getTimelapseGenerator();
-            var result = await gen.assembleWithVoiceover(videoUrls, promptData);
+            var result = await gen.assembleWithVoiceover(videoUrls, promptData, voiceName || 'Charon');
             res.json({ videoUrl: result.videoUrl, script: result.script });
         } catch (genError) {
             await credits.refundCredits(userId, 'assembly', 1, 'Timelapse voiceover assembly failed');

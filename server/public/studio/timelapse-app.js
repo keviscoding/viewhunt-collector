@@ -205,7 +205,11 @@
 
             var asmEndpoint = useVoiceover ? '/api/studio/timelapse/assemble-voiceover' : '/api/studio/timelapse/assemble';
             var asmBody = { videoUrls: videoUrls };
-            if (useVoiceover) asmBody.promptData = state.promptData;
+            if (useVoiceover) {
+                asmBody.promptData = state.promptData;
+                var voConceptSelect = document.getElementById('voice-concept-select');
+                asmBody.voiceName = voConceptSelect ? voConceptSelect.value : 'Charon';
+            }
 
             if (useVoiceover) updateAutoProgress('Assembling + generating voiceover...', totalSteps);
 
@@ -436,16 +440,31 @@
         var transitions = state.promptData.transitions;
         var html = '<div class="section-title">🔧 Final Assembly</div>';
         html += '<p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem;">All ' + transitions.length + ' transition videos are ready. Stitch them into one seamless time-lapse.</p>';
-        html += '<label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;cursor:pointer;font-size:0.85rem;">';
+        html += '<label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;cursor:pointer;font-size:0.85rem;">';
         html += '<input type="checkbox" id="voiceover-toggle" style="accent-color:var(--accent);width:16px;height:16px;">';
         html += '<span>🎙️ Add AI Voiceover</span>';
-        html += '<span style="font-size:0.75rem;color:var(--text-dim);">— Free · Gemini TTS</span>';
         html += '</label>';
+        html += '<div id="voice-picker" style="display:none;margin-bottom:0.75rem;">';
+        html += '<select id="voice-select" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.82rem;padding:0.4rem 0.6rem;outline:none;cursor:pointer;width:100%;">';
+        html += '<option value="Charon">Charon — Male, deep narrator</option>';
+        html += '<option value="Puck">Puck — Male, energetic</option>';
+        html += '<option value="Fenrir">Fenrir — Male, bold</option>';
+        html += '<option value="Orus">Orus — Male, warm</option>';
+        html += '<option value="Schedar">Schedar — Male, smooth</option>';
+        html += '<option value="Kore">Kore — Female, clear</option>';
+        html += '<option value="Aoede">Aoede — Female, expressive</option>';
+        html += '<option value="Leda">Leda — Female, soft</option>';
+        html += '<option value="Zephyr">Zephyr — Female, airy</option>';
+        html += '</select>';
+        html += '</div>';
         html += '<button class="btn btn-green" id="assemble-btn" onclick="assembleVideo()">Assemble Final Video · 2 💎</button>';
         html += '<div class="cost-note">FFmpeg stitching — voiceover adds ~30s extra</div>';
         document.getElementById('assembly-section').innerHTML = html;
         document.getElementById('assembly-section').style.display = 'block';
         document.getElementById('assembly-section').scrollIntoView({ behavior: 'smooth' });
+        document.getElementById('voiceover-toggle').addEventListener('change', function() {
+            document.getElementById('voice-picker').style.display = this.checked ? 'block' : 'none';
+        });
     }
 
     window.assembleVideo = async function() {
@@ -467,7 +486,11 @@
 
         var endpoint = useVoiceover ? '/api/studio/timelapse/assemble-voiceover' : '/api/studio/timelapse/assemble';
         var body = { videoUrls: videoUrls };
-        if (useVoiceover) body.promptData = state.promptData;
+        if (useVoiceover) {
+            body.promptData = state.promptData;
+            var voiceSelect = document.getElementById('voice-select');
+            body.voiceName = voiceSelect ? voiceSelect.value : 'Charon';
+        }
 
         if (useVoiceover && btn) btn.innerHTML = '<span class="spinner"></span> Assembling + generating voiceover...';
 

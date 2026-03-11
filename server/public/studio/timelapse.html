@@ -117,10 +117,22 @@
         </div>
 
         <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.6rem;cursor:pointer;font-size:0.82rem;color:var(--text-muted);">
-            <input type="checkbox" id="voiceover-concept-toggle" style="accent-color:var(--accent);width:15px;height:15px;">
+            <input type="checkbox" id="voiceover-concept-toggle" style="accent-color:var(--accent);width:15px;height:15px;" onchange="document.getElementById('voice-concept-picker').style.display=this.checked?'block':'none'">
             <span>🎙️ Add AI Voiceover</span>
-            <span style="font-size:0.72rem;color:var(--text-dim);">Free · Gemini TTS</span>
         </label>
+        <div id="voice-concept-picker" style="display:none;margin-top:0.5rem;">
+            <select id="voice-concept-select" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.82rem;padding:0.4rem 0.6rem;outline:none;cursor:pointer;width:100%;">
+                <option value="Charon">Charon — Male, deep narrator</option>
+                <option value="Puck">Puck — Male, energetic</option>
+                <option value="Fenrir">Fenrir — Male, bold</option>
+                <option value="Orus">Orus — Male, warm</option>
+                <option value="Schedar">Schedar — Male, smooth</option>
+                <option value="Kore">Kore — Female, clear</option>
+                <option value="Aoede">Aoede — Female, expressive</option>
+                <option value="Leda">Leda — Female, soft</option>
+                <option value="Zephyr">Zephyr — Female, airy</option>
+            </select>
+        </div>
 
         <div style="margin-top:0.75rem;">
             <button class="btn btn-primary" id="generate-prompts-btn" onclick="generatePrompts()">
@@ -153,6 +165,6 @@
     <div id="final-section" style="display:none;"></div>
 </div>
 
-<script src="/studio/timelapse-app.js?v=20260311b"></script>
+<script src="/studio/timelapse-app.js?v=20260311c"></script>
 </body>
 </html>

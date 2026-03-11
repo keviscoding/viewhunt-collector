@@ -308,7 +308,7 @@ Remember:
                             input_urls: [startImageUrl, endImageUrl],
                             aspect_ratio: '9:16',
                             resolution: '720p',
-                            duration: '4',
+                            duration: '8',
                             fixed_lens: true,
                             generate_audio: true
                         }
@@ -563,8 +563,9 @@ Return ONLY the script text, nothing else. No stage markers, no timestamps, no f
      * @param {string} tempDir - Temp directory for output
      * @returns {string} Path to the WAV file
      */
-    async generateTTS(script, tempDir) {
-        console.log('🎙️ Timelapse: Generating TTS audio...');
+    async generateTTS(script, tempDir, voiceName) {
+        voiceName = voiceName || 'Charon';
+        console.log('🎙️ Timelapse: Generating TTS audio (voice: ' + voiceName + ')...');
 
         var ttsPrompt = 'Read in a faster pace, engaging and storytelling way:\n\n' + script;
 
@@ -575,7 +576,7 @@ Return ONLY the script text, nothing else. No stage markers, no timestamps, no f
                 responseModalities: ['AUDIO'],
                 speechConfig: {
                     voiceConfig: {
-                        prebuiltVoiceConfig: { voiceName: 'Charon' }
+                        prebuiltVoiceConfig: { voiceName: voiceName }
                     }
                 }
             }
@@ -650,8 +651,8 @@ Return ONLY the script text, nothing else. No stage markers, no timestamps, no f
      * 4. Speed-adjust TTS to match video duration (atempo)
      * 5. Mix: voiceover on top, original construction audio underneath at lower volume
      */
-    async assembleWithVoiceover(videoUrls, promptData) {
-        console.log('🎬 Timelapse: Assembling with voiceover from ' + videoUrls.length + ' clips...');
+    async assembleWithVoiceover(videoUrls, promptData, voiceName) {
+        console.log('🎬 Timelapse: Assembling with voiceover from ' + videoUrls.length + ' clips (voice: ' + (voiceName || 'Charon') + ')...');
 
         var timestamp = Date.now();
         var tempDir = path.join(this.outputDir, 'temp_vo_' + timestamp);
@@ -704,7 +705,7 @@ Return ONLY the script text, nothing else. No stage markers, no timestamps, no f
             var script = await this.generateVoiceoverScript(promptData, Math.round(videoDuration));
 
             // Step 5: Generate TTS audio
-            var ttsPath = await this.generateTTS(script, tempDir);
+            var ttsPath = await this.generateTTS(script, tempDir, voiceName);
             var ttsDuration = await this.getAudioDuration(ttsPath);
             console.log('  TTS duration: ' + ttsDuration.toFixed(1) + 's vs video: ' + videoDuration.toFixed(1) + 's');
 
@@ -721,12 +722,12 @@ Return ONLY the script text, nothing else. No stage markers, no timestamps, no f
                 '-y', adjustedTtsPath
             ]);
 
-            // Step 7: Mix — voiceover at full volume, original construction audio at 20% volume
+            // Step 7: Mix — voiceover at full volume, original construction audio at 45% volume (ASMR construction sounds)
             var outputPath = path.join(this.outputDir, 'timelapse_vo_' + timestamp + '.mp4');
             await this._runFFmpeg([
                 '-i', baseVideoPath,
                 '-i', adjustedTtsPath,
-                '-filter_complex', '[0:a]volume=0.2[bg];[1:a]aresample=44100[vo];[bg][vo]amix=inputs=2:duration=first:dropout_transition=2[aout]',
+                '-filter_complex', '[0:a]volume=0.45[bg];[1:a]aresample=44100[vo];[bg][vo]amix=inputs=2:duration=first:dropout_transition=2[aout]',
                 '-map', '0:v',
                 '-map', '[aout]',
                 '-c:v', 'copy',
