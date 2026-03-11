@@ -12,7 +12,7 @@ class ViewHuntApp {
         this.token = this.authToken; // Alias for compatibility
         this.user = null;
         this.subscriptionStatus = null;
-        this.isDarkMode = localStorage.getItem('viewhunt_theme') === 'dark';
+        this.isDarkMode = localStorage.getItem('viewhunt_theme') !== 'light';
         
         this.init();
     }
