@@ -1984,7 +1984,7 @@ router.post('/timelapse/generate-video', requireAuth, studioGenerateLimiter, asy
     }
 });
 
-// Step 4: Assemble final video (2 credits)
+// Step 4: Assemble final video (2 credits) — without voiceover
 router.post('/timelapse/assemble', requireAuth, studioAssemblyLimiter, async (req, res) => {
     try {
         var { videoUrls } = req.body;
@@ -2011,6 +2011,40 @@ router.post('/timelapse/assemble', requireAuth, studioAssemblyLimiter, async (re
         }
     } catch (error) {
         console.error('Timelapse assembly error:', error.message);
+        res.status(error.message.includes('credits') ? 402 : 500).json({ error: error.message });
+    }
+});
+
+// Step 4b: Assemble with voiceover (2 credits — same as regular assembly, voiceover is free via Gemini)
+router.post('/timelapse/assemble-voiceover', requireAuth, studioAssemblyLimiter, async (req, res) => {
+    try {
+        var { videoUrls, promptData } = req.body;
+        if (!videoUrls || !Array.isArray(videoUrls) || videoUrls.length < 2) {
+            return res.status(400).json({ error: 'Need at least 2 video URLs to assemble' });
+        }
+        if (!promptData || !promptData.stages) {
+            return res.status(400).json({ error: 'Missing promptData for voiceover generation' });
+        }
+
+        var userId = String(req.user.userId);
+
+        var check = await credits.checkCredits(userId, 'assembly', 1);
+        if (!check.allowed) {
+            return res.status(402).json({ error: 'Not enough credits. Need 2, have ' + check.totalAvailable });
+        }
+
+        await credits.deductCredits(userId, 'assembly', 1, 'Timelapse assembly with voiceover');
+
+        try {
+            var gen = getTimelapseGenerator();
+            var result = await gen.assembleWithVoiceover(videoUrls, promptData);
+            res.json({ videoUrl: result.videoUrl, script: result.script });
+        } catch (genError) {
+            await credits.refundCredits(userId, 'assembly', 1, 'Timelapse voiceover assembly failed');
+            throw genError;
+        }
+    } catch (error) {
+        console.error('Timelapse voiceover assembly error:', error.message);
         res.status(error.message.includes('credits') ? 402 : 500).json({ error: error.message });
     }
 });

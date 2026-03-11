@@ -484,6 +484,259 @@ Remember:
         }
     }
 
+    /**
+     * Generate voiceover script using Gemini, in the viral short-form storytelling style
+     * @param {object} promptData - The stage/transition data from prompt generation
+     * @param {number} videoDuration - Total video duration in seconds
+     * @returns {string} The voiceover script
+     */
+    async generateVoiceoverScript(promptData, videoDuration) {
+        console.log('🎙️ Timelapse: Generating voiceover script with Gemini...');
+
+        var stageDescriptions = promptData.stages.map(function(s) {
+            return 'Stage ' + s.stage + ' (' + s.name + '): ' + s.description;
+        }).join('\n');
+
+        var systemPrompt = `You are a viral short-form video scriptwriter. You write voiceover scripts for TikTok/YouTube Shorts construction time-lapse videos.
+
+WRITING STYLE — Learn from these examples of viral scripts (millions of views each):
+
+"This little guy keeps proposing to his friend, but he always says no. So when he finally caught him in a moment where he couldn't refuse, it became the funniest thing ever."
+
+"This Lamborghini racer needed his windshield cleaned, so he pulled over for a quick wipe. But this pit crew guy mistook it for a fuel stop and started pumping fuel into the car."
+
+"This little driver rolled his wheels backwards just before the race started. Everyone was confused, but when he did it again, it's clear he knew exactly what he was doing."
+
+"This little guy found an old abandoned zipline and thought it would be fun to take a ride, but he had no idea it would turn out to be one of the worst decisions of his life."
+
+"These construction workers made an entire pallet of popcorn right on their job site. They started by heating up an excavator using two propane torches."
+
+"This little guy is destroying a YouTube play button, but what he does with it at the end will surprise you because once it's shredded, he melts it down and pours it into this custom mold."
+
+KEY STYLE RULES:
+- Start with a hook: "This [person] decided to..." or "When this [person] started..."
+- Short punchy sentences. Conversational. Like telling a friend a story.
+- Build tension with "But..." and "So when..."
+- Describe what's happening visually — the viewer is watching the construction
+- Sound amazed/impressed by the transformation
+- End with something satisfying about the final reveal
+- NO hashtags, NO "subscribe", NO calls to action — this is pure narration
+- The script should feel like a nature documentary narrator who's genuinely impressed
+
+CRITICAL: The video is ${videoDuration} seconds long. At normal speaking pace (~150 words per minute), aim for roughly ${Math.round(videoDuration * 2.3)} words. It's OK to be slightly over — the audio will be speed-adjusted to fit. But don't write a novel.`;
+
+        var userPrompt = `Write a voiceover script for this construction time-lapse video:
+
+Title: ${promptData.title}
+
+The video shows these stages:
+${stageDescriptions}
+
+The video is ${videoDuration} seconds of continuous time-lapse construction footage. Write the narration that plays over it. Make it engaging, punchy, and satisfying. The viewer should feel the transformation.
+
+Return ONLY the script text, nothing else. No stage markers, no timestamps, no formatting — just the words the narrator says.`;
+
+        try {
+            var response = await this.ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [{ parts: [{ text: systemPrompt + '\n\n' + userPrompt }] }]
+            });
+
+            var script = response.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!script) throw new Error('Empty response from Gemini');
+
+            script = script.trim().replace(/^["']|["']$/g, '');
+            console.log('✅ Voiceover script generated (' + script.split(/\s+/).length + ' words)');
+            return script;
+        } catch (error) {
+            console.error('Voiceover script generation error:', error.message);
+            throw new Error('Failed to generate voiceover script: ' + error.message);
+        }
+    }
+
+    /**
+     * Generate TTS audio using Gemini TTS
+     * @param {string} script - The voiceover script
+     * @param {string} tempDir - Temp directory for output
+     * @returns {string} Path to the WAV file
+     */
+    async generateTTS(script, tempDir) {
+        console.log('🎙️ Timelapse: Generating TTS audio...');
+
+        var ttsPrompt = 'Read in a faster pace, engaging and storytelling way:\n\n' + script;
+
+        var response = await this.ai.models.generateContent({
+            model: 'gemini-2.5-flash-preview-tts',
+            contents: [{ parts: [{ text: ttsPrompt }] }],
+            config: {
+                responseModalities: ['AUDIO'],
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: { voiceName: 'Charon' }
+                    }
+                }
+            }
+        });
+
+        var audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (!audioData) throw new Error('No audio data in Gemini TTS response');
+
+        var pcmBuffer = Buffer.from(audioData, 'base64');
+
+        // Write as WAV (PCM s16le, 24000Hz, mono)
+        var wavPath = path.join(tempDir, 'voiceover.wav');
+        var dataSize = pcmBuffer.length;
+        var header = Buffer.alloc(44);
+        header.write('RIFF', 0);
+        header.writeUInt32LE(36 + dataSize, 4);
+        header.write('WAVE', 8);
+        header.write('fmt ', 12);
+        header.writeUInt32LE(16, 16);
+        header.writeUInt16LE(1, 20);
+        header.writeUInt16LE(1, 22);
+        header.writeUInt32LE(24000, 24);
+        header.writeUInt32LE(24000 * 1 * 2, 28);
+        header.writeUInt16LE(1 * 2, 32);
+        header.writeUInt16LE(16, 34);
+        header.write('data', 36);
+        header.writeUInt32LE(dataSize, 40);
+        fs.writeFileSync(wavPath, Buffer.concat([header, pcmBuffer]));
+
+        console.log('✅ TTS audio generated (' + (pcmBuffer.length / 1024).toFixed(0) + 'KB)');
+        return wavPath;
+    }
+
+    /**
+     * Get audio duration in seconds using ffprobe
+     */
+    async getAudioDuration(filePath) {
+        return new Promise(function(resolve, reject) {
+            var ffprobePath = ffmpegPath.replace('ffmpeg', 'ffprobe');
+            execFile(ffprobePath, [
+                '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                filePath
+            ], function(err, stdout) {
+                if (err) reject(new Error('ffprobe failed: ' + err.message));
+                else resolve(parseFloat(stdout.trim()) || 0);
+            });
+        });
+    }
+
+    /**
+     * Get video duration in seconds using ffprobe
+     */
+    async getVideoDuration(filePath) {
+        return this.getAudioDuration(filePath);
+    }
+
+    /**
+     * Assemble video WITH voiceover
+     * 1. Concat clips (same as assembleVideo)
+     * 2. Generate voiceover script with Gemini
+     * 3. Generate TTS
+     * 4. Speed-adjust TTS to match video duration (atempo)
+     * 5. Mix: voiceover on top, original construction audio underneath at lower volume
+     */
+    async assembleWithVoiceover(videoUrls, promptData) {
+        console.log('🎬 Timelapse: Assembling with voiceover from ' + videoUrls.length + ' clips...');
+
+        var timestamp = Date.now();
+        var tempDir = path.join(this.outputDir, 'temp_vo_' + timestamp);
+        if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+        try {
+            // Step 1: Download and normalize clips (same as regular assembly)
+            var clipPaths = [];
+            for (var i = 0; i < videoUrls.length; i++) {
+                var clipPath = path.join(tempDir, 'clip_' + (i + 1) + '.mp4');
+                var dlResponse = await axios.get(videoUrls[i], { responseType: 'arraybuffer', timeout: 60000 });
+                fs.writeFileSync(clipPath, Buffer.from(dlResponse.data));
+                clipPaths.push(clipPath);
+                console.log('  Downloaded clip ' + (i + 1) + '/' + videoUrls.length);
+            }
+
+            var normalizedPaths = [];
+            for (var j = 0; j < clipPaths.length; j++) {
+                var normPath = path.join(tempDir, 'norm_' + (j + 1) + '.mp4');
+                await this._runFFmpeg([
+                    '-i', clipPaths[j],
+                    '-vf', 'scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2',
+                    '-c:v', 'libx264', '-preset', 'ultrafast', '-threads', '1',
+                    '-r', '30', '-ar', '44100', '-ac', '2',
+                    '-c:a', 'aac', '-b:a', '128k',
+                    '-y', normPath
+                ]);
+                normalizedPaths.push(normPath);
+            }
+
+            // Step 2: Concat into silent base video
+            var concatFile = path.join(tempDir, 'concat.txt');
+            var concatContent = normalizedPaths.map(function(p) { return "file '" + p + "'"; }).join('\n');
+            fs.writeFileSync(concatFile, concatContent);
+
+            var baseVideoPath = path.join(tempDir, 'base.mp4');
+            await this._runFFmpeg([
+                '-f', 'concat', '-safe', '0', '-i', concatFile,
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-threads', '1',
+                '-c:a', 'aac', '-b:a', '128k',
+                '-movflags', '+faststart',
+                '-y', baseVideoPath
+            ]);
+
+            // Step 3: Get video duration
+            var videoDuration = await this.getVideoDuration(baseVideoPath);
+            console.log('  Base video duration: ' + videoDuration.toFixed(1) + 's');
+
+            // Step 4: Generate voiceover script
+            var script = await this.generateVoiceoverScript(promptData, Math.round(videoDuration));
+
+            // Step 5: Generate TTS audio
+            var ttsPath = await this.generateTTS(script, tempDir);
+            var ttsDuration = await this.getAudioDuration(ttsPath);
+            console.log('  TTS duration: ' + ttsDuration.toFixed(1) + 's vs video: ' + videoDuration.toFixed(1) + 's');
+
+            // Step 6: Speed-adjust TTS to match video duration
+            var atempo = ttsDuration / videoDuration;
+            // Clamp atempo to reasonable range (0.8x to 1.5x)
+            atempo = Math.max(0.8, Math.min(1.5, atempo));
+            console.log('  Atempo factor: ' + atempo.toFixed(3));
+
+            var adjustedTtsPath = path.join(tempDir, 'voiceover_adjusted.wav');
+            await this._runFFmpeg([
+                '-i', ttsPath,
+                '-filter:a', 'atempo=' + atempo.toFixed(4),
+                '-y', adjustedTtsPath
+            ]);
+
+            // Step 7: Mix — voiceover at full volume, original construction audio at 20% volume
+            var outputPath = path.join(this.outputDir, 'timelapse_vo_' + timestamp + '.mp4');
+            await this._runFFmpeg([
+                '-i', baseVideoPath,
+                '-i', adjustedTtsPath,
+                '-filter_complex', '[0:a]volume=0.2[bg];[1:a]aresample=44100[vo];[bg][vo]amix=inputs=2:duration=first:dropout_transition=2[aout]',
+                '-map', '0:v',
+                '-map', '[aout]',
+                '-c:v', 'copy',
+                '-c:a', 'aac', '-b:a', '192k',
+                '-movflags', '+faststart',
+                '-threads', '1',
+                '-y', outputPath
+            ]);
+
+            try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+
+            var publicPath = '/studio/generated/timelapse/timelapse_vo_' + timestamp + '.mp4';
+            console.log('✅ Final video with voiceover assembled: ' + publicPath);
+            return { videoUrl: publicPath, script: script };
+
+        } catch (error) {
+            try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+            throw new Error('Assembly with voiceover failed: ' + error.message);
+        }
+    }
+
     _runFFmpeg(args) {
         return new Promise(function(resolve, reject) {
             var proc = execFile(ffmpegPath, args, { timeout: 300000 });

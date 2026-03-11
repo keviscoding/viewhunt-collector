@@ -13,6 +13,7 @@
         currentStage: 1,
         transitionVideos: {},
         finalVideoUrl: null,
+        voiceoverScript: null,
         autoRunning: false
     };
 
@@ -86,6 +87,7 @@
             state.stageSelected = {};
             state.transitionVideos = {};
             state.finalVideoUrl = null;
+            state.voiceoverScript = null;
 
             if (state.mode === 'auto') {
                 runAutoMode();
@@ -197,10 +199,20 @@
                 videoUrls.push(state.transitionVideos[transitions[k].from + '-' + transitions[k].to]);
             }
 
-            var asmRes = await fetch('/api/studio/timelapse/assemble', {
+            var useVoiceover = false;
+            var voConceptToggle = document.getElementById('voiceover-concept-toggle');
+            if (voConceptToggle && voConceptToggle.checked) useVoiceover = true;
+
+            var asmEndpoint = useVoiceover ? '/api/studio/timelapse/assemble-voiceover' : '/api/studio/timelapse/assemble';
+            var asmBody = { videoUrls: videoUrls };
+            if (useVoiceover) asmBody.promptData = state.promptData;
+
+            if (useVoiceover) updateAutoProgress('Assembling + generating voiceover...', totalSteps);
+
+            var asmRes = await fetch(asmEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                body: JSON.stringify({ videoUrls: videoUrls })
+                body: JSON.stringify(asmBody)
             });
             if (!asmRes.ok) {
                 var asmErr = await asmRes.json().catch(function() { return {}; });
@@ -208,6 +220,7 @@
             }
             var asmData = await asmRes.json();
             state.finalVideoUrl = asmData.videoUrl;
+            state.voiceoverScript = asmData.script || null;
             updateBalance(2);
 
             autoEl.style.display = 'none';
@@ -423,8 +436,13 @@
         var transitions = state.promptData.transitions;
         var html = '<div class="section-title">🔧 Final Assembly</div>';
         html += '<p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.75rem;">All ' + transitions.length + ' transition videos are ready. Stitch them into one seamless time-lapse.</p>';
+        html += '<label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;cursor:pointer;font-size:0.85rem;">';
+        html += '<input type="checkbox" id="voiceover-toggle" style="accent-color:var(--accent);width:16px;height:16px;">';
+        html += '<span>🎙️ Add AI Voiceover</span>';
+        html += '<span style="font-size:0.75rem;color:var(--text-dim);">— Free (Gemini TTS)</span>';
+        html += '</label>';
         html += '<button class="btn btn-green" id="assemble-btn" onclick="assembleVideo()">Assemble Final Video · 2 💎</button>';
-        html += '<div class="cost-note">FFmpeg stitching — fast</div>';
+        html += '<div class="cost-note">FFmpeg stitching — voiceover adds ~30s extra</div>';
         document.getElementById('assembly-section').innerHTML = html;
         document.getElementById('assembly-section').style.display = 'block';
         document.getElementById('assembly-section').scrollIntoView({ behavior: 'smooth' });
@@ -443,11 +461,21 @@
             videoUrls.push(url);
         }
 
+        var useVoiceover = false;
+        var voToggle = document.getElementById('voiceover-toggle');
+        if (voToggle && voToggle.checked) useVoiceover = true;
+
+        var endpoint = useVoiceover ? '/api/studio/timelapse/assemble-voiceover' : '/api/studio/timelapse/assemble';
+        var body = { videoUrls: videoUrls };
+        if (useVoiceover) body.promptData = state.promptData;
+
+        if (useVoiceover && btn) btn.innerHTML = '<span class="spinner"></span> Assembling + generating voiceover...';
+
         try {
-            var res = await fetch('/api/studio/timelapse/assemble', {
+            var res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                body: JSON.stringify({ videoUrls: videoUrls })
+                body: JSON.stringify(body)
             });
             if (!res.ok) {
                 var err = await res.json().catch(function() { return {}; });
@@ -455,6 +483,7 @@
             }
             var data = await res.json();
             state.finalVideoUrl = data.videoUrl;
+            state.voiceoverScript = data.script || null;
             updateBalance(2);
             showFinalResult();
         } catch (e) {
@@ -469,8 +498,14 @@
         var html = '<div class="final-section">';
         html += '<div class="section-title" style="justify-content:center;">🎉 Your Time-Lapse is Ready</div>';
         html += '<video src="' + state.finalVideoUrl + '" controls playsinline style="width:100%;max-width:300px;border-radius:10px;margin:0.75rem auto;display:block;"></video>';
-        html += '<p style="font-size:0.82rem;color:var(--text-muted);margin:0.5rem 0;">' + stageCount + ' stages · ' + (stageCount - 1) + ' transitions · ' + modeLabel + '</p>';
+        html += '<p style="font-size:0.82rem;color:var(--text-muted);margin:0.5rem 0;">' + stageCount + ' stages · ' + (stageCount - 1) + ' transitions · ' + modeLabel + (state.voiceoverScript ? ' · 🎙️ Voiceover' : '') + '</p>';
         html += '<a href="' + state.finalVideoUrl + '" download class="btn btn-primary" style="max-width:280px;margin:0.5rem auto;">⬇ Download Video</a>';
+        if (state.voiceoverScript) {
+            html += '<div style="margin-top:1rem;text-align:left;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:1rem;">';
+            html += '<div style="font-size:0.78rem;font-weight:700;color:var(--accent);margin-bottom:0.4rem;">🎙️ Voiceover Script</div>';
+            html += '<div style="font-size:0.82rem;color:var(--text-muted);line-height:1.6;white-space:pre-wrap;">' + escHtml(state.voiceoverScript) + '</div>';
+            html += '</div>';
+        }
         html += '</div>';
         document.getElementById('final-section').innerHTML = html;
         document.getElementById('final-section').style.display = 'block';
