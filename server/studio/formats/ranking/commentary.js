@@ -48,32 +48,36 @@ class RankingCommentary {
             }
         }
 
-        // Step 3: TTS all lines (intro + commentary)
-        const results = [];
+        // Step 3: TTS all lines in parallel (intro + commentary)
+        const ttsPromises = [];
 
         // Intro TTS
-        try {
-            const introAudio = await this._ttsLine(introLine, 'intro');
-            results.push({ clipIndex: 0, line: introLine, audioPath: introAudio });
-        } catch (err) {
-            console.warn(`  Intro TTS failed: ${err.message}`);
-            results.push({ clipIndex: 0, line: introLine, audioPath: null });
-        }
+        ttsPromises.push(
+            this._ttsLine(introLine, 'intro')
+                .then(audioPath => ({ clipIndex: 0, line: introLine, audioPath }))
+                .catch(err => {
+                    console.warn(`  Intro TTS failed: ${err.message}`);
+                    return { clipIndex: 0, line: introLine, audioPath: null };
+                })
+        );
 
         // Commentary TTS
         for (const c of commentaryLines) {
             if (!c.line) {
-                results.push({ clipIndex: c.clipIndex, line: null, audioPath: null });
+                ttsPromises.push(Promise.resolve({ clipIndex: c.clipIndex, line: null, audioPath: null }));
                 continue;
             }
-            try {
-                const audioPath = await this._ttsLine(c.line, 'clip-' + (c.clipIndex + 1));
-                results.push({ clipIndex: c.clipIndex, line: c.line, audioPath });
-            } catch (err) {
-                console.warn(`  Clip ${c.clipIndex + 1} TTS failed: ${err.message}`);
-                results.push({ clipIndex: c.clipIndex, line: c.line, audioPath: null });
-            }
+            ttsPromises.push(
+                this._ttsLine(c.line, 'clip-' + (c.clipIndex + 1))
+                    .then(audioPath => ({ clipIndex: c.clipIndex, line: c.line, audioPath }))
+                    .catch(err => {
+                        console.warn(`  Clip ${c.clipIndex + 1} TTS failed: ${err.message}`);
+                        return { clipIndex: c.clipIndex, line: c.line, audioPath: null };
+                    })
+            );
         }
+
+        const results = await Promise.all(ttsPromises);
 
         const successCount = results.filter(r => r.audioPath).length;
         console.log(`🎙️ Commentary complete: ${successCount}/${clips.length} clips have audio`);

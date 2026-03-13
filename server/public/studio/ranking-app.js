@@ -547,10 +547,14 @@
 
             // Step 3: Poll for completion
             var failCount = 0;
+            var pollInterval = 4000;
             while (true) {
-                await new Promise(function(r) { setTimeout(r, 4000); });
+                await new Promise(function(r) { setTimeout(r, pollInterval); });
                 try {
-                    var pollRes = await apiFetch('/api/studio/ranking/assemble/status/' + jobId);
+                    var controller = new AbortController();
+                    var pollTimeout = setTimeout(function() { controller.abort(); }, 15000);
+                    var pollRes = await apiFetch('/api/studio/ranking/assemble/status/' + jobId, { signal: controller.signal });
+                    clearTimeout(pollTimeout);
                     if (pollRes.status === 404) {
                         // Job not found — server may have restarted during assembly
                         throw new Error('Assembly job was lost (server restarted). Please try again — credits were refunded.');
@@ -574,10 +578,14 @@
                     var currentPct = parseInt(pf.style.width) || 30;
                     if (currentPct < 90) pf.style.width = Math.min(90, currentPct + 2) + '%';
                     failCount = 0;
+                    pollInterval = 4000;
                 } catch (e) {
                     if (e.message && (e.message.includes('Assembly') || e.message.includes('Auth failed') || e.message.includes('credits'))) throw e;
                     failCount++;
-                    if (failCount >= 40) throw new Error('Lost connection to server. Your video may still be processing — check back in a minute.');
+                    // Back off: after 5 failures, slow down to 8s polls
+                    if (failCount > 5) pollInterval = 8000;
+                    if (failCount > 10) pt.textContent = 'Server is busy processing your video... still waiting';
+                    if (failCount >= 90) throw new Error('Lost connection to server. Your video may still be processing — check back in a minute.');
                 }
             }
         } catch (err) {
