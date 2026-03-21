@@ -204,6 +204,11 @@ app.get('/studio/timelapse', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'studio', 'timelapse.html'));
 });
 
+// Studio Transcript Extractor page route
+app.get('/studio/transcript', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'studio', 'transcript.html'));
+});
+
 // Subscription success page
 app.get('/subscription-success', async (req, res) => {
     try {

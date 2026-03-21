@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>if(!localStorage.getItem("viewhunt_token"))window.location.replace("/");</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcript Extractor — ViewHunt Studio</title>
+    <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+    <link rel="icon" type="image/png" href="/images/viewhunt_logo.png">
+    <link rel="apple-touch-icon" href="/images/viewhunt_logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+        :root{
+            --bg:#0e0e12;--surface:#18181f;--surface-2:#1f1f28;--surface-3:#262631;
+            --border:#2a2a36;--border-hover:#3a3a4a;
+            --text:#e8e8ed;--text-muted:#8b8b9e;--text-dim:#5c5c6e;
+            --accent:#7c6aef;--accent-hover:#6b58e0;--accent-glow:rgba(124,106,239,0.15);
+            --green:#34d399;--green-dim:rgba(52,211,153,0.12);
+            --amber:#fbbf24;--red:#f87171;
+        }
+        body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+        .app{max-width:720px;margin:0 auto;padding:1.5rem 1.25rem 4rem}
+        .header{display:flex;align-items:center;gap:0.75rem;margin-bottom:2rem}
+        .back-btn{color:var(--text-muted);text-decoration:none;font-size:0.85rem;padding:0.4rem 0.75rem;border-radius:6px;border:1px solid var(--border);transition:all 0.15s}
+        .back-btn:hover{color:var(--text);border-color:var(--border-hover);background:var(--surface)}
+        .logo{font-size:1.1rem;font-weight:700;letter-spacing:-0.02em}
+        .logo span{color:var(--accent)}
+        h1{font-size:1.4rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.3rem}
+        .subtitle{color:var(--text-muted);font-size:0.88rem;line-height:1.6;margin-bottom:1.5rem}
+        .section{margin-bottom:1.5rem}
+        .section-title{font-size:0.88rem;font-weight:700;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.4rem}
+</style>
+</head>
+<body>
+<div class="app">
+    <header class="header">
+        <a href="/studio" class="back-btn">← Studio</a>
+        <div class="logo">View<span>Hunt</span></div>
+    </header>
+    <h1>📝 Transcript Extractor</h1>
+    <p class="subtitle">Extract titles and transcripts from any YouTube video or entire channel.</p>
+
+    <!-- Mode Tabs -->
+    <div style="display:flex;gap:0.5rem;margin-bottom:1.25rem;">
+        <button class="tab-btn active" id="tab-video" onclick="setTab('video')" style="flex:1;padding:0.6rem;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;border:1px solid var(--border);font-family:inherit;transition:all 0.15s;background:var(--accent);color:white;">🎬 Single Video</button>
+        <button class="tab-btn" id="tab-channel" onclick="setTab('channel')" style="flex:1;padding:0.6rem;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;border:1px solid var(--border);font-family:inherit;transition:all 0.15s;background:var(--surface);color:var(--text-muted);">📺 Entire Channel</button>
+    </div>
+
+    <!-- Single Video Mode -->
+    <div id="video-mode" class="section">
+        <div class="section-title">🔗 Video URL</div>
+        <input type="text" id="video-url" placeholder="https://www.youtube.com/watch?v=..." style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit;font-size:0.88rem;padding:0.75rem 1rem;outline:none;">
+        <button id="btn-extract-video" onclick="extractVideo()" style="margin-top:0.75rem;width:100%;display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.65rem 1.25rem;border-radius:8px;font-weight:600;font-size:0.88rem;cursor:pointer;border:none;font-family:inherit;background:var(--accent);color:white;">Extract Transcript · Free</button>
+    </div>
+
+    <!-- Channel Mode -->
+    <div id="channel-mode" class="section" style="display:none;">
+        <div class="section-title">📺 Channel URL</div>
+        <input type="text" id="channel-url" placeholder="https://www.youtube.com/@ChannelName" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit;font-size:0.88rem;padding:0.75rem 1rem;outline:none;">
+        <div style="margin-top:0.75rem;display:flex;align-items:center;gap:0.75rem;">
+            <label style="font-size:0.82rem;color:var(--text-muted);white-space:nowrap;">Videos:</label>
+            <select id="video-count" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;padding:0.4rem 0.6rem;outline:none;cursor:pointer;">
+                <option value="5">5 videos</option>
+                <option value="10" selected>10 videos</option>
+                <option value="25">25 videos</option>
+                <option value="50">50 videos</option>
+                <option value="100">100 videos</option>
+            </select>
+        </div>
+        <div id="limit-note" style="margin-top:0.5rem;font-size:0.78rem;color:var(--amber);display:none;">⚡ Free accounts can extract up to 10 transcripts. <a href="/pricing" style="color:var(--accent);text-decoration:underline;">Upgrade to Pro</a> for up to 100.</div>
+        <button id="btn-extract-channel" onclick="extractChannel()" style="margin-top:0.75rem;width:100%;display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.65rem 1.25rem;border-radius:8px;font-weight:600;font-size:0.88rem;cursor:pointer;border:none;font-family:inherit;background:var(--accent);color:white;">Extract Channel Transcripts · Free</button>
+    </div>
+
+    <!-- Progress -->
+    <div id="progress-section" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.25rem;margin-bottom:1.5rem;">
+        <div style="text-align:center;">
+            <div id="progress-text" style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;"><span style="display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-right:0.4rem;vertical-align:middle;"></span> Extracting...</div>
+            <div style="background:var(--surface-2);border-radius:8px;height:6px;overflow:hidden;">
+                <div id="progress-bar" style="background:var(--accent);height:100%;width:0%;transition:width 0.3s;border-radius:8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results -->
+    <div id="results-section" style="display:none;"></div>
+
+    <!-- Upgrade CTA (shown after free limit) -->
+    <div id="upgrade-cta" style="display:none;margin-top:1.25rem;padding:1rem;background:linear-gradient(135deg,var(--surface-2),var(--surface-3));border:1px solid var(--accent);border-radius:10px;text-align:center;">
+        <div style="font-size:0.88rem;font-weight:700;margin-bottom:0.3rem;">🚀 Want more transcripts?</div>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;">Free accounts are limited to 10 transcripts per extraction. Subscribe to Pro to extract up to 100 at a time — perfect for deep channel research.</div>
+        <a href="/pricing" style="display:inline-flex;align-items:center;justify-content:center;padding:0.55rem 1.5rem;border-radius:8px;font-weight:600;font-size:0.85rem;background:var(--accent);color:white;text-decoration:none;">View Plans</a>
+    </div>
+</div>
+
+<style>
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .tab-btn.active{background:var(--accent)!important;color:white!important;border-color:var(--accent)!important}
+    .tab-btn:not(.active):hover{background:var(--surface-2)!important;color:var(--text)!important;border-color:var(--border-hover)!important}
+    .result-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:0.85rem;margin-bottom:0.6rem}
+    .result-title{font-size:0.85rem;font-weight:700;margin-bottom:0.3rem;color:var(--text)}
+    .result-meta{font-size:0.72rem;color:var(--text-dim);margin-bottom:0.4rem}
+    .result-transcript{font-size:0.78rem;color:var(--text-muted);line-height:1.5;max-height:120px;overflow-y:auto;white-space:pre-wrap;background:var(--surface-2);border-radius:6px;padding:0.6rem;font-family:monospace}
+    .copy-btn{margin-top:0.4rem;padding:0.3rem 0.6rem;border-radius:5px;font-size:0.72rem;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--surface-2);color:var(--text-muted);font-family:inherit}
+    .copy-btn:hover{color:var(--text);border-color:var(--accent)}
+    @media(max-width:640px){.app{padding:1rem 0.75rem 3rem}}
+</style>
+
+<script src="/studio/transcript-app.js?v=20260321a"></script>
+</body>
+</html>

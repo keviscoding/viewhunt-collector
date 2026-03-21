@@ -1888,6 +1888,157 @@ router.delete('/tasks/:id', requireAuth, async (req, res) => {
 });
 
 // ============================================================
+// TRANSCRIPT EXTRACTOR ROUTES
+// ============================================================
+
+var DOWNSUB_API_KEY = process.env.DOWNSUB_API_KEY || 'AIzatKBCx_FLT5S_pTYnENAUt6ifGR-6BH0Cr_N';
+var YOUTUBE_API_KEY_TRANSCRIPT = process.env.YOUTUBE_API_KEY || 'AIzaSyBOJg1zOs4STy1MJdqdiFKnKzAUyNa-LdU';
+var TRANSCRIPT_FREE_LIMIT = 10;
+var TRANSCRIPT_PRO_LIMIT = 100;
+
+// Single video transcript via DownSub
+router.post('/transcript/video', requireAuth, async (req, res) => {
+    try {
+        var { url } = req.body;
+        if (!url) return res.status(400).json({ error: 'Missing video URL' });
+
+        var dsRes = await axios.post('https://api.downsub.com/download', { url: url }, {
+            headers: {
+                'Authorization': 'Bearer ' + DOWNSUB_API_KEY,
+                'Content-Type': 'application/json'
+            },
+            timeout: 30000
+        });
+
+        var dsData = dsRes.data;
+        if (!dsData || dsData.status !== 'success' || !dsData.data) {
+            return res.status(404).json({ error: 'Could not find subtitles for this video' });
+        }
+
+        var d = dsData.data;
+        var title = d.title || 'Untitled';
+        var duration = d.duration || null;
+        var author = d.metadata?.author || null;
+
+        // Find English transcript (prefer English, fallback to first available)
+        var transcript = null;
+        var subs = d.subtitles || [];
+        var englishSub = subs.find(function(s) { return s.language && s.language.toLowerCase().includes('english'); });
+        var targetSub = englishSub || subs[0];
+
+        if (targetSub) {
+            var txtFormat = targetSub.formats.find(function(f) { return f.format === 'txt'; });
+            if (txtFormat && txtFormat.url) {
+                try {
+                    var txtRes = await axios.get(txtFormat.url, { timeout: 15000 });
+                    transcript = txtRes.data;
+                    if (typeof transcript !== 'string') transcript = String(transcript);
+                    transcript = transcript.trim();
+                } catch (e) {
+                    console.warn('Failed to download transcript text:', e.message);
+                }
+            }
+        }
+
+        res.json({ title: title, duration: duration, author: author, transcript: transcript, url: url });
+    } catch (error) {
+        console.error('Transcript extract error:', error.message);
+        var status = error.response?.status;
+        if (status === 429) return res.status(429).json({ error: 'Rate limited — please wait a moment and try again' });
+        if (status === 404) return res.status(404).json({ error: 'Video not found or no subtitles available' });
+        res.status(500).json({ error: 'Failed to extract transcript: ' + error.message });
+    }
+});
+
+// Get channel video list via YouTube Data API
+router.post('/transcript/channel-videos', requireAuth, async (req, res) => {
+    try {
+        var { channelUrl, count } = req.body;
+        if (!channelUrl) return res.status(400).json({ error: 'Missing channel URL' });
+
+        count = parseInt(count) || 10;
+
+        // Determine limit based on subscription (look up from DB since JWT doesn't have it)
+        var db = await getDb();
+        var user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        var isPro = false;
+        if (user) {
+            if (user.email === process.env.ADMIN_EMAIL) {
+                isPro = true;
+            } else if (user.subscription && (user.subscription.status === 'active' || user.subscription.type === 'stripe')) {
+                isPro = user.subscription.hasAccess !== false;
+            } else if (user.invited_by_code) {
+                var inviteCode = await db.collection('invite_codes').findOne({ code: user.invited_by_code, active: true });
+                if (inviteCode) isPro = true;
+            }
+        }
+        var maxAllowed = isPro ? TRANSCRIPT_PRO_LIMIT : TRANSCRIPT_FREE_LIMIT;
+        var capped = count > maxAllowed;
+        count = Math.min(count, maxAllowed);
+
+        // Extract channel identifier from URL
+        var channelId = null;
+        var handleMatch = channelUrl.match(/@([\w.-]+)/);
+        var idMatch = channelUrl.match(/channel\/(UC[\w-]{22})/);
+
+        if (idMatch) {
+            channelId = idMatch[1];
+        } else if (handleMatch) {
+            // Resolve handle to channel ID
+            var handleRes = await axios.get('https://www.googleapis.com/youtube/v3/channels', {
+                params: { part: 'contentDetails', forHandle: handleMatch[1], key: YOUTUBE_API_KEY_TRANSCRIPT },
+                timeout: 10000
+            });
+            var items = handleRes.data?.items;
+            if (items && items.length > 0) channelId = items[0].id;
+        }
+
+        if (!channelId) return res.status(400).json({ error: 'Could not resolve channel. Use format: youtube.com/@ChannelName or youtube.com/channel/UC...' });
+
+        // Get uploads playlist
+        var chRes = await axios.get('https://www.googleapis.com/youtube/v3/channels', {
+            params: { part: 'contentDetails', id: channelId, key: YOUTUBE_API_KEY_TRANSCRIPT },
+            timeout: 10000
+        });
+        var uploadsPlaylistId = chRes.data?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+        if (!uploadsPlaylistId) return res.status(404).json({ error: 'Could not find uploads for this channel' });
+
+        // Fetch videos from uploads playlist (paginate if needed)
+        var videos = [];
+        var nextPageToken = null;
+        while (videos.length < count) {
+            var batchSize = Math.min(50, count - videos.length);
+            var plParams = { part: 'snippet', playlistId: uploadsPlaylistId, maxResults: batchSize, key: YOUTUBE_API_KEY_TRANSCRIPT };
+            if (nextPageToken) plParams.pageToken = nextPageToken;
+
+            var plRes = await axios.get('https://www.googleapis.com/youtube/v3/playlistItems', {
+                params: plParams, timeout: 10000
+            });
+
+            var plItems = plRes.data?.items || [];
+            for (var i = 0; i < plItems.length; i++) {
+                var snippet = plItems[i].snippet;
+                videos.push({
+                    videoId: snippet.resourceId?.videoId,
+                    title: snippet.title,
+                    publishedAt: snippet.publishedAt
+                });
+            }
+
+            nextPageToken = plRes.data?.nextPageToken;
+            if (!nextPageToken || plItems.length === 0) break;
+        }
+
+        videos = videos.slice(0, count);
+        res.json({ videos: videos, count: videos.length, capped: capped });
+    } catch (error) {
+        console.error('Channel videos error:', error.message);
+        if (error.response?.status === 403) return res.status(403).json({ error: 'YouTube API quota exceeded. Try again later.' });
+        res.status(500).json({ error: 'Failed to fetch channel videos: ' + error.message });
+    }
+});
+
+// ============================================================
 // TIMELAPSE ROUTES
 // ============================================================
 
