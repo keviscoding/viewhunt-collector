@@ -2030,7 +2030,31 @@ router.post('/transcript/channel-videos', requireAuth, async (req, res) => {
         }
 
         videos = videos.slice(0, count);
-        res.json({ videos: videos, count: videos.length, capped: capped });
+
+        // Fetch view counts for all videos (batch in groups of 50)
+        for (var b = 0; b < videos.length; b += 50) {
+            var batch = videos.slice(b, b + 50);
+            var ids = batch.map(function(v) { return v.videoId; }).filter(Boolean).join(',');
+            if (!ids) continue;
+            try {
+                var statsRes = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
+                    params: { part: 'statistics', id: ids, key: YOUTUBE_API_KEY_TRANSCRIPT },
+                    timeout: 10000
+                });
+                var statsItems = statsRes.data?.items || [];
+                var statsMap = {};
+                for (var s = 0; s < statsItems.length; s++) {
+                    statsMap[statsItems[s].id] = statsItems[s].statistics?.viewCount || '0';
+                }
+                for (var v = b; v < b + batch.length && v < videos.length; v++) {
+                    videos[v].views = statsMap[videos[v].videoId] || '0';
+                }
+            } catch (e) {
+                console.warn('Failed to fetch video stats batch:', e.message);
+            }
+        }
+
+        res.json({ videos: videos, count: videos.length, capped: capped, isPro: isPro });
     } catch (error) {
         console.error('Channel videos error:', error.message);
         if (error.response?.status === 403) return res.status(403).json({ error: 'YouTube API quota exceeded. Try again later.' });
