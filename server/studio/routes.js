@@ -2062,6 +2062,77 @@ router.post('/transcript/channel-videos', requireAuth, async (req, res) => {
     }
 });
 
+// Batch transcript extraction — processes multiple videos in parallel
+router.post('/transcript/batch', requireAuth, async (req, res) => {
+    try {
+        var { videoIds } = req.body;
+        if (!videoIds || !Array.isArray(videoIds) || videoIds.length === 0) {
+            return res.status(400).json({ error: 'Missing videoIds array' });
+        }
+        if (videoIds.length > 100) videoIds = videoIds.slice(0, 100);
+
+        var CONCURRENCY = 5;
+        var results = new Array(videoIds.length);
+
+        // Process in parallel batches of CONCURRENCY
+        for (var b = 0; b < videoIds.length; b += CONCURRENCY) {
+            var batch = videoIds.slice(b, b + CONCURRENCY);
+            var promises = batch.map(function(videoId, batchIdx) {
+                var idx = b + batchIdx;
+                var url = 'https://www.youtube.com/watch?v=' + videoId;
+                return (async function() {
+                    try {
+                        var dsRes = await axios.post('https://api.downsub.com/download', { url: url }, {
+                            headers: { 'Authorization': 'Bearer ' + DOWNSUB_API_KEY, 'Content-Type': 'application/json' },
+                            timeout: 30000
+                        });
+                        var dsData = dsRes.data;
+                        if (!dsData || dsData.status !== 'success' || !dsData.data) {
+                            return { idx: idx, title: videoId, transcript: null, error: 'No subtitles' };
+                        }
+                        var d = dsData.data;
+                        var title = d.title || 'Untitled';
+                        var duration = d.duration || null;
+                        var author = d.metadata?.author || null;
+                        var transcript = null;
+                        var subs = d.subtitles || [];
+                        var englishSub = subs.find(function(s) { return s.language && s.language.toLowerCase().includes('english'); });
+                        var targetSub = englishSub || subs[0];
+                        if (targetSub) {
+                            var txtFormat = targetSub.formats.find(function(f) { return f.format === 'txt'; });
+                            if (txtFormat && txtFormat.url) {
+                                try {
+                                    var txtRes = await axios.get(txtFormat.url, { timeout: 15000 });
+                                    transcript = txtRes.data;
+                                    if (typeof transcript !== 'string') transcript = String(transcript);
+                                    transcript = transcript.trim();
+                                } catch (e) { /* skip */ }
+                            }
+                        }
+                        return { idx: idx, title: title, duration: duration, author: author, transcript: transcript };
+                    } catch (e) {
+                        return { idx: idx, title: videoId, transcript: null, error: e.message };
+                    }
+                })();
+            });
+            var batchResults = await Promise.all(promises);
+            for (var r = 0; r < batchResults.length; r++) {
+                results[batchResults[r].idx] = batchResults[r];
+            }
+        }
+
+        // Strip idx from results
+        var cleaned = results.map(function(r) {
+            return { title: r.title, duration: r.duration || null, author: r.author || null, transcript: r.transcript || null, error: r.error || null };
+        });
+
+        res.json({ results: cleaned });
+    } catch (error) {
+        console.error('Batch transcript error:', error.message);
+        res.status(500).json({ error: 'Batch extraction failed: ' + error.message });
+    }
+});
+
 // ============================================================
 // TIMELAPSE ROUTES
 // ============================================================

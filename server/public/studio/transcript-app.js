@@ -118,35 +118,40 @@
             // Build a lookup of views/publishedAt from the channel video list
             var videoMeta = {};
             for (var m = 0; m < videos.length; m++) {
-                videoMeta[videos[m].videoId] = { views: videos[m].views || '0', publishedAt: videos[m].publishedAt || '' };
+                videoMeta[videos[m].videoId] = { views: videos[m].views || '0', publishedAt: videos[m].publishedAt || '', title: videos[m].title || 'Unknown' };
             }
 
-            // Step 2: Extract transcripts one by one
+            // Step 2: Extract transcripts in parallel via batch endpoint
+            progressText.innerHTML = '<span style="display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-right:0.4rem;vertical-align:middle;"></span> Extracting transcripts for ' + actualCount + ' videos...';
+
+            var videoIds = videos.map(function(v) { return v.videoId; });
+            var batchRes = await fetch('/api/studio/transcript/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ videoIds: videoIds })
+            });
+            if (!batchRes.ok) {
+                var batchErr = await batchRes.json().catch(function() { return {}; });
+                throw new Error(batchErr.error || 'Failed to extract transcripts');
+            }
+            progressBar.style.width = '90%';
+            var batchData = await batchRes.json();
+            var batchResults = batchData.results || [];
+
+            // Merge batch results with channel metadata
             var results = [];
             for (var i = 0; i < videos.length; i++) {
-                var pct = 10 + Math.round((i / videos.length) * 85);
-                progressBar.style.width = pct + '%';
-                progressText.innerHTML = '<span style="display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-right:0.4rem;vertical-align:middle;"></span> Extracting ' + (i + 1) + '/' + actualCount + ' — ' + escHtml(videos[i].title || 'Video');
-
-                var vid = videos[i];
-                var meta = videoMeta[vid.videoId] || {};
-                try {
-                    var tRes = await fetch('/api/studio/transcript/video', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                        body: JSON.stringify({ url: 'https://www.youtube.com/watch?v=' + vid.videoId })
-                    });
-                    if (tRes.ok) {
-                        var tData = await tRes.json();
-                        tData.views = meta.views;
-                        tData.publishedAt = meta.publishedAt;
-                        results.push(tData);
-                    } else {
-                        results.push({ title: vid.title || 'Unknown', transcript: null, error: 'Failed to extract', views: meta.views, publishedAt: meta.publishedAt });
-                    }
-                } catch (e) {
-                    results.push({ title: vid.title || 'Unknown', transcript: null, error: e.message, views: meta.views, publishedAt: meta.publishedAt });
-                }
+                var meta = videoMeta[videos[i].videoId] || {};
+                var tr = batchResults[i] || {};
+                results.push({
+                    title: tr.title || meta.title || 'Unknown',
+                    duration: tr.duration || null,
+                    author: tr.author || null,
+                    transcript: tr.transcript || null,
+                    error: tr.error || null,
+                    views: meta.views,
+                    publishedAt: meta.publishedAt
+                });
             }
 
             progressBar.style.width = '100%';
