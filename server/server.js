@@ -849,7 +849,7 @@ async function sendVerificationEmail(email, code, displayName) {
     }
     try {
         await resend.emails.send({
-            from: process.env.RESEND_FROM_EMAIL || 'ViewHunt <noreply@viewhunt.com>',
+            from: process.env.RESEND_FROM_EMAIL || 'ViewHunt <noreply@viewhunt.app>',
             to: email,
             subject: 'Your ViewHunt verification code: ' + code,
             html: '<div style="font-family:Inter,Arial,sans-serif;max-width:480px;margin:0 auto;padding:2rem;background:#0e0e12;color:#e8e8ed;border-radius:12px;">' +
