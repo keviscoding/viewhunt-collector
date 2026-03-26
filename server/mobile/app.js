@@ -187,6 +187,12 @@ class ViewHuntApp {
             this.handleRegister();
         });
 
+        // Email verification form
+        document.getElementById('verify-form-element').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleVerify();
+        });
+
         // Close auth modal when clicking overlay
         document.getElementById('auth-overlay').addEventListener('click', (e) => {
             if (e.target === e.currentTarget) {
@@ -1659,6 +1665,8 @@ class ViewHuntApp {
         if (registerForm) {
             registerForm.style.display = 'none';
         }
+        var verifyForm = document.getElementById('verify-form');
+        if (verifyForm) verifyForm.style.display = 'none';
         document.getElementById('auth-overlay').style.display = 'flex';
         
         // Clear forms
@@ -1671,6 +1679,8 @@ class ViewHuntApp {
         if (registerForm) {
             registerForm.style.display = 'block';
         }
+        var verifyForm = document.getElementById('verify-form');
+        if (verifyForm) verifyForm.style.display = 'none';
         document.getElementById('auth-overlay').style.display = 'flex';
         
         // Clear forms
@@ -1682,6 +1692,90 @@ class ViewHuntApp {
 
     closeAuth() {
         document.getElementById('auth-overlay').style.display = 'none';
+    }
+
+    showVerifyForm(email) {
+        document.getElementById('login-form').style.display = 'none';
+        var registerForm = document.getElementById('register-form');
+        if (registerForm) registerForm.style.display = 'none';
+        document.getElementById('verify-form').style.display = 'block';
+        document.getElementById('verify-subtitle').textContent = 'We sent a 6-digit code to ' + email + '. Enter it below.';
+        document.getElementById('auth-overlay').style.display = 'flex';
+        var codeInput = document.getElementById('verify-code');
+        codeInput.value = '';
+        codeInput.focus();
+    }
+
+    async handleVerify() {
+        var code = document.getElementById('verify-code').value.trim();
+        if (!code || code.length !== 6) {
+            this.showToast('Please enter the 6-digit code ❌');
+            return;
+        }
+        var email = this._pendingVerifyEmail;
+        if (!email) {
+            this.showToast('Something went wrong. Please try signing up again ❌');
+            return;
+        }
+        var submitBtn = document.querySelector('#verify-form button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Verifying...';
+        try {
+            var response = await fetch(this.apiBase + '/auth/verify-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email, code: code })
+            });
+            var data = await response.json();
+            if (response.ok && data.token) {
+                this.token = data.token;
+                this.authToken = data.token;
+                this.user = data.user;
+                localStorage.setItem('viewhunt_token', this.token);
+                this.closeAuth();
+                this.showToast('Email verified! Welcome to ViewHunt 🎉');
+                await this.checkAuthStatus();
+                await this.checkSubscriptionStatus();
+                this.updateSubscriptionUI();
+                await this.loadStats();
+                await this.loadChannels();
+                if (typeof showOnboarding === 'function') showOnboarding();
+            } else {
+                this.showToast(data.error || 'Verification failed ❌');
+            }
+        } catch (error) {
+            console.error('Verify error:', error);
+            this.showToast('Network error. Please try again ❌');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Verify Email';
+        }
+    }
+
+    async handleResendCode() {
+        var email = this._pendingVerifyEmail;
+        if (!email) return;
+        var btn = document.getElementById('resend-code-btn');
+        btn.textContent = 'Sending...';
+        btn.disabled = true;
+        try {
+            var response = await fetch(this.apiBase + '/auth/resend-code', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email })
+            });
+            var data = await response.json();
+            if (response.ok) {
+                this.showToast('New code sent! Check your email 📧');
+            } else {
+                this.showToast(data.error || 'Failed to resend ❌');
+            }
+        } catch (error) {
+            this.showToast('Network error ❌');
+        } finally {
+            btn.textContent = 'Resend Code';
+            btn.disabled = false;
+        }
     }
 
     async handleLogin() {
@@ -1726,6 +1820,11 @@ class ViewHuntApp {
 
                 // Show onboarding tips if first time
                 if (typeof showOnboarding === 'function') showOnboarding();
+            } else if (data.requiresVerification) {
+                // Unverified email — show verification form
+                this._pendingVerifyEmail = data.email || email;
+                this.showVerifyForm(this._pendingVerifyEmail);
+                this.showToast('Please verify your email first 📧');
             } else {
                 this.showToast(data.error || 'Login failed ❌');
             }
@@ -1776,11 +1875,6 @@ class ViewHuntApp {
             }
         }
 
-        if (!displayName || !email || !password) {
-            this.showToast('Please fill in all fields ❌');
-            return;
-        }
-
         if (password.length < 8) {
             this.showToast('Password must be at least 8 characters ❌');
             return;
@@ -1806,23 +1900,29 @@ class ViewHuntApp {
             const data = await response.json();
 
             if (response.ok) {
-                this.token = data.token;
-                this.authToken = data.token;
-                this.user = data.user;
-                localStorage.setItem('viewhunt_token', this.token);
-                
-                this.closeAuth();
-                this.showToast(`Welcome to ViewHunt, ${this.user.display_name}! 🎉`);
-                
-                // Re-run the full post-auth initialization so everything loads properly
-                await this.checkAuthStatus();
-                await this.checkSubscriptionStatus();
-                this.updateSubscriptionUI();
-                await this.loadStats();
-                await this.loadChannels();
+                if (data.requiresVerification) {
+                    // Show verification form
+                    this._pendingVerifyEmail = data.email || email;
+                    this.showVerifyForm(this._pendingVerifyEmail);
+                    this.showToast('Check your email for a verification code 📧');
+                } else if (data.token) {
+                    // Fallback: if server returns token directly (e.g. Resend not configured)
+                    this.token = data.token;
+                    this.authToken = data.token;
+                    this.user = data.user;
+                    localStorage.setItem('viewhunt_token', this.token);
+                    
+                    this.closeAuth();
+                    this.showToast(`Welcome to ViewHunt, ${this.user.display_name}! 🎉`);
+                    
+                    await this.checkAuthStatus();
+                    await this.checkSubscriptionStatus();
+                    this.updateSubscriptionUI();
+                    await this.loadStats();
+                    await this.loadChannels();
 
-                // Show onboarding tips if first time
-                if (typeof showOnboarding === 'function') showOnboarding();
+                    if (typeof showOnboarding === 'function') showOnboarding();
+                }
             } else {
                 this.showToast(data.error || 'Registration failed ❌');
             }
@@ -1831,7 +1931,7 @@ class ViewHuntApp {
             this.showToast('Network error. Please try again ❌');
         } finally {
             submitBtn.disabled = false;
-            submitBtn.textContent = 'Create Account';
+            submitBtn.textContent = 'Create Free Account';
         }
     }
 

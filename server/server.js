@@ -5,7 +5,12 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const crypto = require('crypto');
 require('dotenv').config();
+
+// Email verification via Resend
+const { Resend } = require('resend');
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 // Studio routes
 const studioRoutes = require('./studio/routes');
@@ -831,6 +836,40 @@ const migrateV1UserToV2 = async (v1User) => {
     }
 };
 
+// Helper: generate 6-digit verification code
+function generateVerificationCode() {
+    return crypto.randomInt(100000, 999999).toString();
+}
+
+// Helper: send verification email via Resend
+async function sendVerificationEmail(email, code, displayName) {
+    if (!resend) {
+        console.warn('⚠️ RESEND_API_KEY not set — skipping verification email for', email);
+        return false;
+    }
+    try {
+        await resend.emails.send({
+            from: process.env.RESEND_FROM_EMAIL || 'ViewHunt <noreply@viewhunt.com>',
+            to: email,
+            subject: 'Your ViewHunt verification code: ' + code,
+            html: '<div style="font-family:Inter,Arial,sans-serif;max-width:480px;margin:0 auto;padding:2rem;background:#0e0e12;color:#e8e8ed;border-radius:12px;">' +
+                '<h2 style="margin:0 0 0.5rem;color:#7c6aef;">ViewHunt</h2>' +
+                '<p style="margin:0 0 1.5rem;color:#8b8b9e;">Hey ' + (displayName || 'there') + ', verify your email to get started.</p>' +
+                '<div style="background:#18181f;border:1px solid #2a2a36;border-radius:10px;padding:1.5rem;text-align:center;margin-bottom:1.5rem;">' +
+                '<div style="font-size:2.5rem;font-weight:800;letter-spacing:0.3em;color:#e8e8ed;">' + code + '</div>' +
+                '<p style="margin:0.5rem 0 0;font-size:0.85rem;color:#8b8b9e;">Enter this code in the app</p>' +
+                '</div>' +
+                '<p style="font-size:0.78rem;color:#5c5c6e;margin:0;">This code expires in 15 minutes. If you didn\'t create a ViewHunt account, ignore this email.</p>' +
+                '</div>'
+        });
+        console.log('📧 Verification email sent to', email);
+        return true;
+    } catch (err) {
+        console.error('📧 Failed to send verification email:', err.message);
+        return false;
+    }
+}
+
 // Authentication Routes
 
 // Register new user - Free tier (no invite code) or Invite tier (with code)
@@ -904,6 +943,9 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         const saltRounds = 12;
         const hashedPassword = await bcrypt.hash(reqPassword, saltRounds);
 
+        // Generate verification code
+        const verificationCode = generateVerificationCode();
+
         // Create user — free tier or invite tier
         const newUser = {
             email: reqEmail.toLowerCase(),
@@ -913,6 +955,9 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
             updated_at: new Date(),
             plan: invite_code ? 'invite' : 'free',
             invited_by_code: invite_code || null,
+            emailVerified: false,
+            verificationCode: verificationCode,
+            verificationCodeExpires: new Date(Date.now() + 15 * 60 * 1000), // 15 min
             stats: {
                 channels_approved: 0,
                 channels_rejected: 0,
@@ -939,30 +984,97 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
             );
         }
 
-        // Generate JWT token
-        const token = jwt.sign(
-            { 
-                userId: result.insertedId, 
-                email: reqEmail.toLowerCase(),
-                display_name: reqDisplayName
-            },
-            process.env.JWT_SECRET,
-            { expiresIn: '7d' }
-        );
+        // Send verification email
+        await sendVerificationEmail(reqEmail.toLowerCase(), verificationCode, reqDisplayName);
 
         res.status(201).json({
-            message: invite_code ? 'User registered successfully with invite code' : 'User registered successfully (free tier)',
-            token,
-            user: {
-                id: result.insertedId,
-                email: reqEmail.toLowerCase(),
-                display_name: reqDisplayName,
-                stats: newUser.stats
-            }
+            message: 'Account created. Please check your email for a verification code.',
+            requiresVerification: true,
+            email: reqEmail.toLowerCase()
         });
 
     } catch (error) {
         console.error('Registration error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Verify email with 6-digit code
+app.post('/api/auth/verify-email', authLimiter, async (req, res) => {
+    try {
+        const { email, code } = req.body;
+        if (!email || !code) return res.status(400).json({ error: 'Email and code are required' });
+
+        const user = await db.collection('users').findOne({ email: email.toLowerCase() });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        if (user.emailVerified) {
+            return res.json({ message: 'Email already verified', alreadyVerified: true });
+        }
+
+        if (user.verificationCode !== code.trim()) {
+            return res.status(400).json({ error: 'Invalid verification code' });
+        }
+
+        if (user.verificationCodeExpires && new Date() > new Date(user.verificationCodeExpires)) {
+            return res.status(400).json({ error: 'Code expired. Please request a new one.' });
+        }
+
+        // Mark as verified, clear code
+        await db.collection('users').updateOne(
+            { _id: user._id },
+            { $set: { emailVerified: true, updated_at: new Date() }, $unset: { verificationCode: '', verificationCodeExpires: '' } }
+        );
+
+        // Generate JWT token now that they're verified
+        const token = jwt.sign(
+            { userId: user._id, email: user.email, display_name: user.display_name },
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        console.log('✅ Email verified:', email.toLowerCase());
+
+        res.json({
+            message: 'Email verified successfully',
+            token,
+            user: {
+                id: user._id,
+                email: user.email,
+                display_name: user.display_name,
+                stats: user.stats || { channels_approved: 0, channels_rejected: 0, total_reviews: 0 }
+            }
+        });
+    } catch (error) {
+        console.error('Verify email error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Resend verification code
+app.post('/api/auth/resend-code', rateLimit({ windowMs: 60000, max: 3, message: { error: 'Too many requests. Wait a minute.' } }), async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ error: 'Email is required' });
+
+        const user = await db.collection('users').findOne({ email: email.toLowerCase() });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        if (user.emailVerified) {
+            return res.json({ message: 'Email already verified' });
+        }
+
+        const newCode = generateVerificationCode();
+        await db.collection('users').updateOne(
+            { _id: user._id },
+            { $set: { verificationCode: newCode, verificationCodeExpires: new Date(Date.now() + 15 * 60 * 1000) } }
+        );
+
+        await sendVerificationEmail(user.email, newCode, user.display_name);
+
+        res.json({ message: 'New verification code sent' });
+    } catch (error) {
+        console.error('Resend code error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -1075,6 +1187,16 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
         if (!isValidPassword) {
             console.log('Invalid password for user:', email.toLowerCase());
             return res.status(401).json({ error: 'Invalid email or password' });
+        }
+
+        // Step 5: Check email verification (skip for existing users without the field, admin, and migrated users)
+        if (user.emailVerified === false) {
+            console.log('Unverified email login attempt:', email.toLowerCase());
+            return res.status(403).json({
+                error: 'Please verify your email before signing in.',
+                requiresVerification: true,
+                email: user.email
+            });
         }
 
         console.log(`Login successful for user: ${email.toLowerCase()} (${userSource})`);
@@ -1534,6 +1656,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
             profilePicture: user.profilePicture,
             created_at: user.created_at,
             migrated_from_v1: user.migrated_from_v1 || false,
+            emailVerified: user.emailVerified !== false, // existing users without field = verified
             subscription: subscriptionStatus,
             stats: user.stats || { channels_approved: 0, channels_rejected: 0, total_reviews: 0 }
         });

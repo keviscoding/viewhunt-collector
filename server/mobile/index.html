@@ -394,6 +394,27 @@
                     </p>
                 </div>
 
+                <!-- Email Verification Form -->
+                <div class="auth-form" id="verify-form" style="display: none;">
+                    <h2>Check Your Email 📧</h2>
+                    <p class="auth-subtitle" id="verify-subtitle">We sent a 6-digit code to your email. Enter it below.</p>
+                    
+                    <form id="verify-form-element">
+                        <div class="form-group">
+                            <input type="text" id="verify-code" placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" autocomplete="one-time-code" required style="text-align:center;font-size:1.5rem;letter-spacing:0.3em;font-weight:700;">
+                        </div>
+                        <button type="submit" class="auth-btn auth-btn-primary">Verify Email</button>
+                    </form>
+                    
+                    <p class="auth-switch" style="margin-top:1rem;">
+                        Didn't get the code? 
+                        <button type="button" class="auth-link" id="resend-code-btn" onclick="window.app.handleResendCode()">Resend Code</button>
+                    </p>
+                    <p class="auth-switch">
+                        <button type="button" class="auth-link" onclick="window.app.showLogin()">← Back to Sign In</button>
+                    </p>
+                </div>
+
                 <button class="auth-close" onclick="window.app.closeAuth()">×</button>
             </div>
         </div>
