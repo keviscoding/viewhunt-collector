@@ -15,6 +15,9 @@ const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KE
 // Studio routes
 const studioRoutes = require('./studio/routes');
 
+// Auto channel collector (daily cron)
+const { scheduleDailyCollection, runDailyCollection } = require('./auto-collector');
+
 // Initialize Stripe only if secret key is available
 let stripe;
 if (process.env.STRIPE_SECRET_KEY) {
@@ -434,6 +437,9 @@ async function connectToMongoDB() {
         await db.collection('user_channel_actions').createIndex({ created_at: -1 });
         
         console.log('Connected to MongoDB successfully');
+
+        // Start auto-collector daily scheduler
+        scheduleDailyCollection(db);
     } catch (error) {
         console.error('MongoDB connection error:', error);
         process.exit(1);
@@ -1712,6 +1718,20 @@ app.get('/api/user/subscription-status', authenticateToken, async (req, res) => 
 // API Routes
 
 // Old pending endpoint removed - using user-specific endpoint below
+
+// Manually trigger auto-collector (admin only)
+app.post('/api/channels/auto-collect', authenticateToken, async (req, res) => {
+    if (req.user.email !== process.env.ADMIN_EMAIL) {
+        return res.status(403).json({ error: 'Admin only' });
+    }
+    res.json({ message: 'Auto-collector started. Check server logs for progress.' });
+    // Run in background — don't block the response
+    runDailyCollection(db).then(function(result) {
+        console.log('🤖 Manual auto-collect finished:', result);
+    }).catch(function(err) {
+        console.error('🤖 Manual auto-collect error:', err.message);
+    });
+});
 
 // Add new channels from scraper
 app.post('/api/channels/bulk', async (req, res) => {
