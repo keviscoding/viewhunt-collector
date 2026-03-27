@@ -49,6 +49,35 @@ function parseDuration(duration) {
     return (parseInt(match[1] || 0) * 3600) + (parseInt(match[2] || 0) * 60) + parseInt(match[3] || 0);
 }
 
+// Quality thresholds — matching the extension's filtering logic
+var MIN_AVERAGE_VIEWS = 10000;   // Channel must have 10K+ average views
+var MIN_VIDEO_VIEW_COUNT = 5000; // The representative video must have 5K+ views
+var MAX_SHORT_DURATION = 60;     // True Shorts are ≤ 60 seconds
+
+/**
+ * Check if a channel qualifies based on the extension's tiered filtering.
+ * Small channels (<100K subs) need ratio ≥ 1.0
+ * Medium channels (100K-1M subs) need ratio ≥ 0.5
+ * Large channels (1M+ subs) need ratio ≥ 0.1
+ */
+function isQualifiedChannel(channel) {
+    var avgViews = channel.average_views || 0;
+    var subs = channel.subscriber_count || 0;
+    var ratio = channel.view_to_sub_ratio || 0;
+    var videoViews = channel.view_count || 0;
+
+    // Must meet minimum average views
+    if (avgViews < MIN_AVERAGE_VIEWS) return false;
+
+    // Must have a decent representative video
+    if (videoViews < MIN_VIDEO_VIEW_COUNT) return false;
+
+    // Tiered ratio check
+    if (subs < 100000) return ratio >= 1.0;
+    if (subs < 1000000) return ratio >= 0.5;
+    return ratio >= 0.1;
+}
+
 /**
  * Search YouTube for Shorts videos by keyword, extract unique channels,
  * fetch their stats, and return channel docs ready for DB insertion.
@@ -115,7 +144,7 @@ async function searchAndCollect(keyword, apiKey, maxResults) {
                     videoStats[v.id] = {
                         viewCount: parseInt(v.statistics.viewCount || 0),
                         duration: dur,
-                        isShort: dur <= 180 // Under 3 min = likely a Short
+                        isShort: dur <= MAX_SHORT_DURATION // True Shorts: ≤ 60 seconds
                     };
                 }
             } catch (e) {
@@ -239,14 +268,19 @@ async function runDailyCollection(db) {
         }
     }
 
-    // Insert into database
+    // Quality filter — match the extension's standards
+    var qualified = allChannels.filter(isQualifiedChannel);
+    var filtered = allChannels.length - qualified.length;
+    console.log('🤖 Auto-collector: Quality filter — ' + qualified.length + ' qualified, ' + filtered + ' filtered out (need ' + (MIN_AVERAGE_VIEWS/1000) + 'K+ avg views + ratio check)');
+
+    // Insert qualified channels into database
     var inserted = 0;
     var skipped = 0;
-    for (var c = 0; c < allChannels.length; c++) {
+    for (var c = 0; c < qualified.length; c++) {
         try {
             await db.collection('channels').replaceOne(
-                { channel_url: allChannels[c].channel_url },
-                allChannels[c],
+                { channel_url: qualified[c].channel_url },
+                qualified[c],
                 { upsert: true }
             );
             inserted++;
@@ -256,9 +290,9 @@ async function runDailyCollection(db) {
     }
 
     var duration = Math.round((Date.now() - startTime) / 1000 / 60);
-    console.log('🤖 Auto-collector: DONE in ' + duration + 'min — ' + inserted + ' channels saved, ' + skipped + ' skipped, ' + keywordsDone + '/' + keywords.length + ' keywords processed');
+    console.log('🤖 Auto-collector: DONE in ' + duration + 'min — ' + allChannels.length + ' found, ' + qualified.length + ' qualified, ' + inserted + ' saved, ' + skipped + ' errors, ' + keywordsDone + '/' + keywords.length + ' keywords');
 
-    return { inserted: inserted, skipped: skipped, keywords: keywordsDone, duration: duration };
+    return { found: allChannels.length, qualified: qualified.length, inserted: inserted, skipped: skipped, keywords: keywordsDone, duration: duration };
 }
 
 /**
