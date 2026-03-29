@@ -148,6 +148,7 @@ class RankingAssembler {
                 '-i', concatPath,
                 '-vf', 'ass=' + escapedAss,
                 '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-threads', '1',
+                '-r', '30',
                 '-c:a', 'copy', '-y', subtitledPath
             ]);
 
@@ -265,6 +266,7 @@ class RankingAssembler {
             '-map', '[hookv]', '-map', '[aout]',
             '-t', targetDur.toFixed(2),
             '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26',
+            '-r', '30',
             '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
             '-shortest', '-f', 'mpegts', '-y', hookFinalPath
         ]));
@@ -572,11 +574,13 @@ class RankingAssembler {
         var filterStr = [
             'scale=1080:-2',
             'crop=1080:min(ih\\,1440):0:(ih-min(ih\\,1440))/2',
-            'pad=1080:1920:0:(oh-ih)/2:black'
+            'pad=1080:1920:0:(oh-ih)/2:black',
+            'fps=30'
         ].join(',');
         await this.ffmpeg([
             '-i', inputPath, '-vf', filterStr,
             '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-threads', '1',
+            '-r', '30',
             '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
             '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
             '-f', 'mpegts', '-y', outputPath
