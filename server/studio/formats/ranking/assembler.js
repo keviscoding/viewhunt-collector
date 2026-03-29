@@ -364,6 +364,8 @@ class RankingAssembler {
         var listXPct = lo.listXPercent || 5;
         var titleYPct = lo.titleYPercent || 6;
         var titleFontSize = lo.titleFontSize || 48;
+        var numSize = lo.numSize || 50;
+        var numActiveSize = numSize + 6;
         var palette = (options && options.colorPalette) || 'yellow';
         var checkered = !!(options && options.checkeredMode);
 
@@ -434,12 +436,12 @@ class RankingAssembler {
         // Title style — uses custom font size and Y position via MarginV
         ass += 'Style: Title,Arial,' + titleFontSize + ',&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,8,20,20,' + titleY + ',1\n';
 
-        // Number styles — use palette colors
-        ass += 'Style: NumDim,Arial,50,&H00888888,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
-        ass += 'Style: NumActive,Arial,56,' + colors.active + ',&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,7,0,0,0,1\n';
-        ass += 'Style: NumDone,Arial,50,' + colors.done + ',&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
+        // Number styles — use palette colors and dynamic size
+        ass += 'Style: NumDim,Arial,' + numSize + ',&H00888888,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
+        ass += 'Style: NumActive,Arial,' + numActiveSize + ',' + colors.active + ',&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,7,0,0,0,1\n';
+        ass += 'Style: NumDone,Arial,' + numSize + ',' + colors.done + ',&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
         // Checkered alternate style (white or palette color depending on row)
-        ass += 'Style: NumDoneAlt,Arial,50,' + whiteASS + ',&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
+        ass += 'Style: NumDoneAlt,Arial,' + numSize + ',' + whiteASS + ',&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
         ass += 'Style: Label,Arial,32,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,7,0,0,0,1\n';
 
         // Commentary subtitle style — font, Y position, and color from options

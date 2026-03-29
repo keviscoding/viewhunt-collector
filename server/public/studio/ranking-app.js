@@ -13,7 +13,7 @@
     var timelineDuration = 0;
 
     // Layout settings (sent to assembler)
-    var layout = { listX: 5, titleY: 6, titleSize: 48, lineSpacing: 65 };
+    var layout = { listX: 5, titleY: 6, titleSize: 48, lineSpacing: 65, numSize: 50 };
     var colorPalette = 'yellow';
     var checkeredMode = false;
     var subtitleColor = 'yellow';
@@ -390,10 +390,10 @@
             var valEl = document.getElementById(id + '-val');
             if (!el) return;
             el.value = layout[key];
-            valEl.textContent = (key === 'titleSize' || key === 'lineSpacing') ? layout[key] : layout[key] + '%';
+            valEl.textContent = (key === 'titleSize' || key === 'lineSpacing' || key === 'numSize') ? layout[key] : layout[key] + '%';
             el.addEventListener('input', function() {
                 layout[key] = parseInt(el.value);
-                valEl.textContent = (key === 'titleSize' || key === 'lineSpacing') ? layout[key] : layout[key] + '%';
+                valEl.textContent = (key === 'titleSize' || key === 'lineSpacing' || key === 'numSize') ? layout[key] : layout[key] + '%';
                 renderPreview('preview-dash');
             });
         }
@@ -401,6 +401,7 @@
         bind('pos-title-y', 'titleY');
         bind('pos-title-size', 'titleSize');
         bind('pos-line-spacing', 'lineSpacing');
+        bind('pos-num-size', 'numSize');
     }
 
     // ==================== LIVE PREVIEW ====================
@@ -476,7 +477,12 @@
                 }
             }
 
-            html += '<div class="pv-row"><div class="pv-num ' + numClass + '" style="' + numColor + '">' + num + '.</div><div class="pv-label ' + labelClass + '">' + escapeHtml(label) + '</div></div>';
+            // Scale numSize from ASS pixels (50 default) to preview rem
+            var numFontRem = (layout.numSize / 50) * 0.65;
+            var numActiveFontRem = (layout.numSize / 50) * 0.72;
+            var numFontStyle = (numClass === 'active') ? 'font-size:' + numActiveFontRem.toFixed(2) + 'rem;' : 'font-size:' + numFontRem.toFixed(2) + 'rem;';
+
+            html += '<div class="pv-row"><div class="pv-num ' + numClass + '" style="' + numColor + numFontStyle + '">' + num + '.</div><div class="pv-label ' + labelClass + '">' + escapeHtml(label) + '</div></div>';
         }
         html += '</div>';
 
@@ -531,7 +537,7 @@
                 body: JSON.stringify({
                     clips: trimmedClips,
                     title: { text: document.getElementById('title-text').value || '', highlightWord: document.getElementById('title-highlight').value || '' },
-                    layout: { listXPercent: layout.listX, titleYPercent: layout.titleY, titleFontSize: layout.titleSize, lineSpacing: layout.lineSpacing },
+                    layout: { listXPercent: layout.listX, titleYPercent: layout.titleY, titleFontSize: layout.titleSize, lineSpacing: layout.lineSpacing, numSize: layout.numSize },
                     commentary: enableCommentary,
                     voiceName: selectedVoice,
                     colorPalette: colorPalette,
@@ -617,7 +623,7 @@
         document.getElementById('btn-next-trim').addEventListener('click', startTrimming);
         document.getElementById('btn-assemble').addEventListener('click', assembleVideo);
         document.getElementById('btn-new').addEventListener('click', function() {
-            clips = []; currentTrimIndex = 0; layout = { listX: 5, titleY: 6, titleSize: 48, lineSpacing: 65 };
+            clips = []; currentTrimIndex = 0; layout = { listX: 5, titleY: 6, titleSize: 48, lineSpacing: 65, numSize: 50 };
             colorPalette = 'yellow'; checkeredMode = false; subtitleColor = 'yellow';
             renderClipList(); updateNextButton();
             document.getElementById('title-text').value = ''; document.getElementById('title-highlight').value = '';
