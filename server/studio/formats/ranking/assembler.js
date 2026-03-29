@@ -124,9 +124,20 @@ class RankingAssembler {
             await this.ffmpeg(['-f', 'concat', '-safe', '0', '-i', concatList, '-c', 'copy', '-y', concatPath]);
 
             // Step 3: Generate ASS overlay (offsets already include hook duration)
+            // Probe actual TTS audio durations for accurate subtitle sync
             console.log('  [Step 3] Generating ASS overlay...');
+            var commentaryDurations = {};
+            for (var cd = 0; cd < commentary.length; cd++) {
+                var cItem = commentary[cd];
+                if (cItem.audioPath && fs.existsSync(cItem.audioPath)) {
+                    try {
+                        var ttsDur = await this.getDuration(cItem.audioPath);
+                        if (ttsDur > 0) commentaryDurations[cItem.clipIndex] = ttsDur;
+                    } catch (e) { /* skip */ }
+                }
+            }
             var assPath = path.join(jobDir, 'overlay.ass');
-            this.generateASS(assPath, clips, durations, title, options, hookDuration);
+            this.generateASS(assPath, clips, durations, title, options, hookDuration, commentaryDurations);
 
             // Step 4: Burn subtitles
             console.log('  [Step 4] Burning subtitles...');
@@ -345,8 +356,9 @@ class RankingAssembler {
      *   - Position controlled by layout params from frontend
      *   - Commentary subtitles: one word at a time, configurable color
      */
-    generateASS(outputPath, clips, durations, title, options, hookDuration) {
+    generateASS(outputPath, clips, durations, title, options, hookDuration, commentaryDurations) {
         hookDuration = hookDuration || 0;
+        commentaryDurations = commentaryDurations || {};
         var totalClips = clips.length;
         var lo = (options && options.layout) || {};
         var listXPct = lo.listXPercent || 5;
@@ -517,7 +529,7 @@ class RankingAssembler {
             }
         }
 
-        // Commentary subtitles — one word at a time, spread across clip duration
+        // Commentary subtitles — one word at a time, timed to actual TTS audio duration
         var commentaryLines = (options && options.commentaryLines) || [];
         for (var cl = 0; cl < commentaryLines.length; cl++) {
             var cLine = commentaryLines[cl];
@@ -527,7 +539,8 @@ class RankingAssembler {
             var cInfo = numberInfo[clips[cLine.clipIndex] && clips[cLine.clipIndex].number];
             if (!cInfo) continue;
             var cStart = cInfo.offset;
-            var cLineDur = Math.min(cInfo.duration, 2.5);
+            // Use actual TTS audio duration if available, otherwise fall back to min(clipDur, 2.5)
+            var cLineDur = commentaryDurations[cLine.clipIndex] || Math.min(cInfo.duration, 2.5);
 
             // Split into individual words
             var words = cLine.line.replace(/\n/g, ' ').trim().split(/\s+/);

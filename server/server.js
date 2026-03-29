@@ -217,6 +217,18 @@ app.get('/studio/transcript', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'studio', 'transcript.html'));
 });
 
+// Serve generated video files explicitly (fallback if static middleware misses them)
+app.get('/studio/generated/final/:filename', (req, res) => {
+    var filePath = path.join(__dirname, 'public', 'studio', 'generated', 'final', req.params.filename);
+    if (require('fs').existsSync(filePath)) {
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Content-Disposition', 'inline; filename="' + req.params.filename + '"');
+        res.sendFile(filePath);
+    } else {
+        res.status(404).json({ error: 'Video not found. It may have been cleaned up — please re-assemble.' });
+    }
+});
+
 // Subscription success page
 app.get('/subscription-success', async (req, res) => {
     try {
