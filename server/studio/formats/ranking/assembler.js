@@ -397,7 +397,7 @@ class RankingAssembler {
         var sortedNumbers = allNumbers.slice().sort(function(a, b) { return a - b; });
 
         // Calculate vertical positions — centered in content area
-        var rowHeight = 65;
+        var rowHeight = lo.lineSpacing || 65;
         var listHeight = sortedNumbers.length * rowHeight;
         var listStartY = Math.max(400, Math.floor(960 - listHeight / 2));
 

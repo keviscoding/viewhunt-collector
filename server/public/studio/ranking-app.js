@@ -13,7 +13,7 @@
     var timelineDuration = 0;
 
     // Layout settings (sent to assembler)
-    var layout = { listX: 5, titleY: 6, titleSize: 48 };
+    var layout = { listX: 5, titleY: 6, titleSize: 48, lineSpacing: 65 };
     var colorPalette = 'yellow';
     var checkeredMode = false;
     var subtitleColor = 'yellow';
@@ -390,16 +390,17 @@
             var valEl = document.getElementById(id + '-val');
             if (!el) return;
             el.value = layout[key];
-            valEl.textContent = (key === 'titleSize') ? layout[key] : layout[key] + '%';
+            valEl.textContent = (key === 'titleSize' || key === 'lineSpacing') ? layout[key] : layout[key] + '%';
             el.addEventListener('input', function() {
                 layout[key] = parseInt(el.value);
-                valEl.textContent = (key === 'titleSize') ? layout[key] : layout[key] + '%';
+                valEl.textContent = (key === 'titleSize' || key === 'lineSpacing') ? layout[key] : layout[key] + '%';
                 renderPreview('preview-dash');
             });
         }
         bind('pos-list-x', 'listX');
         bind('pos-title-y', 'titleY');
         bind('pos-title-size', 'titleSize');
+        bind('pos-line-spacing', 'lineSpacing');
     }
 
     // ==================== LIVE PREVIEW ====================
@@ -442,7 +443,9 @@
         }
 
         var listXPct = layout.listX;
-        html += '<div class="pv-list" style="left:' + listXPct + '%">';
+        // Scale lineSpacing from ASS pixels (65 default at 1920h) to preview gap
+        var gapPx = Math.round((layout.lineSpacing / 65) * 3);
+        html += '<div class="pv-list" style="left:' + listXPct + '%;gap:' + gapPx + 'px">';
 
         for (var row = 0; row < totalClips; row++) {
             var num = row + 1;
@@ -528,7 +531,7 @@
                 body: JSON.stringify({
                     clips: trimmedClips,
                     title: { text: document.getElementById('title-text').value || '', highlightWord: document.getElementById('title-highlight').value || '' },
-                    layout: { listXPercent: layout.listX, titleYPercent: layout.titleY, titleFontSize: layout.titleSize },
+                    layout: { listXPercent: layout.listX, titleYPercent: layout.titleY, titleFontSize: layout.titleSize, lineSpacing: layout.lineSpacing },
                     commentary: enableCommentary,
                     voiceName: selectedVoice,
                     colorPalette: colorPalette,
@@ -614,7 +617,7 @@
         document.getElementById('btn-next-trim').addEventListener('click', startTrimming);
         document.getElementById('btn-assemble').addEventListener('click', assembleVideo);
         document.getElementById('btn-new').addEventListener('click', function() {
-            clips = []; currentTrimIndex = 0; layout = { listX: 5, titleY: 6, titleSize: 48 };
+            clips = []; currentTrimIndex = 0; layout = { listX: 5, titleY: 6, titleSize: 48, lineSpacing: 65 };
             colorPalette = 'yellow'; checkeredMode = false; subtitleColor = 'yellow';
             renderClipList(); updateNextButton();
             document.getElementById('title-text').value = ''; document.getElementById('title-highlight').value = '';
