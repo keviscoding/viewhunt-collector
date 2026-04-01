@@ -159,6 +159,11 @@ app.get('/free/', (req, res) => {
     res.redirect('/');
 });
 
+// Affiliate-style vanity URL — redirects to landing page
+app.get('/r/:code', (req, res) => {
+    res.redirect('/');
+});
+
 // Pricing page route
 app.get('/pricing', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'pricing.html'));
