@@ -1942,15 +1942,6 @@ router.post('/seedance2/generate', requireAuth, studioGenerateLimiter, async (re
         if ([4, 8, 12].indexOf(duration) === -1) duration = 8;
         var creditCost = SEEDANCE2_CREDITS[duration] || 20;
 
-        // Convert relative upload paths to full URLs
-        var protocol = req.protocol;
-        var host = req.get('host');
-        function resolveUrl(u) {
-            if (!u) return null;
-            if (u.startsWith('/')) return protocol + '://' + host + u;
-            return u;
-        }
-
         // Credit check
         var userId = String(req.user.userId);
         var bal = await credits.getBalance(userId);
@@ -1962,11 +1953,11 @@ router.post('/seedance2/generate', requireAuth, studioGenerateLimiter, async (re
         var gen = getSeedance2Generator();
         var result = await gen.generate({
             prompt: prompt,
-            firstFrameUrl: resolveUrl(firstFrameUrl) || null,
-            lastFrameUrl: resolveUrl(lastFrameUrl) || null,
-            referenceImageUrls: (referenceImageUrls || []).map(resolveUrl).filter(Boolean),
-            referenceVideoUrls: (referenceVideoUrls || []).map(resolveUrl).filter(Boolean),
-            referenceAudioUrls: (referenceAudioUrls || []).map(resolveUrl).filter(Boolean),
+            firstFrameUrl: firstFrameUrl || null,
+            lastFrameUrl: lastFrameUrl || null,
+            referenceImageUrls: (referenceImageUrls || []).filter(Boolean),
+            referenceVideoUrls: (referenceVideoUrls || []).filter(Boolean),
+            referenceAudioUrls: (referenceAudioUrls || []).filter(Boolean),
             duration: duration,
             aspectRatio: aspectRatio || '9:16',
             generateAudio: generateAudio !== false
