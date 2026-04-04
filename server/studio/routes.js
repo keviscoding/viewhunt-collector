@@ -1888,6 +1888,50 @@ router.delete('/tasks/:id', requireAuth, async (req, res) => {
 });
 
 // ============================================================
+// SEEDANCE 2.0 ROUTES
+// ============================================================
+
+var Seedance2Generator = require('./formats/seedance2/generator');
+var _seedance2Gen = null;
+function getSeedance2Generator() {
+    if (!_seedance2Gen) _seedance2Gen = new Seedance2Generator();
+    return _seedance2Gen;
+}
+
+// Generate video with Seedance 2.0
+router.post('/seedance2/generate', requireAuth, studioGenerateLimiter, async (req, res) => {
+    try {
+        var { prompt, firstFrameUrl, lastFrameUrl, duration, aspectRatio, generateAudio } = req.body;
+        if (!prompt || prompt.length < 3) return res.status(400).json({ error: 'Prompt must be at least 3 characters' });
+
+        // Credit check: video_generation = 5 credits
+        var userId = String(req.user.userId);
+        var check = await credits.checkCredits(userId, 'video_generation', 1);
+        if (!check.allowed) {
+            return res.status(402).json({ error: 'Not enough credits', ...check });
+        }
+
+        var gen = getSeedance2Generator();
+        var result = await gen.generate({
+            prompt: prompt,
+            firstFrameUrl: firstFrameUrl || null,
+            lastFrameUrl: lastFrameUrl || null,
+            duration: duration || 8,
+            aspectRatio: aspectRatio || '9:16',
+            generateAudio: generateAudio !== false
+        });
+
+        // Charge on success
+        await credits.deductCredits(userId, 'video_generation', 1, 'Seedance 2.0 video (' + (duration || 8) + 's)');
+
+        res.json({ success: true, videoUrl: result.videoUrl, taskId: result.taskId });
+    } catch (error) {
+        console.error('Seedance 2 generate error:', error.message);
+        res.status(500).json({ error: 'Generation failed — no credits deducted. ' + error.message });
+    }
+});
+
+// ============================================================
 // TRANSCRIPT EXTRACTOR ROUTES
 // ============================================================
 

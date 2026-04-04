@@ -222,6 +222,11 @@ app.get('/studio/transcript', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'studio', 'transcript.html'));
 });
 
+// Studio Seedance 2.0 page route
+app.get('/studio/seedance', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'studio', 'seedance.html'));
+});
+
 // Serve generated video files explicitly (fallback if static middleware misses them)
 app.get('/studio/generated/final/:filename', (req, res) => {
     var filePath = path.join(__dirname, 'public', 'studio', 'generated', 'final', req.params.filename);

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>if(!localStorage.getItem("viewhunt_token"))window.location.replace("/");</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seedance 2.0 — ViewHunt Studio</title>
+    <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+    <link rel="icon" type="image/png" href="/images/viewhunt_logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+        :root{--bg:#0e0e12;--surface:#18181f;--surface-2:#1f1f28;--surface-3:#262631;--border:#2a2a36;--border-hover:#3a3a4a;--text:#e8e8ed;--text-muted:#8b8b9e;--text-dim:#5c5c6e;--accent:#7c6aef;--accent-hover:#6b58e0;--green:#34d399;--red:#f87171;--amber:#fbbf24}
+        body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+        .app{max-width:640px;margin:0 auto;padding:1.5rem 1.25rem 4rem}
+        .header{display:flex;align-items:center;gap:0.75rem;margin-bottom:2rem}
+        .back-btn{color:var(--text-muted);text-decoration:none;font-size:0.85rem;padding:0.4rem 0.75rem;border-radius:6px;border:1px solid var(--border);transition:all 0.15s}
+        .back-btn:hover{color:var(--text);border-color:var(--border-hover);background:var(--surface)}
+        .logo{font-size:1.1rem;font-weight:700;letter-spacing:-0.02em}.logo span{color:var(--accent)}
+        h1{font-size:1.4rem;font-weight:800;letter-spacing:-0.02em;margin-bottom:0.3rem}
+        .subtitle{color:var(--text-muted);font-size:0.88rem;line-height:1.6;margin-bottom:1.5rem}
+        .section{margin-bottom:1.25rem}
+        .section-title{font-size:0.85rem;font-weight:700;margin-bottom:0.5rem}
+        textarea,input[type=text]{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit;font-size:0.88rem;padding:0.75rem 1rem;outline:none;resize:vertical}
+        textarea:focus,input:focus{border-color:var(--accent)}
+        .row{display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center}
+        .row label{font-size:0.82rem;color:var(--text-muted);white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="app">
+    <header class="header">
+        <a href="/studio" class="back-btn">← Studio</a>
+        <div class="logo">View<span>Hunt</span></div>
+    </header>
+    <h1>🎬 Seedance 2.0</h1>
+    <p class="subtitle">Generate short videos from text or an image using Bytedance Seedance 2.0 at 480p.</p>
+
+    <div class="section">
+        <div class="section-title">✍️ Prompt</div>
+        <textarea id="prompt" rows="4" placeholder="Describe the video you want to generate..."></textarea>
+    </div>
+
+    <div class="section">
+        <div class="section-title">🖼️ First Frame Image (optional)</div>
+        <input type="text" id="first-frame" placeholder="Paste image URL (or leave empty for text-to-video)">
+    </div>
+
+    <div class="section">
+        <div class="section-title">🖼️ Last Frame Image (optional)</div>
+        <input type="text" id="last-frame" placeholder="Paste image URL for end frame (optional)">
+    </div>
+
+</div>
+
+<div class="app" style="padding-top:0;">
+    <div class="section">
+        <div class="row" style="gap:1.25rem;">
+            <div>
+                <label>Duration</label><br>
+                <select id="duration" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;padding:0.4rem 0.6rem;outline:none;cursor:pointer;margin-top:0.25rem;">
+                    <option value="4">4 seconds</option>
+                    <option value="8" selected>8 seconds</option>
+                    <option value="12">12 seconds</option>
+                </select>
+            </div>
+            <div>
+                <label>Aspect Ratio</label><br>
+                <select id="aspect-ratio" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;padding:0.4rem 0.6rem;outline:none;cursor:pointer;margin-top:0.25rem;">
+                    <option value="9:16" selected>9:16 (Shorts)</option>
+                    <option value="16:9">16:9 (Landscape)</option>
+                    <option value="1:1">1:1 (Square)</option>
+                    <option value="4:3">4:3</option>
+                    <option value="3:4">3:4</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:flex;align-items:center;gap:0.4rem;margin-top:0.25rem;cursor:pointer;">
+                    <input type="checkbox" id="audio-toggle" checked style="accent-color:var(--accent);"> Audio
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <button id="btn-generate" onclick="generate()" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.7rem 1.25rem;border-radius:8px;font-weight:700;font-size:0.92rem;cursor:pointer;border:none;font-family:inherit;background:var(--accent);color:white;transition:all 0.15s;margin-bottom:1.5rem;">Generate Video · 5 💎</button>
+
+    <!-- Progress -->
+    <div id="progress" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.25rem;margin-bottom:1.5rem;text-align:center;">
+        <div id="progress-text" style="font-size:0.85rem;color:var(--text-muted);"><span style="display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-right:0.4rem;vertical-align:middle;"></span> Generating...</div>
+    </div>
+
+    <!-- Result -->
+    <div id="result" style="display:none;background:var(--surface);border:1px solid var(--green);border-radius:14px;padding:1.25rem;text-align:center;">
+        <div style="font-size:0.88rem;font-weight:700;color:var(--green);margin-bottom:0.75rem;">✅ Video Ready</div>
+        <video id="result-video" controls muted loop style="width:100%;max-width:360px;border-radius:10px;margin:0 auto;display:block;"></video>
+        <a id="result-download" download="seedance2-video.mp4" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;padding:0.55rem 1.5rem;border-radius:8px;font-weight:600;font-size:0.85rem;background:var(--green);color:#0e0e12;text-decoration:none;margin-top:0.75rem;">📥 Download</a>
+    </div>
+
+    <!-- History -->
+    <div id="history-section" style="display:none;margin-top:1.5rem;">
+        <div class="section-title">📋 Recent Generations</div>
+        <div id="history-list"></div>
+    </div>
+</div>
+
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+<script src="/studio/seedance-app.js?v=20260404a"></script>
+</body>
+</html>
