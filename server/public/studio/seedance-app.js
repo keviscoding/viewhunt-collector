@@ -39,15 +39,32 @@
             var url = await uploadFile(file);
             if (!url) continue;
 
+            var item = { url: url, name: file.name, type: file.type, duration: 0 };
+
+            // Get video duration from browser
+            if (file.type.startsWith('video/')) {
+                item.duration = await getVideoDuration(file);
+            }
+
             if (multi) {
                 var maxMap = { refImages: 9, refVideos: 3, refAudio: 3 };
                 if (uploads[slot].length >= (maxMap[slot] || 9)) { alert('Maximum files reached for this slot.'); break; }
-                uploads[slot].push({ url: url, name: file.name, type: file.type });
+                uploads[slot].push(item);
             } else {
-                uploads[slot] = { url: url, name: file.name, type: file.type };
+                uploads[slot] = item;
             }
         }
         renderDropZone(slot);
+    }
+
+    function getVideoDuration(file) {
+        return new Promise(function(resolve) {
+            var video = document.createElement('video');
+            video.preload = 'metadata';
+            video.onloadedmetadata = function() { URL.revokeObjectURL(video.src); resolve(video.duration || 0); };
+            video.onerror = function() { resolve(0); };
+            video.src = URL.createObjectURL(file);
+        });
     }
 
     async function uploadFile(file) {
@@ -132,6 +149,18 @@
     window.generate = async function() {
         var prompt = document.getElementById('prompt').value.trim();
         if (!prompt || prompt.length < 3) return alert('Please enter a prompt (at least 3 characters).');
+
+        // Validate reference video durations (max 15s total, each 2-15s)
+        if (uploads.refVideos.length > 0) {
+            var totalRefDur = 0;
+            for (var rv = 0; rv < uploads.refVideos.length; rv++) {
+                var dur = uploads.refVideos[rv].duration || 0;
+                if (dur > 15) return alert('Reference video "' + uploads.refVideos[rv].name + '" is ' + Math.round(dur) + 's — max is 15s per video.');
+                if (dur > 0 && dur < 2) return alert('Reference video "' + uploads.refVideos[rv].name + '" is too short — minimum is 2s.');
+                totalRefDur += dur;
+            }
+            if (totalRefDur > 15) return alert('Total reference video duration is ' + Math.round(totalRefDur) + 's — max allowed is 15s combined. Remove or trim some videos.');
+        }
 
         var duration = parseInt(document.getElementById('duration').value) || 8;
         var aspectRatio = document.getElementById('aspect-ratio').value || '9:16';
