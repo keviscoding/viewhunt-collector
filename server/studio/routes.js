@@ -1934,6 +1934,9 @@ router.post('/seedance2/upload', requireAuth, seedanceUpload.single('file'), fun
 var SEEDANCE2_CREDITS = { 4: 10, 8: 20, 12: 29 };
 
 router.post('/seedance2/generate', requireAuth, studioGenerateLimiter, async (req, res) => {
+    // Extend timeout — video resize + upload + generation + polling can take several minutes
+    req.setTimeout(660000); // 11 min
+    res.setTimeout(660000);
     try {
         var { prompt, firstFrameUrl, lastFrameUrl, referenceImageUrls, referenceVideoUrls, referenceAudioUrls, duration, aspectRatio, generateAudio } = req.body;
         if (!prompt || prompt.length < 3) return res.status(400).json({ error: 'Prompt must be at least 3 characters' });

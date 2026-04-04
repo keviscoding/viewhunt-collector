@@ -76,7 +76,12 @@
                 headers: { 'Authorization': 'Bearer ' + token },
                 body: formData
             });
-            if (!res.ok) { var err = await res.json().catch(function() { return {}; }); alert(err.error || 'Upload failed'); return null; }
+            if (!res.ok) {
+                var errText = await res.text();
+                var err; try { err = JSON.parse(errText); } catch (e) { err = { error: 'Upload failed (server error)' }; }
+                alert(err.error || 'Upload failed');
+                return null;
+            }
             var data = await res.json();
             return data.relativePath || data.url;
         } catch (e) { alert('Upload error: ' + e.message); return null; }
@@ -189,9 +194,15 @@
             var res = await fetch('/api/studio/seedance2/generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                body: JSON.stringify(body)
+                body: JSON.stringify(body),
+                signal: AbortSignal.timeout(600000) // 10 min timeout
             });
-            var data = await res.json();
+
+            var text = await res.text();
+            var data;
+            try { data = JSON.parse(text); } catch (parseErr) {
+                throw new Error('Server returned an unexpected response. The generation may still be processing — check back in a minute.');
+            }
             if (!res.ok) throw new Error(data.error || 'Generation failed');
 
             document.getElementById('progress').style.display = 'none';
