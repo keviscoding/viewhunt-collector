@@ -10,6 +10,11 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const FormData = require('form-data');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
+const ffmpegPath = require('ffmpeg-static');
+const ffprobePath = require('ffprobe-static').path;
 
 class Seedance2Generator {
     constructor() {
@@ -19,11 +24,50 @@ class Seedance2Generator {
     }
 
     /**
+     * Resize a video so width*height ≤ maxPixels (927408 for Seedance 2 ref videos).
+     * Returns path to resized file (or original if already small enough).
+     */
+    async resizeVideoIfNeeded(filePath, maxPixels) {
+        maxPixels = maxPixels || 927408;
+        try {
+            var probe = await execFileAsync(ffprobePath, [
+                '-v', 'quiet', '-select_streams', 'v:0',
+                '-show_entries', 'stream=width,height',
+                '-of', 'json', filePath
+            ]);
+            var info = JSON.parse(probe.stdout);
+            var w = info.streams?.[0]?.width || 0;
+            var h = info.streams?.[0]?.height || 0;
+            var pixels = w * h;
+
+            if (pixels <= maxPixels || pixels === 0) return filePath; // already fine
+
+            // Calculate scale factor to fit within maxPixels
+            var scale = Math.sqrt(maxPixels / pixels);
+            var newW = Math.floor(w * scale / 2) * 2; // ensure even
+            var newH = Math.floor(h * scale / 2) * 2;
+            console.log('  Resizing ref video: ' + w + 'x' + h + ' (' + pixels + 'px) → ' + newW + 'x' + newH + ' (' + (newW * newH) + 'px)');
+
+            var resizedPath = filePath.replace(/(\.\w+)$/, '-resized$1');
+            await execFileAsync(ffmpegPath, [
+                '-i', filePath,
+                '-vf', 'scale=' + newW + ':' + newH,
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+                '-c:a', 'copy', '-threads', '1', '-y', resizedPath
+            ], { timeout: 120000 });
+
+            return resizedPath;
+        } catch (err) {
+            console.warn('  Video resize check failed:', err.message);
+            return filePath; // fallback to original
+        }
+    }
+
+    /**
      * Upload a local file to Kie.ai's file hosting.
      * Returns a publicly accessible URL that Kie.ai can use.
      */
     async uploadAsset(localUrl) {
-        // Extract filename from relative path like /studio/uploads/seedance/sd2-xxx.mp4
         var filename = localUrl.split('/').pop();
         var filePath = path.join(this.uploadDir, filename);
 
@@ -32,11 +76,19 @@ class Seedance2Generator {
             return localUrl;
         }
 
-        console.log('  Uploading to Kie.ai file hosting: ' + filename);
+        // Resize video if it exceeds Seedance 2 pixel limit
+        var ext = path.extname(filename).toLowerCase();
+        var isVideo = ['.mp4', '.mov', '.webm', '.avi'].indexOf(ext) >= 0;
+        var uploadPath = filePath;
+        if (isVideo) {
+            uploadPath = await this.resizeVideoIfNeeded(filePath, 927408);
+        }
+
+        console.log('  Uploading to Kie.ai file hosting: ' + path.basename(uploadPath));
         var form = new FormData();
-        form.append('file', fs.createReadStream(filePath));
+        form.append('file', fs.createReadStream(uploadPath));
         form.append('uploadPath', 'seedance-uploads');
-        form.append('fileName', filename);
+        form.append('fileName', path.basename(uploadPath));
 
         try {
             var res = await axios.post(
