@@ -116,6 +116,18 @@
         return div;
     }
 
+    // ========== PRICING ==========
+    var pricingMap = { 4: 10, 8: 20, 12: 29 };
+
+    function updateCostDisplay() {
+        var dur = parseInt(document.getElementById('duration').value) || 8;
+        var cost = pricingMap[dur] || 20;
+        document.getElementById('btn-generate').textContent = 'Generate Video · ' + cost + ' 💎';
+    }
+
+    document.getElementById('duration').addEventListener('change', updateCostDisplay);
+    updateCostDisplay();
+
     // ========== GENERATE ==========
     window.generate = async function() {
         var prompt = document.getElementById('prompt').value.trim();
@@ -167,7 +179,7 @@
             alert('Error: ' + e.message);
         } finally {
             btn.disabled = false;
-            btn.innerHTML = 'Generate Video · 5 💎';
+            btn.innerHTML = 'Generate Video · ' + (pricingMap[parseInt(document.getElementById('duration').value)] || 20) + ' 💎';
         }
     };
 

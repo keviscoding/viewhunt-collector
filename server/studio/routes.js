@@ -1929,11 +1929,18 @@ router.post('/seedance2/upload', requireAuth, seedanceUpload.single('file'), fun
     }
 });
 
-// Generate video with Seedance 2.0
+// Generate video with Seedance 2.0 — duration-based pricing
+// 480p no-video-input: $0.095/s → charge ~60-65% margin
+var SEEDANCE2_CREDITS = { 4: 10, 8: 20, 12: 29 };
+
 router.post('/seedance2/generate', requireAuth, studioGenerateLimiter, async (req, res) => {
     try {
         var { prompt, firstFrameUrl, lastFrameUrl, referenceImageUrls, referenceVideoUrls, referenceAudioUrls, duration, aspectRatio, generateAudio } = req.body;
         if (!prompt || prompt.length < 3) return res.status(400).json({ error: 'Prompt must be at least 3 characters' });
+
+        duration = parseInt(duration) || 8;
+        if ([4, 8, 12].indexOf(duration) === -1) duration = 8;
+        var creditCost = SEEDANCE2_CREDITS[duration] || 20;
 
         // Convert relative upload paths to full URLs
         var protocol = req.protocol;
@@ -1944,11 +1951,12 @@ router.post('/seedance2/generate', requireAuth, studioGenerateLimiter, async (re
             return u;
         }
 
-        // Credit check: video_generation = 5 credits
+        // Credit check
         var userId = String(req.user.userId);
-        var check = await credits.checkCredits(userId, 'video_generation', 1);
-        if (!check.allowed) {
-            return res.status(402).json({ error: 'Not enough credits', ...check });
+        var bal = await credits.getBalance(userId);
+        var totalAvailable = (bal.balance || 0) + (bal.topUpBalance || 0);
+        if (totalAvailable < creditCost) {
+            return res.status(402).json({ error: 'Not enough credits. Need ' + creditCost + '💎, have ' + totalAvailable + '💎', balance: bal.balance, topUpBalance: bal.topUpBalance || 0, needed: creditCost });
         }
 
         var gen = getSeedance2Generator();
@@ -1959,19 +1967,24 @@ router.post('/seedance2/generate', requireAuth, studioGenerateLimiter, async (re
             referenceImageUrls: (referenceImageUrls || []).map(resolveUrl).filter(Boolean),
             referenceVideoUrls: (referenceVideoUrls || []).map(resolveUrl).filter(Boolean),
             referenceAudioUrls: (referenceAudioUrls || []).map(resolveUrl).filter(Boolean),
-            duration: duration || 8,
+            duration: duration,
             aspectRatio: aspectRatio || '9:16',
             generateAudio: generateAudio !== false
         });
 
-        // Charge on success
-        await credits.deductCredits(userId, 'video_generation', 1, 'Seedance 2.0 video (' + (duration || 8) + 's)');
+        // Charge on success — use raw deduction since this isn't a standard COSTS action
+        await credits.deductCredits(userId, 'video_generation', creditCost / credits.COSTS.video_generation, 'Seedance 2.0 ' + duration + 's video (' + creditCost + '💎)');
 
-        res.json({ success: true, videoUrl: result.videoUrl, taskId: result.taskId });
+        res.json({ success: true, videoUrl: result.videoUrl, taskId: result.taskId, creditsCharged: creditCost });
     } catch (error) {
         console.error('Seedance 2 generate error:', error.message);
         res.status(500).json({ error: 'Generation failed — no credits deducted. ' + error.message });
     }
+});
+
+// Seedance 2 pricing info
+router.get('/seedance2/pricing', requireAuth, function(req, res) {
+    res.json({ pricing: SEEDANCE2_CREDITS });
 });
 
 // ============================================================
