@@ -1898,11 +1898,51 @@ function getSeedance2Generator() {
     return _seedance2Gen;
 }
 
+// Seedance 2 media upload (images, videos, audio)
+var seedanceUploadDir = path.join(__dirname, '../public/studio/uploads/seedance');
+if (!fs.existsSync(seedanceUploadDir)) fs.mkdirSync(seedanceUploadDir, { recursive: true });
+var seedanceUpload = multer({
+    storage: multer.diskStorage({
+        destination: seedanceUploadDir,
+        filename: function(req, file, cb) {
+            var ext = path.extname(file.originalname) || '.bin';
+            cb(null, 'sd2-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + ext);
+        }
+    }),
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB (video limit)
+    fileFilter: function(req, file, cb) {
+        if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/')) cb(null, true);
+        else cb(new Error('Only image, video, or audio files allowed'));
+    }
+});
+
+router.post('/seedance2/upload', requireAuth, seedanceUpload.single('file'), function(req, res) {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No file provided' });
+        var protocol = req.protocol;
+        var host = req.get('host');
+        var relativePath = '/studio/uploads/seedance/' + req.file.filename;
+        var fullUrl = protocol + '://' + host + relativePath;
+        res.json({ success: true, url: fullUrl, relativePath: relativePath, filename: req.file.filename, type: req.file.mimetype.split('/')[0] });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Generate video with Seedance 2.0
 router.post('/seedance2/generate', requireAuth, studioGenerateLimiter, async (req, res) => {
     try {
-        var { prompt, firstFrameUrl, lastFrameUrl, duration, aspectRatio, generateAudio } = req.body;
+        var { prompt, firstFrameUrl, lastFrameUrl, referenceImageUrls, referenceVideoUrls, referenceAudioUrls, duration, aspectRatio, generateAudio } = req.body;
         if (!prompt || prompt.length < 3) return res.status(400).json({ error: 'Prompt must be at least 3 characters' });
+
+        // Convert relative upload paths to full URLs
+        var protocol = req.protocol;
+        var host = req.get('host');
+        function resolveUrl(u) {
+            if (!u) return null;
+            if (u.startsWith('/')) return protocol + '://' + host + u;
+            return u;
+        }
 
         // Credit check: video_generation = 5 credits
         var userId = String(req.user.userId);
@@ -1914,8 +1954,11 @@ router.post('/seedance2/generate', requireAuth, studioGenerateLimiter, async (re
         var gen = getSeedance2Generator();
         var result = await gen.generate({
             prompt: prompt,
-            firstFrameUrl: firstFrameUrl || null,
-            lastFrameUrl: lastFrameUrl || null,
+            firstFrameUrl: resolveUrl(firstFrameUrl) || null,
+            lastFrameUrl: resolveUrl(lastFrameUrl) || null,
+            referenceImageUrls: (referenceImageUrls || []).map(resolveUrl).filter(Boolean),
+            referenceVideoUrls: (referenceVideoUrls || []).map(resolveUrl).filter(Boolean),
+            referenceAudioUrls: (referenceAudioUrls || []).map(resolveUrl).filter(Boolean),
             duration: duration || 8,
             aspectRatio: aspectRatio || '9:16',
             generateAudio: generateAudio !== false

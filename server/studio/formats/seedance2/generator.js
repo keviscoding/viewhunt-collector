@@ -18,15 +18,21 @@ class Seedance2Generator {
         var prompt = options.prompt;
         var firstFrameUrl = options.firstFrameUrl || null;
         var lastFrameUrl = options.lastFrameUrl || null;
+        var referenceImageUrls = options.referenceImageUrls || [];
+        var referenceVideoUrls = options.referenceVideoUrls || [];
+        var referenceAudioUrls = options.referenceAudioUrls || [];
         var duration = options.duration || 8;
         var aspectRatio = options.aspectRatio || '9:16';
         var generateAudio = options.generateAudio !== false;
 
-        // Validate duration
+        // Validate duration — Seedance 2 supports 4-15s but we offer 4, 8, 12
         if ([4, 8, 12].indexOf(duration) === -1) duration = 8;
 
         console.log('🎬 Seedance 2.0: Generating ' + duration + 's video at 480p (' + aspectRatio + ')');
         if (firstFrameUrl) console.log('  First frame: ' + firstFrameUrl.substring(0, 80) + '...');
+        if (referenceImageUrls.length) console.log('  Reference images: ' + referenceImageUrls.length);
+        if (referenceVideoUrls.length) console.log('  Reference videos: ' + referenceVideoUrls.length);
+        if (referenceAudioUrls.length) console.log('  Reference audio: ' + referenceAudioUrls.length);
 
         var input = {
             prompt: prompt,
@@ -39,6 +45,9 @@ class Seedance2Generator {
 
         if (firstFrameUrl) input.first_frame_url = firstFrameUrl;
         if (lastFrameUrl) input.last_frame_url = lastFrameUrl;
+        if (referenceImageUrls.length > 0) input.reference_image_urls = referenceImageUrls.slice(0, 9);
+        if (referenceVideoUrls.length > 0) input.reference_video_urls = referenceVideoUrls.slice(0, 3);
+        if (referenceAudioUrls.length > 0) input.reference_audio_urls = referenceAudioUrls.slice(0, 3);
 
         // Create task
         var createResponse = await axios.post(

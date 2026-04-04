@@ -22,11 +22,22 @@
         .subtitle{color:var(--text-muted);font-size:0.88rem;line-height:1.6;margin-bottom:1.5rem}
         .section{margin-bottom:1.25rem}
         .section-title{font-size:0.85rem;font-weight:700;margin-bottom:0.5rem}
-        textarea,input[type=text]{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit;font-size:0.88rem;padding:0.75rem 1rem;outline:none;resize:vertical}
-        textarea:focus,input:focus{border-color:var(--accent)}
-        .row{display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center}
-        .row label{font-size:0.82rem;color:var(--text-muted);white-space:nowrap}
-</style>
+        .section-hint{font-size:0.72rem;color:var(--text-dim);margin-top:0.25rem}
+        textarea{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:inherit;font-size:0.88rem;padding:0.75rem 1rem;outline:none;resize:vertical}
+        textarea:focus{border-color:var(--accent)}
+        .drop-zone{border:2px dashed var(--border);border-radius:10px;padding:1rem;text-align:center;cursor:pointer;transition:all 0.15s;background:var(--surface);min-height:60px;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:0.5rem}
+        .drop-zone:hover,.drop-zone.dragover{border-color:var(--accent);background:rgba(124,106,239,0.05)}
+        .drop-zone .placeholder{font-size:0.8rem;color:var(--text-dim)}
+        .drop-zone input[type=file]{display:none}
+        .media-thumb{position:relative;display:inline-block}
+        .media-thumb img,.media-thumb video{width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--border)}
+        .media-thumb .remove{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:var(--red);color:white;border:none;font-size:0.65rem;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
+        .row{display:flex;gap:1rem;flex-wrap:wrap;align-items:center}
+        select{background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;padding:0.4rem 0.6rem;outline:none;cursor:pointer}
+        label{font-size:0.82rem;color:var(--text-muted)}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @media(max-width:640px){.app{padding:1rem 0.75rem 3rem}}
+    </style>
 </head>
 <body>
 <div class="app">
@@ -34,8 +45,8 @@
         <a href="/studio" class="back-btn">← Studio</a>
         <div class="logo">View<span>Hunt</span></div>
     </header>
-    <h1>🎬 Seedance 2.0</h1>
-    <p class="subtitle">Generate short videos from text or an image using Bytedance Seedance 2.0 at 480p.</p>
+    <h1>🌱 Seedance 2.0</h1>
+    <p class="subtitle">Generate short videos from text, images, video references, or audio. Powered by Bytedance Seedance 2.0 at 480p.</p>
 
     <div class="section">
         <div class="section-title">✍️ Prompt</div>
@@ -43,68 +54,82 @@
     </div>
 
     <div class="section">
-        <div class="section-title">🖼️ First Frame Image (optional)</div>
-        <input type="text" id="first-frame" placeholder="Paste image URL (or leave empty for text-to-video)">
+        <div class="section-title">🖼️ First Frame (optional)</div>
+        <div class="drop-zone" id="dz-first" data-slot="firstFrame" data-accept="image/*">
+            <span class="placeholder">Drag & drop an image or click to browse</span>
+        </div>
+        <div class="section-hint">Sets the starting frame of the video</div>
     </div>
 
     <div class="section">
-        <div class="section-title">🖼️ Last Frame Image (optional)</div>
-        <input type="text" id="last-frame" placeholder="Paste image URL for end frame (optional)">
+        <div class="section-title">🖼️ Last Frame (optional)</div>
+        <div class="drop-zone" id="dz-last" data-slot="lastFrame" data-accept="image/*">
+            <span class="placeholder">Drag & drop an image or click to browse</span>
+        </div>
+        <div class="section-hint">Sets the ending frame of the video</div>
     </div>
 
-</div>
+    <div class="section">
+        <div class="section-title">📸 Reference Images (optional, up to 9)</div>
+        <div class="drop-zone" id="dz-ref-images" data-slot="refImages" data-accept="image/*" data-multi="true">
+            <span class="placeholder">Drag & drop images for style/subject reference</span>
+        </div>
+        <div class="section-hint">Guide the style or subject — cannot combine with first/last frame</div>
+    </div>
 
-<div class="app" style="padding-top:0;">
+    <div class="section">
+        <div class="section-title">🎥 Reference Videos (optional, up to 3)</div>
+        <div class="drop-zone" id="dz-ref-videos" data-slot="refVideos" data-accept="video/*" data-multi="true">
+            <span class="placeholder">Drag & drop videos for motion/style reference (2-15s each, max 50MB)</span>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">🔊 Reference Audio (optional, up to 3)</div>
+        <div class="drop-zone" id="dz-ref-audio" data-slot="refAudio" data-accept="audio/*" data-multi="true">
+            <span class="placeholder">Drag & drop audio files (wav/mp3, 2-15s each)</span>
+        </div>
+    </div>
+
     <div class="section">
         <div class="row" style="gap:1.25rem;">
-            <div>
-                <label>Duration</label><br>
-                <select id="duration" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;padding:0.4rem 0.6rem;outline:none;cursor:pointer;margin-top:0.25rem;">
-                    <option value="4">4 seconds</option>
-                    <option value="8" selected>8 seconds</option>
-                    <option value="12">12 seconds</option>
+            <div><label>Duration</label><br>
+                <select id="duration" style="margin-top:0.25rem;">
+                    <option value="4">4s</option><option value="8" selected>8s</option><option value="12">12s</option>
                 </select>
             </div>
-            <div>
-                <label>Aspect Ratio</label><br>
-                <select id="aspect-ratio" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;font-size:0.85rem;padding:0.4rem 0.6rem;outline:none;cursor:pointer;margin-top:0.25rem;">
-                    <option value="9:16" selected>9:16 (Shorts)</option>
-                    <option value="16:9">16:9 (Landscape)</option>
-                    <option value="1:1">1:1 (Square)</option>
-                    <option value="4:3">4:3</option>
-                    <option value="3:4">3:4</option>
+            <div><label>Aspect Ratio</label><br>
+                <select id="aspect-ratio" style="margin-top:0.25rem;">
+                    <option value="9:16" selected>9:16</option><option value="16:9">16:9</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option>
                 </select>
             </div>
-            <div>
-                <label style="display:flex;align-items:center;gap:0.4rem;margin-top:0.25rem;cursor:pointer;">
+            <div style="margin-top:0.25rem;">
+                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
                     <input type="checkbox" id="audio-toggle" checked style="accent-color:var(--accent);"> Audio
                 </label>
             </div>
         </div>
     </div>
 
-    <button id="btn-generate" onclick="generate()" style="width:100%;display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.7rem 1.25rem;border-radius:8px;font-weight:700;font-size:0.92rem;cursor:pointer;border:none;font-family:inherit;background:var(--accent);color:white;transition:all 0.15s;margin-bottom:1.5rem;">Generate Video · 5 💎</button>
+    <button id="btn-generate" onclick="generate()" style="width:100%;padding:0.7rem;border-radius:8px;font-weight:700;font-size:0.92rem;cursor:pointer;border:none;font-family:inherit;background:var(--accent);color:white;margin-bottom:1.5rem;">Generate Video · 5 💎</button>
 
-    <!-- Progress -->
     <div id="progress" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.25rem;margin-bottom:1.5rem;text-align:center;">
-        <div id="progress-text" style="font-size:0.85rem;color:var(--text-muted);"><span style="display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-right:0.4rem;vertical-align:middle;"></span> Generating...</div>
+        <div id="progress-text" style="font-size:0.85rem;color:var(--text-muted);"><span class="spinner"></span> Generating...</div>
     </div>
 
-    <!-- Result -->
     <div id="result" style="display:none;background:var(--surface);border:1px solid var(--green);border-radius:14px;padding:1.25rem;text-align:center;">
         <div style="font-size:0.88rem;font-weight:700;color:var(--green);margin-bottom:0.75rem;">✅ Video Ready</div>
         <video id="result-video" controls muted loop style="width:100%;max-width:360px;border-radius:10px;margin:0 auto;display:block;"></video>
         <a id="result-download" download="seedance2-video.mp4" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;padding:0.55rem 1.5rem;border-radius:8px;font-weight:600;font-size:0.85rem;background:var(--green);color:#0e0e12;text-decoration:none;margin-top:0.75rem;">📥 Download</a>
     </div>
 
-    <!-- History -->
     <div id="history-section" style="display:none;margin-top:1.5rem;">
-        <div class="section-title">📋 Recent Generations</div>
+        <div class="section-title">📋 Recent</div>
         <div id="history-list"></div>
     </div>
 </div>
 
-<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
-<script src="/studio/seedance-app.js?v=20260404a"></script>
+<style>.spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-right:0.4rem;vertical-align:middle;}</style>
+<script src="/studio/seedance-app.js?v=20260404b"></script>
 </body>
 </html>
