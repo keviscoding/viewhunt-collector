@@ -19,8 +19,8 @@ class Seedance2Generator {
     }
 
     /**
-     * Upload a local file to Kie.ai as a volcanic asset.
-     * Returns asset:// URL that Kie.ai can access.
+     * Upload a local file to Kie.ai's file hosting.
+     * Returns a publicly accessible URL that Kie.ai can use.
      */
     async uploadAsset(localUrl) {
         // Extract filename from relative path like /studio/uploads/seedance/sd2-xxx.mp4
@@ -29,37 +29,38 @@ class Seedance2Generator {
 
         if (!fs.existsSync(filePath)) {
             console.warn('  Asset file not found locally: ' + filePath);
-            return localUrl; // fallback to original URL
+            return localUrl;
         }
 
-        console.log('  Uploading asset to Kie.ai: ' + filename);
+        console.log('  Uploading to Kie.ai file hosting: ' + filename);
         var form = new FormData();
         form.append('file', fs.createReadStream(filePath));
+        form.append('uploadPath', 'seedance-uploads');
+        form.append('fileName', filename);
 
         try {
             var res = await axios.post(
-                this.kieBaseUrl + '/api/v1/assets/create',
+                'https://kieai.redpandaai.co/api/file-stream-upload',
                 form,
                 {
                     headers: {
                         ...form.getHeaders(),
                         'Authorization': 'Bearer ' + this.kieApiKey
                     },
-                    timeout: 120000, // 2 min for large videos
+                    timeout: 120000,
                     maxContentLength: 60 * 1024 * 1024
                 }
             );
 
-            if (res.data.code === 200 && res.data.data?.assetId) {
-                var assetUrl = 'asset://' + res.data.data.assetId;
-                console.log('  ✅ Asset uploaded: ' + assetUrl);
-                return assetUrl;
+            if (res.data.success && res.data.data?.downloadUrl) {
+                console.log('  ✅ File uploaded: ' + res.data.data.downloadUrl.substring(0, 80));
+                return res.data.data.downloadUrl;
             }
-            console.warn('  Asset upload response unexpected:', JSON.stringify(res.data).substring(0, 300));
+            console.warn('  File upload response unexpected:', JSON.stringify(res.data).substring(0, 300));
             return localUrl;
         } catch (err) {
-            console.error('  Asset upload failed:', err.message);
-            return localUrl; // fallback
+            console.error('  File upload failed:', err.message);
+            return localUrl;
         }
     }
 
