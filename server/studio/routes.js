@@ -1933,7 +1933,13 @@ router.post('/seedance2/upload', requireAuth, seedanceUpload.single('file'), fun
 // 480p no-video-input: $0.095/s → charge ~60-65% margin
 var SEEDANCE2_CREDITS = { 4: 10, 8: 20, 12: 29 };
 
+// Seedance 2 maintenance flag — set to true when Kie.ai is down
+var SEEDANCE2_MAINTENANCE = true;
+
 router.post('/seedance2/generate', requireAuth, studioGenerateLimiter, async (req, res) => {
+    if (SEEDANCE2_MAINTENANCE) {
+        return res.status(503).json({ error: 'Seedance 2.0 is temporarily unavailable due to high demand on the provider side. No credits were deducted. Please try again later.', maintenance: true });
+    }
     // Extend timeout — video resize + upload + generation + polling can take several minutes
     req.setTimeout(660000); // 11 min
     res.setTimeout(660000);

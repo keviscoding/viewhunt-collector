@@ -216,7 +216,16 @@
             renderHistory();
         } catch (e) {
             document.getElementById('progress').style.display = 'none';
-            alert('Error: ' + e.message);
+            // Show friendly maintenance message if applicable
+            if (e.message && (e.message.includes('temporarily unavailable') || e.message.includes('maintenance'))) {
+                document.getElementById('result').style.display = 'none';
+                var prog = document.getElementById('progress');
+                prog.style.display = 'block';
+                prog.style.borderColor = 'var(--amber)';
+                document.getElementById('progress-text').innerHTML = '<div style="font-size:0.88rem;font-weight:700;color:var(--amber);margin-bottom:0.4rem;">⚠️ Temporarily Unavailable</div><div style="font-size:0.82rem;color:var(--text-muted);line-height:1.5;">Seedance 2.0 is experiencing high demand and is temporarily down on the provider side. No credits were deducted from your account. Please try again in a little while.</div>';
+            } else {
+                alert('Error: ' + e.message);
+            }
         } finally {
             btn.disabled = false;
             btn.innerHTML = 'Generate Video · ' + (pricingMap[parseInt(document.getElementById('duration').value)] || 20) + ' 💎';
