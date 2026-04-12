@@ -1934,7 +1934,7 @@ router.post('/seedance2/upload', requireAuth, seedanceUpload.single('file'), fun
 var SEEDANCE2_CREDITS = { 4: 10, 8: 20, 12: 29 };
 
 // Seedance 2 maintenance flag — set to true when Kie.ai is down
-var SEEDANCE2_MAINTENANCE = true;
+var SEEDANCE2_MAINTENANCE = false;
 
 router.post('/seedance2/generate', requireAuth, studioGenerateLimiter, async (req, res) => {
     if (SEEDANCE2_MAINTENANCE) {
