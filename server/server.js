@@ -80,7 +80,7 @@ app.post('/api/leads/capture', rateLimit({ windowMs: 60000, max: 10 }), async (r
         console.log('📧 Lead captured: ' + email + ' (token: ' + accessToken.slice(0, 8) + '...)');
 
         // Build the access link (this goes in the MailerLite email)
-        var baseUrl = process.env.APP_URL || 'https://viewhunt.com';
+        var baseUrl = process.env.APP_URL || 'https://viewhunt.app';
         var accessLink = baseUrl + '/free/access?token=' + accessToken;
 
         // Forward to MailerLite if API key is configured
@@ -3589,8 +3589,8 @@ app.post('/api/subscription/create-checkout-session', authenticateToken, async (
                 },
             ],
             mode: 'subscription',
-            success_url: `${process.env.APP_URL}/subscription-success?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${process.env.APP_URL}/pricing`,
+            success_url: `${process.env.APP_URL || 'https://viewhunt.app'}/subscription-success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.APP_URL || 'https://viewhunt.app'}/pricing`,
             metadata: {
                 userId: user._id.toString(),
                 plan: 'pro'
@@ -3743,8 +3743,8 @@ app.post('/api/subscription/create-plan-checkout', authenticateToken, async (req
             payment_method_types: ['card'],
             line_items: [{ price: priceId, quantity: 1 }],
             mode: 'subscription',
-            success_url: (process.env.APP_URL || 'https://viewhunt.com') + '/subscription-success?session_id={CHECKOUT_SESSION_ID}',
-            cancel_url: (process.env.APP_URL || 'https://viewhunt.com') + '/pricing',
+            success_url: (process.env.APP_URL || 'https://viewhunt.app') + '/subscription-success?session_id={CHECKOUT_SESSION_ID}',
+            cancel_url: (process.env.APP_URL || 'https://viewhunt.app') + '/pricing',
             metadata: { userId: user._id.toString(), plan: plan },
             allow_promotion_codes: true,
             billing_address_collection: 'auto'

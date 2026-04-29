@@ -690,8 +690,8 @@ router.post('/credits/buy', requireAuth, async (req, res) => {
             payment_method_types: ['card'],
             line_items: [{ price: priceId, quantity: 1 }],
             mode: 'payment',
-            success_url: (process.env.APP_URL || 'https://viewhunt.com') + '/studio/v2.html?topup=success',
-            cancel_url: (process.env.APP_URL || 'https://viewhunt.com') + '/studio/v2.html?topup=cancelled',
+            success_url: (process.env.APP_URL || 'https://viewhunt.app') + '/studio/v2.html?topup=success',
+            cancel_url: (process.env.APP_URL || 'https://viewhunt.app') + '/studio/v2.html?topup=cancelled',
             metadata: {
                 userId: user._id.toString(),
                 type: 'credit_topup',
