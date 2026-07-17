@@ -20,7 +20,6 @@
     var subtitleColor = 'yellow';
     var stylePreset = 'classic';
     var previewActiveClip = 0; // which clip looks "active" in dashboard preview
-    var cleanTextEnabled = true; // remove burned-in captions via Replicate
 
     var STYLE_PRESETS = {
         classic: {
@@ -192,7 +191,6 @@
                                 originalName: file.name, uploading: false, cleaning: false, textCleaned: false
                             };
                             renderClipList(); updateNextButton();
-                            maybeCleanText(idx);
                         }
                     } else { clips = clips.filter(function(c) { return c._tempId !== tempId; }); alert('Upload failed: ' + (data.error || 'Server error')); }
                 } catch (e) { clips = clips.filter(function(c) { return c._tempId !== tempId; }); alert('Upload failed'); }
@@ -207,31 +205,52 @@
     function renderClipList() {
         var list = document.getElementById('clip-list'); var html = '';
         clips.forEach(function(clip, i) {
-            html += '<div class="clip-item"><div class="clip-num">' + (i + 1) + '</div><div class="clip-info">';
+            html += '<div class="clip-item">';
+            html += '<div class="clip-num">' + (i + 1) + '</div>';
+            if (clip.url && !clip.uploading) {
+                html += '<video class="clip-thumb" src="' + clip.url + '" muted playsinline preload="metadata"></video>';
+            } else {
+                html += '<div class="clip-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:0.65rem">…</div>';
+            }
+            html += '<div class="clip-info" style="flex:1;min-width:0">';
             if (clip.uploading) {
                 html += '<div class="clip-name">Uploading ' + (clip.originalName || '') + ' (' + (clip.uploadPct || 0) + '%)</div>';
             } else if (clip.cleaning) {
                 html += '<div class="clip-name">Removing burned-in text…</div><div class="clip-meta">' + (clip.originalName || '') + '</div>';
             } else {
-                html += '<div class="clip-name">' + (clip.originalName || clip.filename) + '</div>';
-                html += '<div class="clip-meta">' + clip.duration.toFixed(1) + 's' +
-                    (clip.textCleaned ? ' · text cleaned' : '') +
-                    (clip.textCleanError ? ' · clean skipped' : '') + '</div>';
+                html += '<div class="clip-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (clip.originalName || clip.filename) + '</div>';
+                html += '<div class="clip-meta">' + (clip.duration || 0).toFixed(1) + 's' +
+                    (clip.textCleaned ? ' · text cleaned' : '') + '</div>';
+                if (clip.textCleanError) {
+                    html += '<div class="clip-meta" style="color:var(--red)">' + escapeHtml(String(clip.textCleanError).slice(0, 80)) + '</div>';
+                }
             }
             html += '</div>';
-            if (!clip.uploading && !clip.cleaning) html += '<div class="clip-actions"><button onclick="window._rk.remove(' + i + ')" class="danger" title="Remove">x</button></div>';
+            if (!clip.uploading && !clip.cleaning && clip.filename) {
+                html += '<div class="clip-actions">';
+                if (!clip.textCleaned) {
+                    html += '<button type="button" class="btn-mini" onclick="window._rk.cleanText(' + i + ')">Remove text</button>';
+                } else {
+                    html += '<button type="button" class="btn-mini" disabled style="opacity:0.5">Text cleaned</button>';
+                }
+                html += '<button type="button" class="btn-mini danger" onclick="window._rk.remove(' + i + ')">Remove clip</button>';
+                html += '</div>';
+            }
             html += '</div>';
         });
         list.innerHTML = html;
     }
 
-    async function maybeCleanText(clipIndex) {
-        if (!cleanTextEnabled) return;
+    async function cleanTextClip(clipIndex, fromTrim) {
         var clip = clips[clipIndex];
         if (!clip || !clip.filename || clip.textCleaned || clip.cleaning) return;
 
         clip.cleaning = true;
+        clip.textCleanError = null;
         renderClipList();
+        updateNextButton();
+        updateTrimCleanUi(fromTrim, 'Removing burned-in text… this can take a minute', false);
+
         try {
             var res = await apiFetch('/api/studio/ranking/clean-text', {
                 method: 'POST',
@@ -240,22 +259,55 @@
             });
             var data = await res.json();
             if (res.ok && data.success) {
+                var prevStart = clip.startTime || 0;
+                var prevEnd = clip.endTime != null ? clip.endTime : clip.duration;
+                var prevOrig = clip.originalDuration || clip.duration;
                 clip.duration = data.duration || clip.duration;
                 clip.originalDuration = data.duration || clip.originalDuration;
-                clip.endTime = data.duration || clip.endTime;
+                if (prevOrig > 0 && clip.originalDuration) {
+                    var scale = clip.originalDuration / prevOrig;
+                    clip.startTime = Math.max(0, prevStart * scale);
+                    clip.endTime = Math.min(clip.originalDuration, prevEnd * scale);
+                } else {
+                    clip.endTime = data.duration || clip.endTime;
+                }
                 clip.url = data.url + '?t=' + Date.now();
                 clip.textCleaned = true;
+                updateTrimCleanUi(fromTrim, 'Text removed — preview updated', true);
+                if (fromTrim && currentTrimIndex === clipIndex) showTrimClip(clipIndex);
             } else {
                 clip.textCleanError = data.error || 'Text clean failed';
-                console.warn('Text clean skipped/failed:', clip.textCleanError);
+                updateTrimCleanUi(fromTrim, clip.textCleanError, false);
             }
         } catch (err) {
             clip.textCleanError = err.message;
-            console.warn('Text clean error:', err.message);
+            updateTrimCleanUi(fromTrim, err.message, false);
         }
         clip.cleaning = false;
         renderClipList();
         updateNextButton();
+        updateTrimCleanButton();
+    }
+
+    function updateTrimCleanUi(fromTrim, message, ok) {
+        if (!fromTrim) return;
+        var el = document.getElementById('trim-clean-status');
+        if (!el) return;
+        el.classList.remove('hidden');
+        el.style.color = ok ? 'var(--green)' : 'var(--text-dim)';
+        if (/fail|error|not configured|unavailable/i.test(message || '')) el.style.color = 'var(--red)';
+        el.textContent = message || '';
+    }
+
+    function updateTrimCleanButton() {
+        var btn = document.getElementById('btn-trim-clean-text');
+        if (!btn) return;
+        var clip = clips[currentTrimIndex];
+        if (!clip) { btn.disabled = true; return; }
+        btn.disabled = !!clip.cleaning || !!clip.textCleaned || !clip.filename;
+        btn.textContent = clip.textCleaned
+            ? 'Text already cleaned'
+            : (clip.cleaning ? 'Removing text…' : 'Remove burned-in text on this clip');
     }
 
     function updateNextButton() {
@@ -272,71 +324,101 @@
     }
 
     // ==================== URL IMPORT ====================
+    function parseImportUrls(raw) {
+        var text = String(raw || '');
+        var found = text.match(/https?:\/\/[^\s<>"']+/gi) || [];
+        var seen = {};
+        var out = [];
+        for (var i = 0; i < found.length; i++) {
+            var u = found[i].replace(/[),.;]+$/g, '');
+            if (seen[u]) continue;
+            seen[u] = true;
+            out.push(u);
+        }
+        return out;
+    }
+
+    async function importOneUrl(url) {
+        var res = await apiFetch('/api/studio/ranking/import-url', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+            body: JSON.stringify({ url: url })
+        });
+        var data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Import failed');
+        }
+        clips.push({
+            filename: data.filename, url: data.url,
+            duration: data.duration, originalDuration: data.duration,
+            label: '', startTime: 0, endTime: data.duration,
+            originalName: url.length > 48 ? url.substring(0, 48) + '…' : url,
+            uploading: false, cleaning: false, textCleaned: false
+        });
+        renderClipList();
+        updateNextButton();
+        return data;
+    }
+
     async function importFromUrl() {
         var input = document.getElementById('url-input');
         var btn = document.getElementById('btn-import-url');
         var status = document.getElementById('url-status');
-        var url = (input.value || '').trim();
+        var urls = parseImportUrls(input.value);
 
-        if (!url) return;
+        if (!urls.length) {
+            status.classList.remove('hidden');
+            status.style.color = 'var(--red)';
+            status.textContent = 'Paste one or more http(s) links first.';
+            return;
+        }
         if (clips.length >= 10) { alert('Maximum 10 clips reached'); return; }
 
-        btn.disabled = true; btn.textContent = 'Downloading...';
+        var room = 10 - clips.length;
+        if (urls.length > room) urls = urls.slice(0, room);
+
+        btn.disabled = true;
         status.classList.remove('hidden');
         status.style.color = 'var(--text-muted)';
-        status.textContent = 'Downloading video from URL... this may take a moment';
 
-        try {
-            var res = await apiFetch('/api/studio/ranking/import-url', {
-                method: 'POST',
-                headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
-                body: JSON.stringify({ url: url })
-            });
-            var data = await res.json();
-
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || 'Import failed');
+        var ok = 0;
+        var fail = 0;
+        for (var i = 0; i < urls.length; i++) {
+            btn.textContent = 'Importing ' + (i + 1) + '/' + urls.length + '…';
+            status.textContent = 'Importing ' + (i + 1) + ' of ' + urls.length + ' (preview appears when each finishes)…';
+            try {
+                await importOneUrl(urls[i]);
+                ok++;
+            } catch (err) {
+                fail++;
+                console.warn('Import failed for', urls[i], err.message);
+                status.style.color = 'var(--red)';
+                status.textContent = 'Failed (' + (i + 1) + '/' + urls.length + '): ' + err.message;
             }
-
-            clips.push({
-                filename: data.filename, url: data.url,
-                duration: data.duration, originalDuration: data.duration,
-                label: '', startTime: 0, endTime: data.duration,
-                originalName: url.length > 40 ? url.substring(0, 40) + '...' : url,
-                uploading: false, cleaning: false, textCleaned: false
-            });
-
-            input.value = '';
-            var plat = data.platform ? String(data.platform).toUpperCase() : 'LINK';
-            status.style.color = 'var(--green)';
-            status.textContent = 'Imported ' + plat + ' · ' + data.duration.toFixed(1) + 's';
-            setTimeout(function() { status.classList.add('hidden'); }, 4500);
-            renderClipList(); updateNextButton();
-            maybeCleanText(clips.length - 1);
-        } catch (err) {
-            status.style.color = 'var(--red)';
-            var tip = /APIFY_TOKEN|upload the file|Download it on your phone/i.test(err.message || '')
-                ? ''
-                : ' — If this keeps failing, download the video and upload the file below.';
-            status.textContent = err.message + tip;
-            status.classList.remove('hidden');
         }
 
-        btn.disabled = false; btn.textContent = 'Import';
+        input.value = '';
+        btn.disabled = false;
+        btn.textContent = 'Import links';
+        if (ok && !fail) {
+            status.style.color = 'var(--green)';
+            status.textContent = 'Imported ' + ok + ' clip' + (ok === 1 ? '' : 's') + '. Preview below — remove text only if needed.';
+            setTimeout(function() { status.classList.add('hidden'); }, 5000);
+        } else if (ok && fail) {
+            status.style.color = 'var(--text-muted)';
+            status.textContent = 'Imported ' + ok + ', failed ' + fail + '. Use Remove text on clips that need it.';
+        } else if (!ok) {
+            status.style.color = 'var(--red)';
+            status.textContent = (status.textContent || 'Import failed') + ' — try uploading the file instead.';
+        }
+        updateNextButton();
     }
 
     function initUrlImport() {
         document.getElementById('btn-import-url').addEventListener('click', importFromUrl);
         document.getElementById('url-input').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') { e.preventDefault(); importFromUrl(); }
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); importFromUrl(); }
         });
-        var cleanToggle = document.getElementById('clean-text-toggle');
-        if (cleanToggle) {
-            cleanTextEnabled = !!cleanToggle.checked;
-            cleanToggle.addEventListener('change', function() {
-                cleanTextEnabled = !!cleanToggle.checked;
-            });
-        }
     }
 
     // ==================== TRIM ====================
@@ -359,6 +441,18 @@
         document.getElementById('btn-trim-prev').style.display = index === 0 ? 'none' : '';
         document.getElementById('btn-trim-next').textContent = index === clips.length - 1 ? 'Next: Dashboard' : 'Next Clip';
         renderPreview('preview-trim');
+        updateTrimCleanButton();
+        var cleanStatus = document.getElementById('trim-clean-status');
+        if (cleanStatus) {
+            if (clip.textCleaned) {
+                cleanStatus.classList.remove('hidden');
+                cleanStatus.style.color = 'var(--green)';
+                cleanStatus.textContent = 'Text already cleaned on this clip';
+            } else {
+                cleanStatus.classList.add('hidden');
+                cleanStatus.textContent = '';
+            }
+        }
     }
 
     function togglePlay() { var v = document.getElementById('trim-video'); if (v.paused) v.play(); else v.pause(); }
@@ -440,6 +534,12 @@
             var v = document.getElementById('trim-video'); v.pause(); v.src = '';
             goToStep(1); renderClipList(); updateNextButton();
         });
+        var cleanBtn = document.getElementById('btn-trim-clean-text');
+        if (cleanBtn) {
+            cleanBtn.addEventListener('click', function() {
+                cleanTextClip(currentTrimIndex, true);
+            });
+        }
     }
 
     // ==================== DASHBOARD ====================
@@ -921,6 +1021,12 @@
         goToStep(1);
     }
 
-    window._rk = { remove: removeClip, moveUp: moveUp, moveDown: moveDown, retrim: retrim };
+    window._rk = {
+        remove: removeClip,
+        moveUp: moveUp,
+        moveDown: moveDown,
+        retrim: retrim,
+        cleanText: function(i) { cleanTextClip(i, false); }
+    };
     init();
 })();

@@ -41,6 +41,15 @@
         .split-preview{width:240px;flex-shrink:0;position:sticky;top:1.5rem}
         .clip-list{display:flex;flex-direction:column;gap:0.75rem}
         .clip-item{display:flex;align-items:center;gap:0.75rem;padding:0.75rem;background:var(--surface-2);border:1px solid var(--border);border-radius:10px}
+        .clip-thumb{width:56px;height:100px;border-radius:8px;object-fit:cover;background:#000;flex-shrink:0;border:1px solid var(--border)}
+        .clip-actions{display:flex;flex-direction:column;gap:0.35rem;align-items:stretch}
+        .clip-actions .btn-mini{font-size:0.68rem;padding:0.3rem 0.5rem;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text-muted);cursor:pointer;white-space:nowrap}
+        .clip-actions .btn-mini:hover{border-color:var(--accent);color:var(--text)}
+        .clip-actions .btn-mini.danger{color:var(--red)}
+        .url-batch{width:100%;min-height:4.5rem;resize:vertical;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0.75rem;font-size:0.85rem;font-family:inherit;line-height:1.4}
+        .url-batch:focus{outline:none;border-color:var(--accent)}
+        .url-batch::placeholder{color:var(--text-dim)}
+        #btn-trim-clean-text{margin-top:0.5rem}
         .clip-num{width:32px;height:32px;border-radius:50%;background:var(--yellow);color:#0e0e12;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.9rem;flex-shrink:0}
         .clip-info{flex:1;min-width:0}
         .clip-name{font-size:0.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -180,19 +189,15 @@
     <!-- STEP 1: Upload -->
     <div id="screen-upload" class="card">
         <div class="card-title">Upload Your Clips</div>
-        <div class="card-desc">Upload clips or paste a public TikTok / YouTube / Instagram link. Private or region-locked videos still need a file upload.</div>
+        <div class="card-desc">Paste one or many public links, or upload files. Preview each clip below — only remove burned-in text when you need it.</div>
 
-        <!-- URL Import -->
-        <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem">
-            <input type="text" class="title-input" id="url-input" placeholder="Paste TikTok, YouTube, or Instagram URL" style="margin-bottom:0;flex:1">
-            <button class="btn btn-secondary" id="btn-import-url" style="white-space:nowrap">Import</button>
+        <!-- URL Import (batch) -->
+        <textarea class="url-batch" id="url-input" placeholder="Paste TikTok / YouTube / Instagram links — one per line&#10;https://www.tiktok.com/@…&#10;https://youtube.com/shorts/…"></textarea>
+        <div style="display:flex;gap:0.5rem;margin:0.5rem 0 0.35rem;justify-content:flex-end">
+            <button class="btn btn-secondary" id="btn-import-url" style="white-space:nowrap">Import links</button>
         </div>
         <div id="url-status" style="font-size:0.75rem;color:var(--text-dim);margin-bottom:0.75rem" class="hidden"></div>
-        <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;cursor:pointer">
-            <input type="checkbox" id="clean-text-toggle" checked>
-            Remove burned-in captions / text overlays after upload (Replicate)
-        </label>
-        <div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:1rem">Public TikTok &amp; YouTube imports use Apify. Burned-in POV captions and handles are cleaned via API when the toggle above is on. If import fails, download the clip and upload below.</div>
+        <div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:1rem">Imports stay fast — no automatic text removal. After preview, use <strong style="color:var(--text-muted)">Remove text</strong> on clips that have POV captions or handles. You can also do that while trimming.</div>
 
         <div class="upload-zone" id="upload-zone">
             <div class="icon">+</div>
@@ -209,7 +214,7 @@
     <!-- STEP 2: Trim -->
     <div id="screen-trim" class="card hidden">
         <div class="card-title">Trim Clip <span id="trim-clip-num">1</span> of <span id="trim-total">1</span></div>
-        <div class="card-desc">Drag the purple handles to trim. Click the video to play/pause.</div>
+        <div class="card-desc">Drag the purple handles to trim. If you see burned-in captions, remove text on this clip only.</div>
         <div class="split-layout">
             <div class="split-controls">
                 <div class="trim-video-wrap" id="trim-video-wrap">
@@ -239,6 +244,8 @@
                     <label style="font-size:0.85rem;color:var(--text-muted);display:block;margin-bottom:0.35rem">Clip label (shown next to number):</label>
                     <input type="text" class="label-input" id="trim-label" placeholder="e.g. Baby vs Dog" maxlength="40">
                 </div>
+                <button class="btn btn-secondary" id="btn-trim-clean-text" type="button">Remove burned-in text on this clip</button>
+                <div id="trim-clean-status" style="font-size:0.72rem;color:var(--text-dim);margin-top:0.35rem" class="hidden"></div>
                 <div class="btn-row">
                     <button class="btn btn-secondary" id="btn-trim-back-upload">&larr; Back to Upload</button>
                     <div style="display:flex;gap:0.75rem;">

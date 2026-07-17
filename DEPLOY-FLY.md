@@ -79,10 +79,9 @@ serves clip uploads. The Studio UI only picks in/out points; it does not trim on
 
 ## Burned-in text removal
 
-POV captions, handles, and other hard-coded overlays are removed via Replicate
-`hjunior29/video-text-remover` after upload/import when the Studio toggle is on.
-Requires `REPLICATE_API_KEY` on DigitalOcean. This is an existing hosted API — not
-a custom model we train or self-host.
+POV captions, handles, and other hard-coded overlays can be removed via Replicate
+`hjunior29/video-text-remover` — **opt-in per clip** after preview (or while trimming).
+Requires `REPLICATE_API_KEY` on DigitalOcean. Not run automatically on every import.
 
 ## Trial behavior
 
