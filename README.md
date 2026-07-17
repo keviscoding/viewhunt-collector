@@ -121,3 +121,10 @@ The system is designed for easy deployment:
 ## 📝 License
 
 This project is for educational and research purposes.
+
+## Scaling (Fly Machines)
+
+See [DEPLOY-FLY.md](DEPLOY-FLY.md) for:
+- Moving ranking FFmpeg assembly to Fly Machines
+- Autonomous niche scraping every 3 days (Puppeteer worker)
+- Free trial: 3 days or 3 ranking videos

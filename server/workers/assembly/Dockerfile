@@ -1,0 +1,21 @@
+FROM node:18-bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY server/workers/assembly/package.json ./
+RUN npm install --omit=dev
+
+# Assembler + helpers (copied into image at build time)
+COPY server/studio/formats/ranking ./lib/ranking
+COPY server/workers/storage.js ./lib/storage.js
+COPY server/studio/trial.js ./lib/trial.js
+COPY server/workers/assembly/index.js ./index.js
+
+# ffmpeg-static downloads binaries; ensure executable
+ENV NODE_ENV=production
+
+CMD ["node", "index.js"]

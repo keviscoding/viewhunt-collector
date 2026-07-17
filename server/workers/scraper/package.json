@@ -1,0 +1,13 @@
+{
+  "name": "viewhunt-scraper-worker",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "mongodb": "^6.3.0",
+    "puppeteer": "22.15.0"
+  }
+}

@@ -15,9 +15,16 @@ const VideoEditor = require('./editor/video-editor');
 const assemblyQueue = require('./editor/job-queue');
 const { saveSfx, listSfx, loadAllSfx } = require('./editor/sfx-store');
 const credits = require('./credits');
+const trialHelper = require('./trial');
 const taskManager = require('./task-manager');
 const TimelapseGenerator = require('./formats/timelapse/generator');
 const rateLimit = require('express-rate-limit');
+let startAssemblyMachine = async function() { return false; };
+try {
+    startAssemblyMachine = require('../workers/fly-machines').startAssemblyMachine;
+} catch (e) {
+    console.warn('Fly machines module not loaded:', e.message);
+}
 
 // Rate limiters for studio endpoints
 const studioGenerateLimiter = rateLimit({
@@ -1280,44 +1287,102 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
         }
 
         var userId = String(req.user.userId);
-        var check = await credits.checkCredits(userId, 'ranking_assembly', 1);
-        if (!check.allowed) {
-            return res.status(402).json({ error: 'Not enough credits', ...check });
-        }
+        var db = await getDb();
+        var user = await db.collection('users').findOne({ _id: new ObjectId(userId) });
+        var trialActive = trialHelper.canUseRankingTrial(user);
+        var usingTrial = false;
+        var rankingCreditsCharged = 0;
 
-        // Deduct upfront (refund on failure)
-        await credits.deductCredits(userId, 'ranking_assembly', 1, 'Ranking video assembly');
-        var rankingCreditsCharged = credits.COSTS.ranking_assembly;
+        if (trialActive) {
+            usingTrial = true;
+            console.log('🏆 Ranking assemble via trial for user ' + userId);
+        } else {
+            var check = await credits.checkCredits(userId, 'ranking_assembly', 1);
+            if (!check.allowed) {
+                var trialStatus = trialHelper.getTrialStatus(user);
+                return res.status(402).json({
+                    error: 'Not enough credits',
+                    upgradeRequired: true,
+                    trial: trialStatus,
+                    message: (trialStatus && !trialStatus.active)
+                        ? 'Your free trial has ended (3 days or 3 ranking videos). Upgrade to continue.'
+                        : 'Not enough credits for ranking assembly.',
+                    ...check
+                });
+            }
+            // Deduct upfront (refund on failure)
+            await credits.deductCredits(userId, 'ranking_assembly', 1, 'Ranking video assembly');
+            rankingCreditsCharged = credits.COSTS.ranking_assembly;
+        }
 
         // Validate clips exist before starting background job
         var clipList = clips.map(function(c, i) {
             var filePath = path.join(rankingUploadDir, c.filename);
             if (!fs.existsSync(filePath)) throw new Error('Clip not found: ' + c.filename);
-            return { path: filePath, number: c.number || (i + 1), label: c.label || '' };
+            return { path: filePath, number: c.number || (i + 1), label: c.label || '', filename: c.filename };
         });
 
         // Create job in MongoDB and return immediately
-        var jobId = await createRankingJob(userId, 'processing', enableCommentary ? 'Generating AI commentary...' : 'Normalizing clips...');
-        // Save initial credits charged
-        await updateRankingJob(jobId, { creditsCharged: rankingCreditsCharged });
+        var jobId = await createRankingJob(userId, 'queued', enableCommentary ? 'Queued for assembly...' : 'Queued for assembly...');
+        await updateRankingJob(jobId, {
+            creditsCharged: rankingCreditsCharged,
+            usingTrial: usingTrial,
+            payload: {
+                clips: clipList.map(function(c) {
+                    return { filename: c.filename, number: c.number, label: c.label };
+                }),
+                title: title || {},
+                layout: layout || {},
+                enableCommentary: !!enableCommentary,
+                voiceName: voiceName || 'Kore',
+                colorPalette: colorPalette || 'yellow',
+                checkeredMode: !!checkeredMode,
+                subtitleFont: subtitleFont || 'Arial',
+                subtitleY: subtitleY != null ? subtitleY : 55,
+                subtitleColor: subtitleColor || 'yellow'
+            }
+        });
 
-        res.json({ success: true, jobId: jobId });
+        res.json({
+            success: true,
+            jobId: jobId,
+            usingTrial: usingTrial,
+            trial: trialHelper.getTrialStatus(user)
+        });
 
-        // Run assembly in background
+        // Prefer Fly Machines for FFmpeg; fall back to in-process assembly
+        var flyStarted = false;
+        try {
+            flyStarted = await startAssemblyMachine(jobId);
+        } catch (flyErr) {
+            console.warn('Fly assembly machine start failed, falling back to local:', flyErr.message);
+        }
+
+        if (flyStarted) {
+            await updateRankingJob(jobId, { status: 'processing', message: 'Running on Fly Machine...' });
+            return;
+        }
+
+        await updateRankingJob(jobId, { status: 'processing', message: enableCommentary ? 'Generating AI commentary...' : 'Normalizing clips...' });
+
+        // Run assembly in background (local fallback)
         (async function() {
             try {
                 var assembler = new RankingAssembler();
                 var commentaryData = [];
                 var commentaryResults = [];
+                var localClipList = clipList.map(function(c) {
+                    return { path: c.path, number: c.number, label: c.label };
+                });
 
-                // Generate AI commentary if enabled
+                // Generate AI commentary if enabled (always credits — not covered by ranking trial)
                 if (enableCommentary && title && title.text) {
                     try {
                         await updateRankingJob(jobId, { message: 'Generating AI commentary...' });
                         console.log('🎙️ Generating AI commentary for ranking video...');
                         var RankingCommentary = require('./formats/ranking/commentary');
                         var commentaryGen = new RankingCommentary();
-                        commentaryResults = await commentaryGen.generateCommentary(clipList, title.text, voiceName || 'Kore');
+                        commentaryResults = await commentaryGen.generateCommentary(localClipList, title.text, voiceName || 'Kore');
                         commentaryData = commentaryResults.filter(function(c) { return c.audioPath; });
 
                         if (commentaryData.length > 0) {
@@ -1330,9 +1395,9 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                     }
                 }
 
-                await updateRankingJob(jobId, { message: 'Assembling video (' + clipList.length + ' clips)...' });
+                await updateRankingJob(jobId, { message: 'Assembling video (' + localClipList.length + ' clips)...' });
 
-                var result = await assembler.assemble(clipList, title || {}, {
+                var result = await assembler.assemble(localClipList, title || {}, {
                     layout: layout || {},
                     commentary: commentaryData,
                     commentaryLines: enableCommentary ? commentaryResults : [],
@@ -1345,16 +1410,35 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                 });
 
                 console.log('🏆 Ranking video assembled: ' + result.videoUrl + (commentaryData.length > 0 ? ' (with ' + commentaryData.length + ' commentary lines)' : ''));
-                await updateRankingJob(jobId, { status: 'complete', result: { ...result, hasCommentary: commentaryData.length > 0 } });
+
+                var finalResult = { ...result, hasCommentary: commentaryData.length > 0 };
+                try {
+                    var storage = require('../workers/storage');
+                    if (storage.isConfigured() && result.videoUrl) {
+                        var localFinal = path.join(__dirname, '../public', result.videoUrl.replace(/^\//, ''));
+                        if (fs.existsSync(localFinal)) {
+                            var uploaded = await storage.uploadFile(localFinal, 'studio/ranking-final');
+                            if (uploaded) finalResult.videoUrl = uploaded;
+                        }
+                    }
+                } catch (storageErr) {
+                    console.warn('Durable upload skipped:', storageErr.message);
+                }
+
+                await updateRankingJob(jobId, { status: 'complete', result: finalResult });
+
+                if (usingTrial) {
+                    await trialHelper.recordRankingVideoComplete(db, userId);
+                }
             } catch (error) {
                 console.error('Ranking assembly error:', error.message);
                 await updateRankingJob(jobId, { status: 'failed', error: error.message }).catch(function() {});
-                // Refund ALL credits charged for this job
+                // Refund credits charged for this job (trial jobs have 0 ranking_assembly charge)
                 try {
-                    await credits.refundCredits(userId, 'ranking_assembly', 1, 'Assembly failed: ' + error.message);
-                    if (rankingCreditsCharged > credits.COSTS.ranking_assembly) {
-                        // Also refund commentary credits if they were charged
-                        var extraRefund = rankingCreditsCharged - credits.COSTS.ranking_assembly;
+                    if (!usingTrial) {
+                        await credits.refundCredits(userId, 'ranking_assembly', 1, 'Assembly failed: ' + error.message);
+                    }
+                    if (rankingCreditsCharged > (usingTrial ? 0 : credits.COSTS.ranking_assembly)) {
                         await credits.refundCredits(userId, 'script_generation', 1, 'Commentary refund (assembly failed)');
                     }
                 } catch (refundErr) {
@@ -1382,6 +1466,42 @@ router.get('/ranking/assemble/status/:jobId', requireAuth, async (req, res) => {
         res.json(response);
     } catch (error) {
         res.status(500).json({ error: 'Poll error' });
+    }
+});
+
+// Internal: Fly worker uploads assembled ranking video back to the app disk
+router.post('/internal/ranking-result', express.json({ limit: '200mb' }), async (req, res) => {
+    try {
+        var secret = req.headers['x-worker-secret'];
+        if (!process.env.WORKER_SECRET || secret !== process.env.WORKER_SECRET) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        var jobId = req.body.jobId;
+        var filename = req.body.filename || ('fly-' + Date.now() + '.mp4');
+        var base64 = req.body.base64;
+        if (!jobId || !base64) return res.status(400).json({ error: 'jobId and base64 required' });
+
+        var finalDir = path.join(__dirname, '../public/studio/generated/final');
+        if (!fs.existsSync(finalDir)) fs.mkdirSync(finalDir, { recursive: true });
+        var safeName = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
+        var outPath = path.join(finalDir, safeName);
+        fs.writeFileSync(outPath, Buffer.from(base64, 'base64'));
+
+        var videoUrl = '/studio/generated/final/' + safeName;
+        try {
+            var storage = require('../workers/storage');
+            if (storage.isConfigured()) {
+                var uploaded = await storage.uploadFile(outPath, 'studio/ranking-final');
+                if (uploaded) videoUrl = uploaded;
+            }
+        } catch (e) {
+            console.warn('Internal result storage upload failed:', e.message);
+        }
+
+        res.json({ success: true, videoUrl: videoUrl });
+    } catch (error) {
+        console.error('Internal ranking-result error:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 

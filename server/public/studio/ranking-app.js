@@ -11,6 +11,7 @@
     var currentStep = 1;
     var dragging = null;
     var timelineDuration = 0;
+    var trialInfo = null; // { active, daysLeft, rankingVideosLeft }
 
     // Layout settings (sent to assembler)
     var layout = { listX: 5, titleY: 6, titleSize: 48, lineSpacing: 65, numSize: 50 };
@@ -28,12 +29,68 @@
         return res;
     }
 
+    function assembleButtonLabel(enableCommentary) {
+        if (trialInfo && trialInfo.active) {
+            var left = trialInfo.rankingVideosLeft;
+            return 'Assemble Video (Trial · ' + left + ' left)';
+        }
+        var cost = enableCommentary ? 7 : 2;
+        return 'Assemble Video (' + cost + ' 💎)';
+    }
+
+    function updateTrialBadge() {
+        var badge = document.getElementById('trial-badge');
+        var el = document.getElementById('trial-remaining');
+        if (!badge || !el) return;
+        if (trialInfo && trialInfo.active) {
+            badge.style.display = '';
+            el.textContent = trialInfo.rankingVideosLeft + ' ranking left · ' + trialInfo.daysLeft + 'd';
+        } else if (trialInfo && trialInfo.reason && trialInfo.reason !== 'converted') {
+            badge.style.display = '';
+            badge.style.color = '#f87171';
+            el.textContent = 'Trial ended — upgrade';
+        } else {
+            badge.style.display = 'none';
+        }
+        var btn = document.getElementById('btn-assemble');
+        if (btn && !btn.disabled) {
+            var enableCommentary = document.getElementById('commentary-toggle') && document.getElementById('commentary-toggle').checked;
+            btn.textContent = assembleButtonLabel(enableCommentary);
+        }
+    }
+
     async function loadCredits() {
         try {
             var res = await apiFetch('/api/studio/credits/balance');
             var data = await res.json();
             document.getElementById('credit-balance').textContent = (data.totalAvailable || 0);
         } catch (e) { console.warn('Credits:', e); }
+        try {
+            var meRes = await apiFetch('/api/auth/me');
+            if (meRes.ok) {
+                var me = await meRes.json();
+                var t = me.trial || (me.subscription && me.subscription.trial) || null;
+                if (t) {
+                    trialInfo = {
+                        active: !!(me.trialRemaining && me.trialRemaining.daysLeft != null
+                            ? (me.subscription && me.subscription.type === 'trial')
+                            : t.active),
+                        daysLeft: (me.trialRemaining && me.trialRemaining.daysLeft != null)
+                            ? me.trialRemaining.daysLeft
+                            : (t.daysLeft || 0),
+                        rankingVideosLeft: (me.trialRemaining && me.trialRemaining.rankingVideosLeft != null)
+                            ? me.trialRemaining.rankingVideosLeft
+                            : (t.rankingVideosLeft != null ? t.rankingVideosLeft : 0),
+                        reason: t.reason
+                    };
+                    if (me.subscription && me.subscription.type === 'trial') trialInfo.active = true;
+                    if (me.subscription && me.subscription.type === 'stripe' && me.subscription.hasAccess) {
+                        trialInfo = null;
+                    }
+                }
+                updateTrialBadge();
+            }
+        } catch (e) { console.warn('Trial:', e); }
     }
 
     function goToStep(step) {
@@ -334,8 +391,8 @@
         document.getElementById('btn-back-trim').addEventListener('click', function() { goToStep(2); showTrimClip(clips.length - 1); });
         // Commentary toggle — update assemble button cost + show/hide voice picker + subtitle settings
         document.getElementById('commentary-toggle').addEventListener('change', function() {
-            var cost = this.checked ? 7 : 2;
-            document.getElementById('btn-assemble').textContent = 'Assemble Video (' + cost + ' 💎)';
+            var enableCommentary = this.checked;
+            document.getElementById('btn-assemble').textContent = assembleButtonLabel(enableCommentary);
             document.getElementById('voice-picker').style.display = this.checked ? '' : 'none';
             document.getElementById('subtitle-settings').style.display = this.checked ? '' : 'none';
         });
@@ -548,7 +605,18 @@
                 })
             });
             var aData = await aRes.json();
-            if (!aData.success) throw new Error(aData.error || 'Assembly failed');
+            if (aRes.status === 402 || !aData.success) {
+                throw new Error(aData.message || aData.error || 'Assembly failed');
+            }
+            if (aData.trial) {
+                trialInfo = {
+                    active: !!(aData.usingTrial || (aData.trial && aData.trial.active)),
+                    daysLeft: aData.trial.daysLeft || 0,
+                    rankingVideosLeft: aData.trial.rankingVideosLeft || 0,
+                    reason: aData.trial.reason
+                };
+                updateTrialBadge();
+            }
 
             var jobId = aData.jobId;
             pf.style.width = '30%';
@@ -599,8 +667,7 @@
             }
         } catch (err) {
             pf.style.width = '0%'; pt.textContent = 'Error: ' + err.message;
-            var cost = enableCommentary ? 7 : 2;
-            btn.disabled = false; btn.textContent = 'Assemble Video (' + cost + ' 💎)'; loadCredits();
+            btn.disabled = false; btn.textContent = assembleButtonLabel(enableCommentary); loadCredits();
         }
     }
 
@@ -629,7 +696,7 @@
             document.getElementById('title-text').value = ''; document.getElementById('title-highlight').value = '';
             document.getElementById('result-video').classList.add('hidden'); document.getElementById('result-info').classList.add('hidden');
             document.getElementById('result-actions').classList.add('hidden');
-            document.getElementById('btn-assemble').disabled = false; document.getElementById('btn-assemble').textContent = 'Assemble Video (2 💎)';
+            document.getElementById('btn-assemble').disabled = false; document.getElementById('btn-assemble').textContent = assembleButtonLabel(false);
             // Reset commentary toggle + voice picker
             document.getElementById('commentary-toggle').checked = false;
             document.getElementById('voice-picker').style.display = 'none';

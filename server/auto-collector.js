@@ -325,4 +325,4 @@ function scheduleDailyCollection(db) {
     scheduleNext();
 }
 
-module.exports = { runDailyCollection, scheduleDailyCollection };
+module.exports = { runDailyCollection, scheduleDailyCollection, searchAndCollect, isQualifiedChannel };

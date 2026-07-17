@@ -143,11 +143,12 @@ var formats = [
     {
         id: 'ranking-countdown',
         name: 'Ranking & Countdown',
-        desc: 'Upload your clips, trim, add a title with numbered list overlay, and assemble a ranking video. Pure FFmpeg — no AI needed.',
-        tags: ['Ranking', 'Compilation', 'Upload'],
+        desc: 'Upload your clips, trim, add a title with numbered list overlay, and assemble a ranking video. Pure FFmpeg — no AI needed. Free trial: 3 days or 3 videos.',
+        tags: ['Ranking', 'Compilation', 'Upload', 'Trial'],
         banner: '/images/ranking-studio-preview.jpg',
         emoji: '🏆',
         live: true,
+        trialAccess: true,
         url: '/studio/ranking'
     },
     {
@@ -224,6 +225,9 @@ var isAdmin = false;
         hasPaidAccess = sub.type === 'admin' || sub.type === 'stripe' || sub.type === 'beta' || sub.type === 'invite';
         isAdmin = sub.type === 'admin';
         if (sub.type === 'stripe' && !sub.hasAccess) hasPaidAccess = false;
+        // Trial unlocks ranking only (see trialAccess + openFormat)
+        window.__viewhuntTrial = sub.type === 'trial';
+        window.__viewhuntTrialInfo = sub.trial || data.trialRemaining || null;
     } catch (e) {
         console.warn('Auth check failed:', e);
     }
@@ -238,7 +242,8 @@ function renderFormats() {
     var grid = document.getElementById('formats-grid');
     var html = '';
     formats.forEach(function(f) {
-        var locked = !f.live || !hasPaidAccess;
+        var trialOk = window.__viewhuntTrial && f.trialAccess;
+        var locked = !f.live || (!hasPaidAccess && !f.freeAccess && !trialOk);
         html += '<div class="format-card' + (locked && f.live ? '' : (f.live ? '' : ' locked')) + '" onclick="openFormat(\'' + f.id + '\',' + f.live + ')">';
         html += '<div class="format-thumb">';
         if (f.banner) {
@@ -249,6 +254,7 @@ function renderFormats() {
         var badgeClass = f.maintenance ? 'badge-maintenance' : (f.live ? 'badge-live' : 'badge-soon');
         var badgeText = f.maintenance ? 'Maintenance' : (f.live ? 'Live' : 'Coming Soon');
         if (!hasPaidAccess && f.freeAccess) { badgeClass = 'badge-live'; badgeText = 'Free Prompts'; }
+        if (trialOk && !hasPaidAccess) { badgeClass = 'badge-live'; badgeText = 'Free Trial'; }
         html += '<span class="format-badge ' + badgeClass + '">' + badgeText + '</span>';
         html += '</div>';
         html += '<div class="format-info">';
@@ -266,7 +272,8 @@ function openFormat(id, isLive) {
     
     var format = formats.find(function(f) { return f.id === id; });
     
-    if (!hasPaidAccess && !(format && format.freeAccess)) {
+    var trialOk = window.__viewhuntTrial && format && format.trialAccess;
+    if (!hasPaidAccess && !(format && format.freeAccess) && !trialOk) {
         var banner = document.getElementById('upgrade-banner');
         banner.style.display = 'block';
         banner.scrollIntoView({ behavior: 'smooth', block: 'center' });

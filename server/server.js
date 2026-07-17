@@ -14,9 +14,11 @@ const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KE
 
 // Studio routes
 const studioRoutes = require('./studio/routes');
+const trialHelper = require('./studio/trial');
 
 // Auto channel collector (daily cron)
 const { scheduleDailyCollection, runDailyCollection } = require('./auto-collector');
+const nicheScheduler = require('./workers/niche-scheduler');
 
 // Initialize Stripe only if secret key is available
 let stripe;
@@ -289,6 +291,7 @@ app.get('/subscription-success', async (req, res) => {
                             'subscription.stripeCustomerId': customer.id,
                             'subscription.startDate': new Date(subscription.current_period_start * 1000),
                             'subscription.endDate': new Date(subscription.current_period_end * 1000),
+                            'trial.status': 'converted',
                             updated_at: new Date()
                         }
                     }
@@ -462,6 +465,12 @@ async function connectToMongoDB() {
 
         // Start auto-collector daily scheduler
         scheduleDailyCollection(db);
+
+        // Niche rotation every 3 days (Fly scraper or API fallback)
+        nicheScheduler.ensureNicheIndexes(db)
+            .then(function() { return nicheScheduler.seedNicheKeywords(db); })
+            .then(function() { nicheScheduler.scheduleNicheRotation(db); })
+            .catch(function(err) { console.error('Niche scheduler init error:', err.message); });
     } catch (error) {
         console.error('MongoDB connection error:', error);
         process.exit(1);
@@ -556,6 +565,14 @@ const requireSubscription = async (req, res, next) => {
                 }
             }
             
+            // Active ranking trial → full niche access (studio ranking gated separately)
+            if (trialHelper.isTrialActive(fullUser)) {
+                console.log('Trial user, granting niche access:', user.email);
+                req.userPlan = 'trial';
+                req.trial = trialHelper.getTrialStatus(fullUser);
+                return next();
+            }
+
             // No active subscription — free tier (limited niche access)
             console.log('Free tier user, granting limited access:', user.email);
             req.userPlan = 'free';
@@ -974,7 +991,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         // Generate verification code
         const verificationCode = generateVerificationCode();
 
-        // Create user — free tier or invite tier
+        // Create user — free tier or invite tier (new free users get ranking trial)
         const newUser = {
             email: reqEmail.toLowerCase(),
             password: hashedPassword,
@@ -986,12 +1003,14 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
             emailVerified: false,
             verificationCode: verificationCode,
             verificationCodeExpires: new Date(Date.now() + 15 * 60 * 1000), // 15 min
+            trial: invite_code ? undefined : trialHelper.createTrialFields(),
             stats: {
                 channels_approved: 0,
                 channels_rejected: 0,
                 total_reviews: 0
             }
         };
+        if (!newUser.trial) delete newUser.trial;
 
         const result = await db.collection('users').insertOne(newUser);
 
@@ -1418,6 +1437,7 @@ async function processGoogleUser(googleUser) {
                 updated_at: new Date(),
                 migrated_from_v1: false, // New V2 user
                 plan: 'free',
+                trial: trialHelper.createTrialFields(),
                 stats: {
                     channels_approved: 0,
                     channels_rejected: 0,
@@ -1514,6 +1534,7 @@ app.post('/api/auth/google', async (req, res) => {
                 updated_at: new Date(),
                 migrated_from_v1: false, // New V2 user
                 plan: 'free',
+                trial: trialHelper.createTrialFields(),
                 stats: {
                     channels_approved: 0,
                     channels_rejected: 0,
@@ -1665,17 +1686,50 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
                     subscriptionStatus.reason = 'Subscription verification failed';
                 }
             } else {
-                // Free tier — limited niche access, no studio
-                subscriptionStatus = {
-                    hasAccess: true,
-                    type: 'free',
-                    status: 'active',
-                    plan: 'free',
-                    reason: 'Free tier — limited access',
-                    nicheLimit: 10
-                };
+                const trialStatus = trialHelper.getTrialStatus(user);
+                if (trialStatus && trialStatus.active) {
+                    subscriptionStatus = {
+                        hasAccess: true,
+                        type: 'trial',
+                        status: 'active',
+                        plan: 'trial',
+                        reason: 'Free trial — ranking videos',
+                        rankingAccess: true,
+                        trial: {
+                            daysLeft: trialStatus.daysLeft,
+                            rankingVideosLeft: trialStatus.rankingVideosLeft,
+                            rankingVideosUsed: trialStatus.rankingVideosUsed,
+                            rankingVideosLimit: trialStatus.rankingVideosLimit,
+                            endsAt: trialStatus.endsAt
+                        }
+                    };
+                } else {
+                    // Free tier — limited niche access, no full studio
+                    subscriptionStatus = {
+                        hasAccess: true,
+                        type: 'free',
+                        status: 'active',
+                        plan: 'free',
+                        reason: trialStatus
+                            ? ('Trial ended (' + (trialStatus.reason || 'exhausted') + ')')
+                            : 'Free tier — limited access',
+                        nicheLimit: 10,
+                        trial: trialStatus ? {
+                            daysLeft: trialStatus.daysLeft,
+                            rankingVideosLeft: trialStatus.rankingVideosLeft,
+                            rankingVideosUsed: trialStatus.rankingVideosUsed,
+                            rankingVideosLimit: trialStatus.rankingVideosLimit,
+                            endsAt: trialStatus.endsAt,
+                            status: trialStatus.status,
+                            reason: trialStatus.reason,
+                            active: false
+                        } : null
+                    };
+                }
             }
         }
+
+        const trialRemaining = trialHelper.getTrialStatus(user);
 
         res.json({
             id: user._id,
@@ -1686,6 +1740,16 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
             migrated_from_v1: user.migrated_from_v1 || false,
             emailVerified: user.emailVerified !== false, // existing users without field = verified
             subscription: subscriptionStatus,
+            trial: trialRemaining,
+            trialRemaining: trialRemaining && trialRemaining.active ? {
+                daysLeft: trialRemaining.daysLeft,
+                rankingVideosLeft: trialRemaining.rankingVideosLeft
+            } : (trialRemaining ? {
+                daysLeft: 0,
+                rankingVideosLeft: 0,
+                reason: trialRemaining.reason,
+                active: false
+            } : null),
             stats: user.stats || { channels_approved: 0, channels_rejected: 0, total_reviews: 0 }
         });
 
@@ -1753,6 +1817,34 @@ app.post('/api/channels/auto-collect', authenticateToken, async (req, res) => {
     }).catch(function(err) {
         console.error('🤖 Manual auto-collect error:', err.message);
     });
+});
+
+// Manually trigger 3-day niche scrape rotation (admin only)
+app.post('/api/channels/niche-scrape', authenticateToken, async (req, res) => {
+    if (req.user.email !== process.env.ADMIN_EMAIL) {
+        return res.status(403).json({ error: 'Admin only' });
+    }
+    try {
+        const result = await nicheScheduler.startScrapeRun(db, {
+            trigger: 'manual',
+            keywords: Array.isArray(req.body.keywords) ? req.body.keywords : undefined,
+            limit: req.body.limit || undefined
+        });
+        res.json({ message: 'Niche scrape started', ...result });
+    } catch (err) {
+        console.error('Niche scrape trigger error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// List niche keywords / recent scrape runs (admin)
+app.get('/api/channels/niche-scrape/status', authenticateToken, async (req, res) => {
+    if (req.user.email !== process.env.ADMIN_EMAIL) {
+        return res.status(403).json({ error: 'Admin only' });
+    }
+    const runs = await db.collection('scrape_runs').find({}).sort({ createdAt: -1 }).limit(10).toArray();
+    const keywordCount = await db.collection('niche_keywords').countDocuments({ active: true });
+    res.json({ keywordCount, runs });
 });
 
 // Add new channels from scraper
@@ -3904,6 +3996,7 @@ app.post('/api/subscription/webhook', async (req, res) => {
             // Handle new subscription — grant monthly credits
             if (meta.plan && meta.userId && session.mode === 'subscription') {
                 await studioCredits.grantMonthlyCredits(meta.userId, meta.plan);
+                await trialHelper.convertTrial(db, meta.userId);
                 console.log('💳 Webhook: granted monthly credits for ' + meta.plan + ' plan to user ' + meta.userId);
             }
             break;

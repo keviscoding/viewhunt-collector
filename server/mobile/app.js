@@ -1539,8 +1539,9 @@ class ViewHuntApp {
         if (!this.subscriptionStatus) return false;
         if (this.subscriptionStatus.type === 'admin') return true;
         if (this.subscriptionStatus.type === 'stripe' && this.subscriptionStatus.hasAccess) return true;
-        // Beta and invite users get studio access too
+        // Beta, invite, and active trial users get studio access
         if (this.subscriptionStatus.type === 'beta' || this.subscriptionStatus.type === 'invite') return true;
+        if (this.subscriptionStatus.type === 'trial' && this.subscriptionStatus.hasAccess) return true;
         return false;
     }
     
