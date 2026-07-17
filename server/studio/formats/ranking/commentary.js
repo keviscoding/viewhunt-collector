@@ -2,39 +2,40 @@
  * Ranking Commentary Generator
  * Uses Gemini to watch trimmed clips and generate short one-liner commentary.
  * Also generates TTS audio for each line using Gemini TTS.
- * 
+ * Word timings: OpenAI Whisper when OPENAI_API_KEY is set, else character-weighted.
+ *
  * Output per clip:
  *   - Clip 1 (first): intro line reading out the ranking title
  *   - Clips 2+: short 3-10 word reaction/commentary
- * 
+ *
  * Style: super fast, upbeat, friendly, casual
  */
 const { GoogleGenAI } = require('@google/genai');
 const fs = require('fs');
 const path = require('path');
+const OpenAI = require('openai');
 
 class RankingCommentary {
     constructor() {
         this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         this.audioDir = path.join(__dirname, '../../../public/studio/generated/audio');
         if (!fs.existsSync(this.audioDir)) fs.mkdirSync(this.audioDir, { recursive: true });
+        this.openai = process.env.OPENAI_API_KEY
+            ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+            : null;
     }
 
     /**
      * Generate commentary lines for all clips.
-     * @param {Array} clips - Array of { path, number, label } (already trimmed)
-     * @param {string} rankingTitle - The ranking title (e.g. "Ranking the Funniest Trampoline Moments")
-     * @returns {Array} Array of { clipIndex, line, audioPath } — audioPath is the TTS wav file
+     * @returns {Array} Array of { clipIndex, line, audioPath, wordTimings }
      */
     async generateCommentary(clips, rankingTitle, voiceName) {
         console.log(`🎙️ Ranking commentary: generating for ${clips.length} clips, title: "${rankingTitle}", voice: ${voiceName || 'Kore'}`);
         this.voiceName = voiceName || 'Kore';
 
-        // Step 1: Generate intro line for clip 1
         const introLine = await this._generateIntroLine(rankingTitle);
         console.log(`  Intro: "${introLine}"`);
 
-        // Step 2: Analyze clips 2+ and generate one-liners
         const commentaryLines = [];
         for (let i = 1; i < clips.length; i++) {
             const clip = clips[i];
@@ -48,31 +49,44 @@ class RankingCommentary {
             }
         }
 
-        // Step 3: TTS all lines in parallel (intro + commentary)
         const ttsPromises = [];
 
-        // Intro TTS
         ttsPromises.push(
-            this._ttsLine(introLine, 'intro')
-                .then(audioPath => ({ clipIndex: 0, line: introLine, audioPath }))
+            this._ttsLineWithTimings(introLine, 'intro')
+                .then(({ audioPath, wordTimings }) => ({
+                    clipIndex: 0, line: introLine, audioPath, wordTimings
+                }))
                 .catch(err => {
                     console.warn(`  Intro TTS failed: ${err.message}`);
-                    return { clipIndex: 0, line: introLine, audioPath: null };
+                    return {
+                        clipIndex: 0,
+                        line: introLine,
+                        audioPath: null,
+                        wordTimings: this._charWeightedTimings(introLine, 2.0)
+                    };
                 })
         );
 
-        // Commentary TTS
         for (const c of commentaryLines) {
             if (!c.line) {
-                ttsPromises.push(Promise.resolve({ clipIndex: c.clipIndex, line: null, audioPath: null }));
+                ttsPromises.push(Promise.resolve({
+                    clipIndex: c.clipIndex, line: null, audioPath: null, wordTimings: []
+                }));
                 continue;
             }
             ttsPromises.push(
-                this._ttsLine(c.line, 'clip-' + (c.clipIndex + 1))
-                    .then(audioPath => ({ clipIndex: c.clipIndex, line: c.line, audioPath }))
+                this._ttsLineWithTimings(c.line, 'clip-' + (c.clipIndex + 1))
+                    .then(({ audioPath, wordTimings }) => ({
+                        clipIndex: c.clipIndex, line: c.line, audioPath, wordTimings
+                    }))
                     .catch(err => {
                         console.warn(`  Clip ${c.clipIndex + 1} TTS failed: ${err.message}`);
-                        return { clipIndex: c.clipIndex, line: c.line, audioPath: null };
+                        return {
+                            clipIndex: c.clipIndex,
+                            line: c.line,
+                            audioPath: null,
+                            wordTimings: this._charWeightedTimings(c.line, 2.0)
+                        };
                     })
             );
         }
@@ -84,9 +98,6 @@ class RankingCommentary {
         return results;
     }
 
-    /**
-     * Generate the intro line — reads out the ranking title in an upbeat way.
-     */
     async _generateIntroLine(rankingTitle) {
         const prompt = `You are a fast-paced, upbeat YouTube Shorts narrator for ranking/compilation videos.
 
@@ -109,14 +120,9 @@ Reply with ONLY the intro line, nothing else. No quotes, no explanation.`;
 
         const text = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
         if (!text) throw new Error('No intro line generated');
-        // Clean up — remove quotes if Gemini added them
         return text.replace(/^["']|["']$/g, '').trim();
     }
 
-    /**
-     * Analyze a single clip video and generate a short one-liner commentary.
-     * Sends the video file to Gemini for visual understanding.
-     */
     async _analyzeClipAndComment(clipPath, rankingTitle, clipNumber, totalClips) {
         const videoBuffer = fs.readFileSync(clipPath);
         const base64Video = videoBuffer.toString('base64');
@@ -152,10 +158,16 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
         return text.replace(/^["']|["']$/g, '').trim();
     }
 
-    /**
-     * Generate TTS audio for a single line using Gemini TTS.
-     * Returns the path to the generated WAV file.
-     */
+    async _ttsLineWithTimings(line, label) {
+        const audioPath = await this._ttsLine(line, label);
+        let wordTimings = await this._alignWords(audioPath, line);
+        if (!wordTimings || !wordTimings.length) {
+            const dur = this._wavDurationSeconds(audioPath) || 2.0;
+            wordTimings = this._charWeightedTimings(line, dur);
+        }
+        return { audioPath, wordTimings };
+    }
+
     async _ttsLine(line, label) {
         const ttsPrompt = `Read this in a super fast, upbeat, friendly tone, in about 2 seconds:\n\n${line}`;
 
@@ -183,8 +195,71 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
     }
 
     /**
-     * Write raw PCM data as WAV (same format as GeminiTTS)
+     * Align spoken words to the TTS WAV via OpenAI Whisper word timestamps.
      */
+    async _alignWords(audioPath, line) {
+        if (!this.openai || !audioPath || !fs.existsSync(audioPath)) return null;
+        try {
+            const transcription = await this.openai.audio.transcriptions.create({
+                file: fs.createReadStream(audioPath),
+                model: 'whisper-1',
+                response_format: 'verbose_json',
+                timestamp_granularities: ['word']
+            });
+
+            const words = transcription.words || [];
+            if (!words.length) return null;
+
+            const timings = words.map(function(w) {
+                return {
+                    word: String(w.word || '').trim(),
+                    start: typeof w.start === 'number' ? w.start : 0,
+                    end: typeof w.end === 'number' ? w.end : 0
+                };
+            }).filter(function(w) { return w.word; });
+
+            if (timings.length) {
+                console.log('  ✓ Whisper word timings: ' + timings.length + ' words');
+            }
+            return timings.length ? timings : null;
+        } catch (err) {
+            console.warn('  Whisper align failed, using char-weighted:', err.message);
+            return null;
+        }
+    }
+
+    /**
+     * Character-weighted word timings across [0, duration].
+     */
+    _charWeightedTimings(line, durationSeconds) {
+        const words = String(line || '').replace(/\n/g, ' ').trim().split(/\s+/).filter(Boolean);
+        if (!words.length) return [];
+        const dur = Math.max(0.4, durationSeconds || 2);
+        const weights = words.map(function(w) { return Math.max(1, w.replace(/[^a-zA-Z0-9]/g, '').length || 1); });
+        const total = weights.reduce(function(a, b) { return a + b; }, 0);
+        let t = 0;
+        const out = [];
+        for (let i = 0; i < words.length; i++) {
+            const slice = (weights[i] / total) * dur;
+            out.push({ word: words[i], start: t, end: t + slice });
+            t += slice;
+        }
+        return out;
+    }
+
+    _wavDurationSeconds(filepath) {
+        try {
+            const buf = fs.readFileSync(filepath);
+            if (buf.length < 44) return 0;
+            const byteRate = buf.readUInt32LE(28);
+            const dataSize = buf.readUInt32LE(40);
+            if (!byteRate) return 0;
+            return dataSize / byteRate;
+        } catch (e) {
+            return 0;
+        }
+    }
+
     _writeWav(filepath, pcmData) {
         const dataSize = pcmData.length;
         const header = Buffer.alloc(44);
@@ -194,11 +269,11 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
         header.write('fmt ', 12);
         header.writeUInt32LE(16, 16);
         header.writeUInt16LE(1, 20);
-        header.writeUInt16LE(1, 22);        // mono
-        header.writeUInt32LE(24000, 24);     // 24kHz
-        header.writeUInt32LE(24000 * 2, 28); // byte rate
-        header.writeUInt16LE(2, 32);         // block align
-        header.writeUInt16LE(16, 34);        // 16-bit
+        header.writeUInt16LE(1, 22);
+        header.writeUInt32LE(24000, 24);
+        header.writeUInt32LE(24000 * 2, 28);
+        header.writeUInt16LE(2, 32);
+        header.writeUInt16LE(16, 34);
         header.write('data', 36);
         header.writeUInt32LE(dataSize, 40);
         fs.writeFileSync(filepath, Buffer.concat([header, pcmData]));

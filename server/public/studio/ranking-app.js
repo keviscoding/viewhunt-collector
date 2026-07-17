@@ -18,6 +18,47 @@
     var colorPalette = 'yellow';
     var checkeredMode = false;
     var subtitleColor = 'yellow';
+    var stylePreset = 'classic';
+    var previewActiveClip = 0; // which clip looks "active" in dashboard preview
+
+    var STYLE_PRESETS = {
+        classic: {
+            label: 'Classic Yellow',
+            colorPalette: 'yellow',
+            checkeredMode: false,
+            layout: { listX: 5, titleY: 6, titleSize: 48, lineSpacing: 65, numSize: 50 },
+            subtitleFont: 'Arial',
+            subtitleY: 55,
+            subtitleColor: 'yellow'
+        },
+        bold: {
+            label: 'Bold Impact',
+            colorPalette: 'orange',
+            checkeredMode: false,
+            layout: { listX: 4, titleY: 5, titleSize: 58, lineSpacing: 72, numSize: 62 },
+            subtitleFont: 'Impact',
+            subtitleY: 62,
+            subtitleColor: 'white'
+        },
+        minimal: {
+            label: 'Minimal Bottom Caps',
+            colorPalette: 'white',
+            checkeredMode: false,
+            layout: { listX: 8, titleY: 8, titleSize: 40, lineSpacing: 58, numSize: 42 },
+            subtitleFont: 'Arial',
+            subtitleY: 72,
+            subtitleColor: 'white'
+        },
+        checkered: {
+            label: 'Checkered Pro',
+            colorPalette: 'cyan',
+            checkeredMode: true,
+            layout: { listX: 5, titleY: 6, titleSize: 48, lineSpacing: 68, numSize: 52 },
+            subtitleFont: 'Verdana',
+            subtitleY: 58,
+            subtitleColor: 'cyan'
+        }
+    };
 
     function getToken() { return localStorage.getItem('viewhunt_token') || localStorage.getItem('token') || null; }
     function authHeaders() { return { 'Authorization': 'Bearer ' + getToken() }; }
@@ -211,13 +252,20 @@
             });
 
             input.value = '';
+            var plat = data.platform ? String(data.platform).toUpperCase() : 'LINK';
+            var wm = data.watermarkFree === true
+                ? ' · no-watermark source'
+                : (data.watermarkFree === false ? ' · may include platform watermark' : '');
             status.style.color = 'var(--green)';
-            status.textContent = 'Imported ' + data.duration.toFixed(1) + 's clip';
-            setTimeout(function() { status.classList.add('hidden'); }, 3000);
+            status.textContent = 'Imported ' + plat + ' · ' + data.duration.toFixed(1) + 's' + wm;
+            setTimeout(function() { status.classList.add('hidden'); }, 4500);
             renderClipList(); updateNextButton();
         } catch (err) {
             status.style.color = 'var(--red)';
-            status.textContent = err.message + ' — Download the video to your device first, then upload it.';
+            var tip = /APIFY_TOKEN|upload the file|Download it on your phone/i.test(err.message || '')
+                ? ''
+                : ' — If this keeps failing, download the video and upload the file below.';
+            status.textContent = err.message + tip;
             status.classList.remove('hidden');
         }
 
@@ -395,6 +443,7 @@
             document.getElementById('btn-assemble').textContent = assembleButtonLabel(enableCommentary);
             document.getElementById('voice-picker').style.display = this.checked ? '' : 'none';
             document.getElementById('subtitle-settings').style.display = this.checked ? '' : 'none';
+            renderPreview('preview-dash');
         });
         // Color palette
         document.querySelectorAll('.color-swatch').forEach(function(btn) {
@@ -416,6 +465,7 @@
         if (subYEl) {
             subYEl.addEventListener('input', function() {
                 subYVal.textContent = subYEl.value + '%';
+                renderPreview('preview-dash');
             });
         }
         // Subtitle color swatches
@@ -425,9 +475,9 @@
                 document.querySelectorAll('.sub-color-swatch').forEach(function(b) { b.classList.remove('active'); });
                 btn.classList.add('active');
                 subtitleColor = btn.dataset.color;
-                // Update preview text color
                 var preview = document.getElementById('subtitle-preview');
                 if (preview) preview.style.color = subColorMap[subtitleColor] || '#facc15';
+                renderPreview('preview-dash');
             });
         });
         // Subtitle font change updates preview
@@ -436,6 +486,73 @@
             subFontEl.addEventListener('change', function() {
                 var preview = document.getElementById('subtitle-preview');
                 if (preview) preview.style.fontFamily = subFontEl.value;
+                renderPreview('preview-dash');
+            });
+        }
+    }
+
+    function applyStylePreset(id) {
+        var p = STYLE_PRESETS[id];
+        if (!p) return;
+        stylePreset = id;
+        colorPalette = p.colorPalette;
+        checkeredMode = !!p.checkeredMode;
+        subtitleColor = p.subtitleColor;
+        layout = {
+            listX: p.layout.listX,
+            titleY: p.layout.titleY,
+            titleSize: p.layout.titleSize,
+            lineSpacing: p.layout.lineSpacing,
+            numSize: p.layout.numSize
+        };
+
+        document.querySelectorAll('.style-preset').forEach(function(b) {
+            b.classList.toggle('active', b.dataset.preset === id);
+        });
+        document.querySelectorAll('.color-swatch').forEach(function(b) {
+            b.classList.toggle('active', b.dataset.color === colorPalette);
+        });
+        var check = document.getElementById('checkered-toggle');
+        if (check) check.checked = checkeredMode;
+        var fontEl = document.getElementById('subtitle-font');
+        if (fontEl) fontEl.value = p.subtitleFont;
+        var subY = document.getElementById('subtitle-y');
+        var subYVal = document.getElementById('subtitle-y-val');
+        if (subY) { subY.value = p.subtitleY; if (subYVal) subYVal.textContent = p.subtitleY + '%'; }
+        document.querySelectorAll('.sub-color-swatch').forEach(function(b) {
+            b.classList.toggle('active', b.dataset.color === subtitleColor);
+        });
+        var sample = document.getElementById('subtitle-preview');
+        if (sample) {
+            sample.style.fontFamily = p.subtitleFont;
+            sample.style.color = ({ yellow:'#facc15', white:'#ffffff', cyan:'#22d3ee', green:'#34d399', red:'#f87171', pink:'#f472b6', orange:'#fb923c' })[subtitleColor] || '#facc15';
+        }
+        // Sync position sliders
+        ['list-x','title-y','title-size','line-spacing','num-size'].forEach(function(suffix) {
+            var map = { 'list-x': 'listX', 'title-y': 'titleY', 'title-size': 'titleSize', 'line-spacing': 'lineSpacing', 'num-size': 'numSize' };
+            var key = map[suffix];
+            var el = document.getElementById('pos-' + suffix);
+            var valEl = document.getElementById('pos-' + suffix + '-val');
+            if (el) el.value = layout[key];
+            if (valEl) valEl.textContent = (key === 'titleSize' || key === 'lineSpacing' || key === 'numSize') ? layout[key] : layout[key] + '%';
+        });
+        renderPreview('preview-dash');
+    }
+
+    function initStylePresets() {
+        document.querySelectorAll('.style-preset').forEach(function(btn) {
+            btn.addEventListener('click', function() { applyStylePreset(btn.dataset.preset); });
+        });
+        // Click phone preview to cycle which number looks active
+        var frame = document.getElementById('preview-dash');
+        if (frame) {
+            frame.style.cursor = 'pointer';
+            frame.title = 'Click to preview next clip highlight';
+            frame.addEventListener('click', function() {
+                var n = clips.filter(function(c) { return !c.uploading; }).length;
+                if (n < 1) return;
+                previewActiveClip = (previewActiveClip + 1) % n;
+                renderPreview('preview-dash');
             });
         }
     }
@@ -519,7 +636,11 @@
                 if (clipIdx < currentTrimIndex) { numClass = 'done'; labelClass = ''; }
                 else if (clipIdx === currentTrimIndex) { numClass = 'active'; labelClass = ''; }
             } else {
-                numClass = 'done'; labelClass = '';
+                // Simulate mid-ranking: earlier (higher) numbers done, one active
+                var activeIdx = Math.min(previewActiveClip, totalClips - 1);
+                if (clipIdx < activeIdx) { numClass = 'done'; labelClass = ''; }
+                else if (clipIdx === activeIdx) { numClass = 'active'; labelClass = ''; }
+                else { numClass = 'dim'; labelClass = 'dim'; }
             }
 
             // Apply color palette
@@ -542,6 +663,28 @@
             html += '<div class="pv-row"><div class="pv-num ' + numClass + '" style="' + numColor + numFontStyle + '">' + num + '.</div><div class="pv-label ' + labelClass + '">' + escapeHtml(label) + '</div></div>';
         }
         html += '</div>';
+
+        // Live caption preview inside phone frame (when commentary on, or always as sample)
+        var commentaryOn = document.getElementById('commentary-toggle') && document.getElementById('commentary-toggle').checked;
+        var sampleCap = (document.getElementById('title-text') || {}).value
+            ? 'These are the ' + ((document.getElementById('title-highlight') || {}).value || 'best') + ' moments'
+            : 'bro did not see that coming';
+        if (commentaryOn || !isTrim) {
+            var subY = parseInt((document.getElementById('subtitle-y') || {}).value, 10);
+            if (isNaN(subY)) subY = 55;
+            var subFont = ((document.getElementById('subtitle-font') || {}).value) || 'Arial';
+            var subColorMap = {
+                yellow: '#facc15', cyan: '#22d3ee', green: '#34d399', red: '#f87171',
+                pink: '#f472b6', orange: '#fb923c', white: '#ffffff'
+            };
+            var capColor = subColorMap[subtitleColor] || '#facc15';
+            var words = sampleCap.split(/\s+/);
+            var mid = Math.max(0, Math.floor(words.length / 2) - 1);
+            var capHtml = words.map(function(w, i) {
+                return '<span class="pv-cap-word' + (i === mid ? ' on' : '') + '">' + escapeHtml(w.toUpperCase()) + '</span>';
+            }).join(' ');
+            html += '<div class="pv-caption" style="top:' + subY + '%;color:' + capColor + ';font-family:\'' + subFont.replace(/'/g, '') + '\',sans-serif;font-size:0.72rem">' + capHtml + '</div>';
+        }
 
         if (isTrim && clips[currentTrimIndex]) {
             html += '<div class="pv-clip-label">' + escapeHtml(clips[currentTrimIndex].originalName || '') + '</div>';
@@ -601,7 +744,8 @@
                     checkeredMode: checkeredMode,
                     subtitleFont: selectedFont,
                     subtitleY: selectedSubY,
-                    subtitleColor: subtitleColor
+                    subtitleColor: subtitleColor,
+                    stylePreset: stylePreset
                 })
             });
             var aData = await aRes.json();
@@ -686,7 +830,7 @@
 
     // ==================== INIT ====================
     function init() {
-        loadCredits(); initUpload(); initUrlImport(); initTimeline(); initPlayControls(); initTrimControls(); initTitleControls(); initPositionControls();
+        loadCredits(); initUpload(); initUrlImport(); initTimeline(); initPlayControls(); initTrimControls(); initTitleControls(); initPositionControls(); initStylePresets();
         document.getElementById('btn-next-trim').addEventListener('click', startTrimming);
         document.getElementById('btn-assemble').addEventListener('click', assembleVideo);
         document.getElementById('btn-new').addEventListener('click', function() {

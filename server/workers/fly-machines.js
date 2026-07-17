@@ -67,9 +67,11 @@ async function startAssemblyMachine(jobId) {
         AWS_REGION: process.env.AWS_REGION || process.env.SPACES_REGION || 'us-east-1',
         SPACES_ENDPOINT: process.env.SPACES_ENDPOINT || '',
         SPACES_CDN_URL: process.env.SPACES_CDN_URL || '',
-        GEMINI_API_KEY: process.env.GEMINI_API_KEY || ''
+        GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY || ''
     };
 
+    // More RAM/CPU when jobs may run Gemini vision + TTS + Whisper + FFmpeg
     const machine = await flyRequest('POST', '/apps/' + app + '/machines', {
         name: 'rank-' + String(jobId).slice(-12),
         config: {
@@ -77,8 +79,8 @@ async function startAssemblyMachine(jobId) {
             env,
             guest: {
                 cpu_kind: 'shared',
-                cpus: 2,
-                memory_mb: 2048
+                cpus: 4,
+                memory_mb: 4096
             },
             auto_destroy: true,
             restart: { policy: 'no' }

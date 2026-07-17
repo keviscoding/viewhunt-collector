@@ -925,72 +925,311 @@ const { execFile } = require('child_process');
 const https = require('https');
 const axios = require('axios');
 
-// Apify-based video download for TikTok and YouTube
+/** Strip tracking params that break some TikTok downloaders. */
+function cleanImportUrl(rawUrl, platform) {
+    try {
+        var u = new URL(rawUrl);
+        if (platform === 'tiktok') {
+            u.search = '';
+            u.hash = '';
+            return u.toString();
+        }
+        if (platform === 'youtube') {
+            var v = u.searchParams.get('v');
+            if (v) return 'https://www.youtube.com/watch?v=' + v;
+            if (/youtu\.be/i.test(u.hostname)) {
+                return 'https://www.youtube.com/watch?v=' + u.pathname.replace(/^\//, '').split('/')[0];
+            }
+        }
+        return rawUrl;
+    } catch (e) {
+        return rawUrl;
+    }
+}
+
+/**
+ * Prefer no-watermark / CDN / Apify-stored media URLs.
+ * Actors return wildly different shapes — deep-scan nested objects.
+ */
+function pickBestMediaUrl(item) {
+    if (!item || typeof item !== 'object') return { videoUrl: null, watermarkFree: false };
+
+    function scoreUrl(candidate, keyHint) {
+        if (typeof candidate !== 'string' || !/^https?:\/\//i.test(candidate)) return -1;
+        if (/\.(jpg|jpeg|png|webp|gif|svg)(\?|$)/i.test(candidate)) return -1;
+        // Skip page URLs without a media extension / CDN host
+        if (/tiktok\.com\/@|instagram\.com\/(p|reel)|youtube\.com\/watch/i.test(candidate) &&
+            !/\.(mp4|m3u8|webm)/i.test(candidate) &&
+            !/api\.apify\.com/i.test(candidate)) {
+            return -1;
+        }
+        var score = 10;
+        var hint = (keyHint || '') + ' ' + candidate;
+        if (/no[_-]?wm|nowm|nwm|without.?watermark|NoWatermark/i.test(hint)) score += 50;
+        if (/api\.apify\.com\/v2\/key-value-stores/i.test(candidate)) score += 40;
+        if (/\.mp4(\?|$)/i.test(candidate) || /contentType=video/i.test(candidate)) score += 20;
+        if (/tiktokcdn|muscdn|byteoversea|ibyteimg|cdninstagram|googlevideo|ytimg/i.test(candidate)) score += 15;
+        if (/watermark|wm=1|with_watermark/i.test(hint) && !/no[_-]?wm|nowm|nwm/i.test(hint)) score -= 30;
+        return score;
+    }
+
+    var best = null;
+    var bestScore = 0;
+    var bestHint = '';
+
+    function consider(candidate, keyHint) {
+        var s = scoreUrl(candidate, keyHint);
+        if (s > bestScore) {
+            bestScore = s;
+            best = candidate;
+            bestHint = keyHint || '';
+        }
+    }
+
+    function walk(obj, depth, keyHint) {
+        if (!obj || depth > 6) return;
+        if (typeof obj === 'string') {
+            consider(obj, keyHint);
+            return;
+        }
+        if (Array.isArray(obj)) {
+            for (var i = 0; i < obj.length && i < 40; i++) walk(obj[i], depth + 1, keyHint);
+            return;
+        }
+        if (typeof obj !== 'object') return;
+        var keys = Object.keys(obj);
+        for (var j = 0; j < keys.length && j < 50; j++) {
+            var key = keys[j];
+            if (/url|addr|play|download|media|video|mp4|nwm|watermark|storage/i.test(key)) {
+                walk(obj[key], depth + 1, key);
+            }
+        }
+    }
+
+    walk(item, 0, '');
+    if (!best) return { videoUrl: null, watermarkFree: false };
+
+    var wmFree = /no[_-]?wm|nowm|nwm|without.?watermark|NoWatermark/i.test(bestHint + ' ' + best);
+    if (/watermark|wm=1|with_watermark/i.test(best) && !wmFree) wmFree = false;
+    return { videoUrl: best, watermarkFree: !!wmFree };
+}
+
+async function runApifyActorSync(token, actorId, input, timeoutMs) {
+    var resp = await axios.post(
+        'https://api.apify.com/v2/acts/' + encodeURIComponent(actorId) +
+            '/run-sync-get-dataset-items?token=' + token + '&timeout=' + Math.floor((timeoutMs || 120000) / 1000),
+        input,
+        { headers: { 'Content-Type': 'application/json' }, timeout: (timeoutMs || 120000) + 15000 }
+    );
+    var items = resp.data;
+    if (!Array.isArray(items) || items.length === 0) {
+        throw new Error(actorId + ' returned no dataset items');
+    }
+    return items;
+}
+
+/**
+ * Start actor, wait for finish, return dataset items + run meta (for KV video downloads).
+ * Preferred for clockworks/tiktok-video-scraper when shouldDownloadVideos=true.
+ */
+async function runApifyActorWait(token, actorId, input, timeoutMs) {
+    timeoutMs = timeoutMs || 150000;
+    var startResp = await axios.post(
+        'https://api.apify.com/v2/acts/' + encodeURIComponent(actorId) + '/runs?token=' + token,
+        input,
+        { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
+    );
+    var run = startResp.data && startResp.data.data;
+    if (!run || !run.id) throw new Error(actorId + ' failed to start');
+
+    var runId = run.id;
+    var deadline = Date.now() + timeoutMs;
+    var status = run.status;
+    while (Date.now() < deadline) {
+        if (status === 'SUCCEEDED' || status === 'FAILED' || status === 'ABORTED' || status === 'TIMED-OUT') break;
+        await new Promise(function (r) { setTimeout(r, 4000); });
+        var statusResp = await axios.get(
+            'https://api.apify.com/v2/actor-runs/' + runId + '?token=' + token,
+            { timeout: 15000 }
+        );
+        run = statusResp.data && statusResp.data.data;
+        status = run && run.status;
+    }
+    if (status !== 'SUCCEEDED') throw new Error(actorId + ' ended with status ' + status);
+
+    var datasetId = run.defaultDatasetId;
+    var items = [];
+    if (datasetId) {
+        var dsResp = await axios.get(
+            'https://api.apify.com/v2/datasets/' + datasetId + '/items?token=' + token,
+            { timeout: 30000 }
+        );
+        items = Array.isArray(dsResp.data) ? dsResp.data : [];
+    }
+    return { items: items, run: run };
+}
+
+async function tryPullApifyKvVideo(token, runMeta) {
+    var kvStoreId = runMeta && runMeta.defaultKeyValueStoreId;
+    if (!kvStoreId) return null;
+    var kvResp = await axios.get(
+        'https://api.apify.com/v2/key-value-stores/' + kvStoreId + '/keys?token=' + token,
+        { timeout: 20000 }
+    );
+    var keys = (kvResp.data && kvResp.data.data && kvResp.data.data.items) || [];
+    var videoKey = keys.find(function (k) {
+        return k.key && (/\.mp4$/i.test(k.key) || (k.contentType && /video/i.test(k.contentType)));
+    });
+    if (!videoKey) return null;
+    return 'https://api.apify.com/v2/key-value-stores/' + kvStoreId +
+        '/records/' + encodeURIComponent(videoKey.key) + '?token=' + token;
+}
+
+/**
+ * Multi-actor Apify chain. Primary: clockworks/tiktok-video-scraper.
+ */
 async function downloadViaApify(url, outPath) {
     var apifyToken = process.env.APIFY_TOKEN;
     if (!apifyToken) throw new Error('APIFY_TOKEN not configured');
 
     var isTikTok = /tiktok\.com|vm\.tiktok|vt\.tiktok/i.test(url);
-    var isYouTube = /youtube\.com|youtu\.be|youtube\.com\/shorts/i.test(url);
+    var isYouTube = /youtube\.com|youtu\.be/i.test(url);
+    var isInstagram = /instagram\.com/i.test(url);
+
+    var platform = isTikTok ? 'tiktok' : isYouTube ? 'youtube' : isInstagram ? 'instagram' : 'other';
+    var cleanUrl = cleanImportUrl(url, platform);
 
     if (isTikTok) {
-        console.log('🎵 TikTok download via Apify: ' + url);
-        var resp = await axios.post(
-            'https://api.apify.com/v2/acts/thenetaji~tiktok-video-downloader/run-sync-get-dataset-items?token=' + apifyToken,
+        console.log('TikTok download via Apify (primary: clockworks/tiktok-video-scraper): ' + cleanUrl);
+        // Prefer clockworks video scraper first — downloads MP4 into Apify KV when shouldDownloadVideos=true
+        var tiktokPlans = [
             {
-                urls: [{ url: url }],
-                quality: 'best',
-                format: 'mp4',
-                proxy: { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] }
+                id: 'clockworks~tiktok-video-scraper',
+                preferKv: true,
+                input: {
+                    postURLs: [cleanUrl],
+                    shouldDownloadVideos: true,
+                    shouldDownloadCovers: false,
+                    shouldDownloadSubtitles: false,
+                    shouldDownloadSlideshowImages: false
+                }
             },
-            { headers: { 'Content-Type': 'application/json' }, timeout: 120000 }
-        );
+            {
+                id: 'clockworks~tiktok-scraper',
+                preferKv: true,
+                input: {
+                    postURLs: [cleanUrl],
+                    resultsPerPage: 1,
+                    shouldDownloadVideos: true,
+                    shouldDownloadCovers: false,
+                    shouldDownloadSlideshowImages: false
+                }
+            },
+            {
+                id: 'thenetaji~tiktok-video-downloader',
+                preferKv: false,
+                input: {
+                    urls: [{ url: cleanUrl }],
+                    startUrls: [{ url: cleanUrl }],
+                    quality: 'best',
+                    format: 'mp4',
+                    proxy: { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] },
+                    proxyConfiguration: { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] }
+                }
+            },
+            {
+                id: 'dz_omar~tiktok-video-downloader',
+                preferKv: false,
+                input: {
+                    startUrls: [{ url: cleanUrl }],
+                    videoUrls: [cleanUrl],
+                    quality: 'hd',
+                    proxyConfiguration: { useApifyProxy: true }
+                }
+            }
+        ];
 
-        var items = resp.data;
-        if (!Array.isArray(items) || items.length === 0) throw new Error('Apify returned no results for TikTok video');
+        var lastErr = null;
+        for (var t = 0; t < tiktokPlans.length; t++) {
+            var plan = tiktokPlans[t];
+            try {
+                console.log('  Apify try [' + (t + 1) + '/' + tiktokPlans.length + ']: ' + plan.id);
+                var mediaUrl = null;
+                var watermarkFree = false;
+                var items = [];
+                var runMeta = null;
 
-        // Find the download URL from the dataset items
-        var item = items[0];
-        var videoUrl = item.videoUrlNoWatermark || item.videoUrl || item.downloadUrl || item.url;
-        if (!videoUrl && item.video) videoUrl = item.video.downloadAddr || item.video.playAddr;
-        if (!videoUrl) {
-            console.warn('Apify TikTok response keys:', Object.keys(item));
-            throw new Error('Could not find video URL in Apify response');
+                if (plan.preferKv) {
+                    var waited = await runApifyActorWait(apifyToken, plan.id, plan.input, 150000);
+                    items = waited.items || [];
+                    runMeta = waited.run;
+                    // Clockworks stores downloaded MP4s in the run key-value store
+                    mediaUrl = await tryPullApifyKvVideo(apifyToken, runMeta);
+                    if (mediaUrl) {
+                        console.log('  Found Clockworks KV video download');
+                        watermarkFree = true; // downloaded file from scraper, not watermarked share URL
+                    }
+                } else {
+                    items = await runApifyActorSync(apifyToken, plan.id, plan.input, 150000);
+                }
+
+                if (!mediaUrl && items.length) {
+                    var picked = pickBestMediaUrl(items[0]);
+                    mediaUrl = picked.videoUrl;
+                    watermarkFree = !!picked.watermarkFree;
+                }
+                if (!mediaUrl && runMeta) {
+                    mediaUrl = await tryPullApifyKvVideo(apifyToken, runMeta);
+                }
+                if (!mediaUrl) {
+                    console.warn('  ' + plan.id + ' keys:', items[0] ? Object.keys(items[0]).slice(0, 30).join(',') : '(no items)');
+                    throw new Error('no media URL in response');
+                }
+                console.log('  Media found (wmFree=' + watermarkFree + '), downloading…');
+                await downloadFileToPath(mediaUrl, outPath, { referer: 'https://www.tiktok.com/' });
+                return {
+                    ok: true,
+                    platform: 'tiktok',
+                    watermarkFree: watermarkFree,
+                    source: 'apify:' + plan.id
+                };
+            } catch (err) {
+                console.warn('  Apify ' + plan.id + ' failed:', err.message);
+                lastErr = err;
+                try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch (e) {}
+            }
         }
-
-        console.log('  TikTok video URL found, downloading to server...');
-        await downloadFileToPath(videoUrl, outPath);
-        return true;
+        throw new Error(lastErr ? lastErr.message : 'All TikTok Apify actors failed');
 
     } else if (isYouTube) {
-        console.log('📺 YouTube download via Apify: ' + url);
-        // YouTube downloader returns data in the key-value store, use run-sync
+        console.log('YouTube download via Apify: ' + cleanUrl);
         var runResp = await axios.post(
             'https://api.apify.com/v2/acts/streamers~youtube-video-downloader/runs?token=' + apifyToken,
             {
-                videos: [{ url: url }],
+                videos: [{ url: cleanUrl }],
                 preferredQuality: '720p',
                 preferredFormat: 'mp4'
             },
             { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
         );
 
-        var runData = runResp.data?.data;
-        if (!runData?.id) throw new Error('Failed to start YouTube download actor');
+        var runData = runResp.data && runResp.data.data;
+        if (!runData || !runData.id) throw new Error('Failed to start YouTube download actor');
 
         var runId = runData.id;
         console.log('  YouTube actor run started: ' + runId);
 
-        // Poll for completion (max 3 minutes)
         var startTime = Date.now();
         var runStatus;
+        var finalRun = runData;
         while (Date.now() - startTime < 180000) {
-            await new Promise(r => setTimeout(r, 5000));
+            await new Promise(function (r) { setTimeout(r, 5000); });
             var statusResp = await axios.get(
                 'https://api.apify.com/v2/actor-runs/' + runId + '?token=' + apifyToken,
                 { timeout: 15000 }
             );
-            runStatus = statusResp.data?.data?.status;
+            finalRun = statusResp.data && statusResp.data.data;
+            runStatus = finalRun && finalRun.status;
             if (runStatus === 'SUCCEEDED') break;
             if (runStatus === 'FAILED' || runStatus === 'ABORTED' || runStatus === 'TIMED-OUT') {
                 throw new Error('YouTube download failed: ' + runStatus);
@@ -998,8 +1237,7 @@ async function downloadViaApify(url, outPath) {
         }
         if (runStatus !== 'SUCCEEDED') throw new Error('YouTube download timed out');
 
-        // Get dataset items
-        var datasetId = runResp.data?.data?.defaultDatasetId;
+        var datasetId = finalRun.defaultDatasetId || runData.defaultDatasetId;
         if (!datasetId) throw new Error('No dataset ID from YouTube actor');
 
         var dsResp = await axios.get(
@@ -1008,48 +1246,70 @@ async function downloadViaApify(url, outPath) {
         );
 
         var dsItems = dsResp.data;
-        if (!Array.isArray(dsItems) || dsItems.length === 0) throw new Error('No items in YouTube dataset');
-
-        var ytItem = dsItems[0];
-        var ytVideoUrl = ytItem.url || ytItem.videoUrl || ytItem.downloadUrl;
+        var ytVideoUrl = null;
+        var ytWm = true;
+        if (Array.isArray(dsItems) && dsItems.length > 0) {
+            var ytPicked = pickBestMediaUrl(dsItems[0]);
+            ytVideoUrl = ytPicked.videoUrl;
+            ytWm = true;
+        }
         if (!ytVideoUrl) {
-            // Try key-value store
-            var kvStoreId = runResp.data?.data?.defaultKeyValueStoreId;
-            if (kvStoreId) {
-                var kvResp = await axios.get(
-                    'https://api.apify.com/v2/key-value-stores/' + kvStoreId + '/keys?token=' + apifyToken,
-                    { timeout: 15000 }
-                );
-                var keys = kvResp.data?.data?.items || [];
-                var videoKey = keys.find(k => k.key && (k.key.endsWith('.mp4') || k.contentType?.includes('video')));
-                if (videoKey) {
-                    ytVideoUrl = 'https://api.apify.com/v2/key-value-stores/' + kvStoreId + '/records/' + encodeURIComponent(videoKey.key) + '?token=' + apifyToken;
-                }
-            }
-            if (!ytVideoUrl) {
-                console.warn('YouTube dataset item keys:', Object.keys(ytItem));
-                throw new Error('Could not find video URL in YouTube response');
-            }
+            ytVideoUrl = await tryPullApifyKvVideo(apifyToken, finalRun);
+        }
+        if (!ytVideoUrl) {
+            throw new Error('Could not find video URL in YouTube response');
         }
 
         console.log('  YouTube video URL found, downloading to server...');
         await downloadFileToPath(ytVideoUrl, outPath);
-        return true;
+        return { ok: true, platform: 'youtube', watermarkFree: ytWm, source: 'apify:streamers~youtube-video-downloader' };
+
+    } else if (isInstagram) {
+        console.log('Instagram download via Apify: ' + cleanUrl);
+        var igItems = await runApifyActorSync(apifyToken, 'apify~instagram-scraper', {
+            directUrls: [cleanUrl],
+            resultsType: 'posts',
+            resultsLimit: 1,
+            addParentData: false
+        }, 180000);
+        var igItem = igItems[0];
+        var igPicked = pickBestMediaUrl(igItem);
+        var igUrl = igPicked.videoUrl;
+        if (!igUrl && typeof igItem.videoUrl === 'string') igUrl = igItem.videoUrl;
+        if (!igUrl || typeof igUrl !== 'string') {
+            console.warn('Instagram item keys:', Object.keys(igItem || {}));
+            throw new Error('No video URL on this Instagram post (photo-only?). Try uploading the file.');
+        }
+        console.log('  Instagram video URL found, downloading...');
+        await downloadFileToPath(igUrl, outPath, { referer: 'https://www.instagram.com/' });
+        return { ok: true, platform: 'instagram', watermarkFree: true, source: 'apify:apify~instagram-scraper' };
     }
 
-    return false; // Not a TikTok/YouTube URL
+    return { ok: false };
 }
 
 // Download a file from URL to local path
-function downloadFileToPath(url, outPath) {
+function downloadFileToPath(url, outPath, opts) {
+    opts = opts || {};
     return new Promise(function(resolve, reject) {
         var fileStream = fs.createWriteStream(outPath);
+        var headers = {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+            'Accept': '*/*'
+        };
+        if (opts.referer) headers.Referer = opts.referer;
         function doGet(getUrl, redirects) {
-            if (redirects > 5) return reject(new Error('Too many redirects'));
+            if (redirects > 8) return reject(new Error('Too many redirects'));
             var mod = getUrl.startsWith('https') ? https : require('http');
-            mod.get(getUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 120000 }, function(resp) {
+            mod.get(getUrl, { headers: headers, timeout: 120000 }, function(resp) {
                 if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
-                    return doGet(resp.headers.location, (redirects || 0) + 1);
+                    var next = resp.headers.location;
+                    if (next.indexOf('http') !== 0) {
+                        try {
+                            next = new URL(next, getUrl).toString();
+                        } catch (e) {}
+                    }
+                    return doGet(next, (redirects || 0) + 1);
                 }
                 if (resp.statusCode !== 200) {
                     fileStream.close();
@@ -1140,25 +1400,41 @@ router.post('/ranking/import-url', requireAuth, urlImportLimiter, async (req, re
         var outName = 'clip-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.mp4';
         var outPath = path.join(rankingUploadDir, outName);
 
-        console.log('Ranking URL import: ' + url);
+        var platform = /tiktok\.com|vm\.tiktok|vt\.tiktok/i.test(url) ? 'tiktok'
+            : /youtube\.com|youtu\.be/i.test(url) ? 'youtube'
+            : /instagram\.com/i.test(url) ? 'instagram'
+            : 'other';
+        var importUrl = cleanImportUrl(url, platform);
+        console.log('Ranking URL import: ' + importUrl + (importUrl !== url ? ' (cleaned from ' + url + ')' : ''));
 
-        // Try Apify first for TikTok/YouTube, fall back to yt-dlp for other URLs
-        var isTikTokOrYT = /tiktok\.com|vm\.tiktok|vt\.tiktok|youtube\.com|youtu\.be/i.test(url);
+        var isApifyPlatform = platform === 'tiktok' || platform === 'youtube' || platform === 'instagram';
         var downloaded = false;
+        var importMeta = { platform: platform, watermarkFree: null, source: null };
+        var hasApify = !!process.env.APIFY_TOKEN;
 
-        if (isTikTokOrYT) {
+        if (isApifyPlatform && hasApify) {
             try {
-                downloaded = await downloadViaApify(url, outPath);
-                if (downloaded) console.log('  ✅ Apify download succeeded');
+                var apifyResult = await downloadViaApify(importUrl, outPath);
+                if (apifyResult && apifyResult.ok) {
+                    downloaded = true;
+                    importMeta.watermarkFree = !!apifyResult.watermarkFree;
+                    importMeta.source = apifyResult.source || 'apify';
+                    importMeta.platform = apifyResult.platform || platform;
+                    console.log('  Apify download succeeded (' + importMeta.platform + ', wmFree=' + importMeta.watermarkFree + ')');
+                }
             } catch (apifyErr) {
-                console.warn('  ⚠️ Apify download failed, falling back to yt-dlp:', apifyErr.message);
+                console.warn('  Apify download failed, falling back to yt-dlp:', apifyErr.message);
                 downloaded = false;
+                importMeta.apifyError = apifyErr.message;
             }
+        } else if (isApifyPlatform && !hasApify) {
+            console.warn('  APIFY_TOKEN missing — TikTok/IG imports often fail with yt-dlp alone');
+            importMeta.apifyError = 'APIFY_TOKEN not configured';
         }
 
         if (!downloaded) {
             var args = [
-                url,
+                importUrl,
                 '-o', outPath,
                 '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best[height<=1080]/best',
                 '--merge-output-format', 'mp4',
@@ -1166,11 +1442,40 @@ router.post('/ranking/import-url', requireAuth, urlImportLimiter, async (req, re
                 '--no-check-certificates',
                 '--no-warnings',
                 '--socket-timeout', '30',
-                '--extractor-args', 'youtube:player_client=ios,mweb',
                 '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
             ];
+            if (platform === 'youtube') {
+                args.push('--extractor-args', 'youtube:player_client=ios,mweb');
+            }
+            if (platform === 'tiktok') {
+                args.push('--referer', 'https://www.tiktok.com/');
+                args.push('--add-header', 'Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8');
+            }
 
-            await runYtdlp(args, 120000);
+            try {
+                await runYtdlp(args, 120000);
+                importMeta.source = 'yt-dlp';
+                // yt-dlp TikTok often includes watermark; YouTube usually clean
+                importMeta.watermarkFree = platform === 'youtube' ? true : (platform === 'tiktok' ? false : null);
+            } catch (ytdlpErr) {
+                var friendly = ytdlpErr.message || 'Download failed';
+                if (!hasApify && (platform === 'tiktok' || platform === 'instagram')) {
+                    friendly = 'Server import needs APIFY_TOKEN for reliable ' + platform +
+                        ' downloads. Set it on DigitalOcean, or download the video and upload the file.';
+                } else if (/Video not available|Unavailable|Private video|login|403|unsupported|Instagram/i.test(friendly)) {
+                    friendly = 'Could not import this ' + platform +
+                        ' link (removed, private, or blocked). Download it on your phone and upload the file.';
+                } else if (friendly.length > 180) {
+                    friendly = friendly.substring(0, 180);
+                }
+                return res.status(422).json({
+                    error: friendly,
+                    platform: platform,
+                    tip: hasApify
+                        ? 'Public TikTok/YouTube usually work. Private, region-locked, or deleted videos need a manual upload.'
+                        : 'Add APIFY_TOKEN to the DigitalOcean app env, redeploy, then retry.'
+                });
+            }
         }
 
         if (!fs.existsSync(outPath)) {
@@ -1181,6 +1486,10 @@ router.post('/ranking/import-url', requireAuth, urlImportLimiter, async (req, re
         if (stat.size > 50 * 1024 * 1024) {
             fs.unlinkSync(outPath);
             return res.status(413).json({ error: 'Downloaded video too large (over 50MB). Try a shorter clip.' });
+        }
+        if (stat.size < 1000) {
+            try { fs.unlinkSync(outPath); } catch (e) {}
+            return res.status(422).json({ error: 'Downloaded file was empty. Try uploading the video directly.' });
         }
 
         var assembler = new RankingAssembler();
@@ -1196,7 +1505,10 @@ router.post('/ranking/import-url', requireAuth, urlImportLimiter, async (req, re
             filename: outName,
             duration: duration,
             width: info.width,
-            height: info.height
+            height: info.height,
+            platform: importMeta.platform,
+            watermarkFree: importMeta.watermarkFree,
+            source: importMeta.source
         });
     } catch (error) {
         console.error('Ranking URL import error:', error.message);
@@ -1204,7 +1516,11 @@ router.post('/ranking/import-url', requireAuth, urlImportLimiter, async (req, re
         if (msg.includes('not found') || msg.includes('ENOENT')) msg = 'Video downloader not available. Upload files directly.';
         else if (msg.includes('Unsupported URL')) msg = 'Unsupported URL. Try YouTube, TikTok, Instagram, Twitter, etc.';
         else if (msg.includes('Private video') || msg.includes('Sign in') || msg.includes('login')) msg = 'This video requires login or is private. Try a different video or upload directly.';
-        else if (msg.includes('Video not available')) msg = 'Video not available on this platform. Try uploading the file directly.';
+        else if (msg.includes('Video not available') || msg.includes('APIFY_TOKEN')) {
+            msg = msg.includes('APIFY_TOKEN')
+                ? 'APIFY_TOKEN is missing on the server. Add it on DigitalOcean, or upload the file directly.'
+                : 'Could not import this link. Download the video and upload the file instead.';
+        }
         else if (msg.length > 200) msg = msg.substring(0, 200);
         res.status(500).json({ error: msg });
     }
@@ -1350,16 +1666,52 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             trial: trialHelper.getTrialStatus(user)
         });
 
-        // Prefer Fly Machines for FFmpeg; fall back to in-process assembly
+        // Prefer Fly Machines for full pipeline (FFmpeg + Gemini commentary + Whisper timings)
         var flyStarted = false;
         try {
             flyStarted = await startAssemblyMachine(jobId);
         } catch (flyErr) {
-            console.warn('Fly assembly machine start failed, falling back to local:', flyErr.message);
+            console.warn('Fly assembly machine start failed:', flyErr.message);
+            if (process.env.REQUIRE_FLY === '1' || process.env.REQUIRE_FLY === 'true') {
+                await updateRankingJob(jobId, { status: 'failed', error: 'Fly required but failed: ' + flyErr.message });
+                if (!usingTrial) {
+                    try { await credits.refundCredits(userId, 'ranking_assembly', 1, 'Fly start failed'); } catch (e) {}
+                }
+                return res.status(503).json({ error: 'Assembly workers unavailable (Fly). Try again shortly.', flyRequired: true });
+            }
+        }
+
+        if (!flyStarted && (process.env.REQUIRE_FLY === '1' || process.env.REQUIRE_FLY === 'true')) {
+            await updateRankingJob(jobId, { status: 'failed', error: 'Fly not configured (REQUIRE_FLY)' });
+            if (!usingTrial) {
+                try { await credits.refundCredits(userId, 'ranking_assembly', 1, 'Fly not configured'); } catch (e) {}
+            }
+            return res.status(503).json({
+                error: 'Fly Machines required. Set FLY_API_TOKEN, FLY_ASSEMBLY_APP, FLY_ASSEMBLY_IMAGE on DigitalOcean.',
+                flyRequired: true
+            });
         }
 
         if (flyStarted) {
-            await updateRankingJob(jobId, { status: 'processing', message: 'Running on Fly Machine...' });
+            // Commentary credits charged when Fly job completes with hasCommentary (via worker status);
+            // reserve script credits upfront so balance can't be overspent while machine runs.
+            if (enableCommentary && title && title.text && !usingTrial) {
+                try {
+                    var cCheck = await credits.checkCredits(userId, 'script_generation', 1);
+                    if (cCheck.allowed) {
+                        await credits.deductCredits(userId, 'script_generation', 1, 'Ranking AI commentary (Fly reserved)');
+                        rankingCreditsCharged += credits.COSTS.script_generation;
+                        await updateRankingJob(jobId, { creditsCharged: rankingCreditsCharged, commentaryCreditsReserved: true });
+                    }
+                } catch (e) {
+                    console.warn('Commentary credit reserve skipped:', e.message);
+                }
+            }
+            await updateRankingJob(jobId, {
+                status: 'processing',
+                message: enableCommentary ? 'Fly: generating commentary + assembling...' : 'Running on Fly Machine...',
+                worker: 'fly'
+            });
             return;
         }
 
@@ -1459,6 +1811,17 @@ router.get('/ranking/assemble/status/:jobId', requireAuth, async (req, res) => {
         var job = await getRankingJob(req.params.jobId);
         if (!job) return res.status(404).json({ error: 'Job not found' });
         if (job.userId !== String(req.user.userId)) return res.status(403).json({ error: 'Not your job' });
+
+        // Refund reserved commentary credits if Fly failed / produced no commentary
+        if (job.commentaryRefundNeeded && job.commentaryCreditsReserved && !job.commentaryRefunded) {
+            try {
+                await credits.refundCredits(String(req.user.userId), 'script_generation', 1, 'Commentary not delivered (Fly)');
+                await updateRankingJob(req.params.jobId, { commentaryRefunded: true, commentaryRefundNeeded: false });
+                job.commentaryRefunded = true;
+            } catch (e) {
+                console.warn('Commentary refund failed:', e.message);
+            }
+        }
 
         var response = { status: job.status, message: job.message || '' };
         if (job.status === 'complete') response.result = job.result;

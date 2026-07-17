@@ -510,30 +510,28 @@ class RankingAssembler {
             }
         }
 
-        // Hook intro subtitles — one word at a time during hook section
+        // Hook intro subtitles — timed to intro TTS when possible
         if (hookDuration > 0) {
             var introLine = null;
+            var introTimings = null;
+            var introTtsDur = commentaryDurations[0] || null;
             var commentaryLines2 = (options && options.commentaryLines) || [];
             for (var il = 0; il < commentaryLines2.length; il++) {
                 if (commentaryLines2[il].clipIndex === 0 && commentaryLines2[il].line) {
                     introLine = commentaryLines2[il].line;
+                    introTimings = commentaryLines2[il].wordTimings || null;
                     break;
                 }
             }
             if (introLine) {
-                var introWords = introLine.replace(/\n/g, ' ').trim().split(/\s+/);
-                if (introWords.length > 0) {
-                    var introWordDur = hookDuration / introWords.length;
-                    for (var iw = 0; iw < introWords.length; iw++) {
-                        var iwStart = iw * introWordDur;
-                        var iwEnd = iwStart + introWordDur;
-                        ass += 'Dialogue: 4,' + this.assTime(iwStart) + ',' + this.assTime(iwEnd) + ',ComSub,,0,0,0,,{\\fad(50,50)}' + introWords[iw].toUpperCase() + '\n';
-                    }
-                }
+                var hookSpan = (introTtsDur && introTtsDur > 0)
+                    ? Math.min(hookDuration, introTtsDur)
+                    : hookDuration;
+                ass += this.buildKaraokeASS(introLine, introTimings, 0, hookSpan);
             }
         }
 
-        // Commentary subtitles — one word at a time, timed to actual TTS audio duration
+        // Commentary subtitles — one word at a time with Whisper or char-weighted timings
         var commentaryLines = (options && options.commentaryLines) || [];
         for (var cl = 0; cl < commentaryLines.length; cl++) {
             var cLine = commentaryLines[cl];
@@ -543,23 +541,53 @@ class RankingAssembler {
             var cInfo = numberInfo[clips[cLine.clipIndex] && clips[cLine.clipIndex].number];
             if (!cInfo) continue;
             var cStart = cInfo.offset;
-            // Use actual TTS audio duration if available, otherwise fall back to min(clipDur, 2.5)
             var cLineDur = commentaryDurations[cLine.clipIndex] || Math.min(cInfo.duration, 2.5);
-
-            // Split into individual words
-            var words = cLine.line.replace(/\n/g, ' ').trim().split(/\s+/);
-            if (words.length === 0) continue;
-            var wordDur = cLineDur / words.length;
-
-            for (var w = 0; w < words.length; w++) {
-                var wStart = cStart + (w * wordDur);
-                var wEnd = wStart + wordDur;
-                ass += 'Dialogue: 4,' + this.assTime(wStart) + ',' + this.assTime(wEnd) + ',ComSub,,0,0,0,,{\\fad(50,50)}' + words[w].toUpperCase() + '\n';
-            }
+            ass += this.buildKaraokeASS(cLine.line, cLine.wordTimings, cStart, cLineDur);
         }
 
         fs.writeFileSync(outputPath, ass);
         console.log('  ASS overlay generated (' + totalClips + ' numbers, ' + totalDuration.toFixed(1) + 's, listX=' + listX + ', titleY=' + titleY + ', titleSize=' + titleFontSize + ')');
+    }
+
+    /**
+     * Build ASS karaoke dialogues for a line.
+     * Prefer wordTimings [{word,start,end}] relative to 0; else character-weighted over spanDuration.
+     */
+    buildKaraokeASS(line, wordTimings, baseOffset, spanDuration) {
+        var out = '';
+        var base = baseOffset || 0;
+        var span = Math.max(0.2, spanDuration || 2);
+
+        if (wordTimings && wordTimings.length) {
+            for (var i = 0; i < wordTimings.length; i++) {
+                var wt = wordTimings[i];
+                var w = String(wt.word || '').trim();
+                if (!w) continue;
+                var wStart = base + Math.max(0, wt.start || 0);
+                var wEnd = base + Math.max(wStart - base + 0.05, wt.end != null ? wt.end : (wt.start || 0) + 0.15);
+                // Clamp into span so we don't overrun the clip/hook window badly
+                if (wStart > base + span) break;
+                wEnd = Math.min(wEnd, base + span + 0.05);
+                out += 'Dialogue: 4,' + this.assTime(wStart) + ',' + this.assTime(wEnd) + ',ComSub,,0,0,0,,{\\fad(50,50)}' + w.toUpperCase() + '\n';
+            }
+            return out;
+        }
+
+        var words = String(line || '').replace(/\n/g, ' ').trim().split(/\s+/).filter(Boolean);
+        if (!words.length) return out;
+        var weights = words.map(function(w) {
+            return Math.max(1, w.replace(/[^a-zA-Z0-9]/g, '').length || 1);
+        });
+        var total = weights.reduce(function(a, b) { return a + b; }, 0);
+        var t = 0;
+        for (var w = 0; w < words.length; w++) {
+            var slice = (weights[w] / total) * span;
+            var ws = base + t;
+            var we = ws + slice;
+            out += 'Dialogue: 4,' + this.assTime(ws) + ',' + this.assTime(we) + ',ComSub,,0,0,0,,{\\fad(50,50)}' + words[w].toUpperCase() + '\n';
+            t += slice;
+        }
+        return out;
     }
 
     assTime(seconds) {

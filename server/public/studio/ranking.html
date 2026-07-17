@@ -126,6 +126,14 @@
         .preview-frame .pv-bars.top{top:0;height:12%}
         .preview-frame .pv-bars.bottom{bottom:0;height:12%}
         .preview-frame .pv-clip-label{position:absolute;bottom:16%;left:0;right:0;text-align:center;font-size:0.55rem;color:var(--text-muted);font-style:italic}
+        .preview-frame .pv-caption{position:absolute;left:6%;right:6%;text-align:center;z-index:3;font-weight:800;letter-spacing:0.04em;text-transform:uppercase;text-shadow:0 2px 8px rgba(0,0,0,0.9);line-height:1.15;pointer-events:none}
+        .preview-frame .pv-caption .pv-cap-word{opacity:0.35}
+        .preview-frame .pv-caption .pv-cap-word.on{opacity:1}
+        .style-presets{display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem}
+        .style-preset{background:var(--surface-2);border:1px solid var(--border);color:var(--text-muted);border-radius:8px;padding:0.35rem 0.65rem;font-size:0.72rem;font-weight:600;cursor:pointer;font-family:inherit}
+        .style-preset:hover{border-color:var(--border-hover);color:var(--text)}
+        .style-preset.active{border-color:var(--accent);color:var(--accent);background:var(--accent-glow)}
+        .import-meta{font-size:0.72rem;color:var(--text-dim);margin-top:0.25rem}
         .preview-tag{text-align:center;font-size:0.65rem;color:var(--text-dim);margin-top:0.5rem}
         .preview-tag span{color:var(--accent);font-weight:600}
 
@@ -172,15 +180,15 @@
     <!-- STEP 1: Upload -->
     <div id="screen-upload" class="card">
         <div class="card-title">Upload Your Clips</div>
-        <div class="card-desc">Upload video clips to build your ranking compilation. You can also try pasting a link, but some platforms may block server-side downloads.</div>
+        <div class="card-desc">Upload clips or paste a public TikTok / YouTube / Instagram link. Private or region-locked videos still need a file upload.</div>
 
         <!-- URL Import -->
         <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem">
-            <input type="text" class="title-input" id="url-input" placeholder="Paste TikTok, YouTube, or other video URL" style="margin-bottom:0;flex:1">
+            <input type="text" class="title-input" id="url-input" placeholder="Paste TikTok, YouTube, or Instagram URL" style="margin-bottom:0;flex:1">
             <button class="btn btn-secondary" id="btn-import-url" style="white-space:nowrap">Import</button>
         </div>
         <div id="url-status" style="font-size:0.75rem;color:var(--text-dim);margin-bottom:0.75rem" class="hidden"></div>
-        <div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:1rem">TikTok and YouTube imports work reliably. Other platforms may block server downloads — if import fails, download the video first, then upload below.</div>
+        <div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:1rem">Public TikTok &amp; YouTube imports use Apify with multiple fallbacks. We prefer <strong style="color:var(--text-muted)">no-watermark</strong> CDN links when available. If import fails, download the clip and upload below.</div>
 
         <div class="upload-zone" id="upload-zone">
             <div class="icon">+</div>
@@ -257,6 +265,18 @@
                         <label style="font-size:0.8rem;color:var(--text-dim);display:block;margin-bottom:0.3rem">Highlight Word</label>
                         <input type="text" class="title-input" id="title-highlight" placeholder="e.g. Best" maxlength="20" style="margin-bottom:0">
                     </div>
+                </div>
+
+                <!-- Style presets -->
+                <div class="pos-controls" style="margin-bottom:0.5rem;">
+                    <div class="pos-title">Ranking Styles</div>
+                    <div class="style-presets" id="style-presets">
+                        <button type="button" class="style-preset active" data-preset="classic">Classic Yellow</button>
+                        <button type="button" class="style-preset" data-preset="bold">Bold Impact</button>
+                        <button type="button" class="style-preset" data-preset="minimal">Minimal Bottom Caps</button>
+                        <button type="button" class="style-preset" data-preset="checkered">Checkered Pro</button>
+                    </div>
+                    <div style="font-size:0.7rem;color:var(--text-dim);">One-tap looks — tweak sliders after if you want.</div>
                 </div>
 
                 <!-- Position controls -->

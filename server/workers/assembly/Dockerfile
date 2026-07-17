@@ -9,13 +9,12 @@ WORKDIR /app
 COPY server/workers/assembly/package.json ./
 RUN npm install --omit=dev
 
-# Assembler + helpers (copied into image at build time)
+# Ranking assembler + Gemini commentary (Whisper via openai) + storage/trial helpers
 COPY server/studio/formats/ranking ./lib/ranking
 COPY server/workers/storage.js ./lib/storage.js
 COPY server/studio/trial.js ./lib/trial.js
 COPY server/workers/assembly/index.js ./index.js
 
-# ffmpeg-static downloads binaries; ensure executable
 ENV NODE_ENV=production
 
 CMD ["node", "index.js"]

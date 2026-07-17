@@ -1,7 +1,8 @@
 /**
- * Fly Machine entry - ranking FFmpeg assembly worker.
+ * Fly Machine entry — full ranking pipeline:
+ * download clips → Gemini commentary + TTS → Whisper word timestamps → FFmpeg assemble → upload
  *
- * Env: JOB_ID, APP_URL, MONGODB_URI, WORKER_SECRET, AWS_/SPACES_ vars
+ * Env: JOB_ID, APP_URL, MONGODB_URI, WORKER_SECRET, GEMINI_API_KEY, OPENAI_API_KEY, SPACES_/AWS_
  */
 const path = require('path');
 const fs = require('fs');
@@ -9,8 +10,8 @@ const { MongoClient, ObjectId } = require('mongodb');
 const https = require('https');
 const http = require('http');
 
-// Paths resolve relative to this worker when server code is copied beside it
 const RankingAssembler = require('./lib/ranking/assembler');
+const RankingCommentary = require('./lib/ranking/commentary');
 const storage = require('./lib/storage');
 const trialHelper = require('./lib/trial');
 
@@ -25,7 +26,7 @@ async function downloadFile(url, destPath) {
         mod.get(url, function(res) {
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                 file.close();
-                fs.unlinkSync(destPath);
+                try { fs.unlinkSync(destPath); } catch (e) {}
                 return downloadFile(res.headers.location, destPath).then(resolve, reject);
             }
             if (res.statusCode !== 200) {
@@ -46,7 +47,7 @@ async function main() {
     if (!MONGODB_URI) throw new Error('MONGODB_URI required');
     if (!APP_URL) throw new Error('APP_URL required');
 
-    console.log('Assembly worker starting for job', JOB_ID);
+    console.log('Fly assembly worker starting for job', JOB_ID);
 
     const client = new MongoClient(MONGODB_URI);
     await client.connect();
@@ -64,6 +65,9 @@ async function main() {
     const clipsMeta = payload.clips || [];
     if (!clipsMeta.length) throw new Error('Job has no clips payload');
 
+    const enableCommentary = !!payload.enableCommentary;
+    const titleText = (payload.title && payload.title.text) || '';
+
     await db.collection('ranking_jobs').updateOne(
         { _id: job._id },
         { $set: { status: 'processing', message: 'Downloading clips on Fly...', worker: 'fly', updatedAt: new Date() } }
@@ -71,6 +75,8 @@ async function main() {
 
     const workDir = path.join('/tmp', 'ranking-' + JOB_ID);
     fs.mkdirSync(workDir, { recursive: true });
+    const audioDir = path.join(workDir, 'audio');
+    fs.mkdirSync(audioDir, { recursive: true });
 
     const clipList = [];
     for (var i = 0; i < clipsMeta.length; i++) {
@@ -82,12 +88,35 @@ async function main() {
         clipList.push({ path: dest, number: c.number || (i + 1), label: c.label || '' });
     }
 
+    var commentaryData = [];
+    var commentaryResults = [];
+
+    if (enableCommentary && titleText) {
+        if (!process.env.GEMINI_API_KEY) {
+            console.warn('GEMINI_API_KEY missing on Fly — skipping commentary');
+        } else {
+            await db.collection('ranking_jobs').updateOne(
+                { _id: job._id },
+                { $set: { message: 'Fly: Gemini commentary + TTS + word timings...', updatedAt: new Date() } }
+            );
+            console.log('🎙️ Running RankingCommentary on Fly (Gemini + Whisper if OPENAI_API_KEY set)');
+            const commentaryGen = new RankingCommentary();
+            commentaryGen.audioDir = audioDir;
+            commentaryResults = await commentaryGen.generateCommentary(
+                clipList,
+                titleText,
+                payload.voiceName || 'Kore'
+            );
+            commentaryData = commentaryResults.filter(function(c) { return c.audioPath; });
+            console.log('🎙️ Commentary ready:', commentaryData.length, 'audio lines');
+        }
+    }
+
     await db.collection('ranking_jobs').updateOne(
         { _id: job._id },
-        { $set: { message: 'Assembling video (' + clipList.length + ' clips)...', updatedAt: new Date() } }
+        { $set: { message: 'Fly: FFmpeg assembling (' + clipList.length + ' clips)...', updatedAt: new Date() } }
     );
 
-    // Point assembler dirs at /tmp
     const assembler = new RankingAssembler();
     assembler.tempDir = path.join(workDir, 'temp');
     assembler.outputDir = path.join(workDir, 'final');
@@ -97,17 +126,16 @@ async function main() {
 
     const result = await assembler.assemble(clipList, payload.title || {}, {
         layout: payload.layout || {},
-        commentary: [],
-        commentaryLines: [],
+        commentary: commentaryData,
+        commentaryLines: commentaryResults,
         colorPalette: payload.colorPalette || 'yellow',
         checkeredMode: !!payload.checkeredMode,
         subtitleFont: payload.subtitleFont || 'Arial',
         subtitleY: payload.subtitleY != null ? payload.subtitleY : 55,
         subtitleColor: payload.subtitleColor || 'yellow',
-        hookEnabled: false
+        hookEnabled: enableCommentary && commentaryData.length > 0
     });
 
-    // Local path from assembler
     const localName = path.basename(result.videoUrl);
     const localPath = path.join(assembler.outputDir, localName);
     let videoUrl = result.videoUrl;
@@ -119,7 +147,6 @@ async function main() {
             console.log('Uploaded final to object storage:', videoUrl);
         }
     } else if (fs.existsSync(localPath) && APP_URL) {
-        // Upload back to DO via internal API
         try {
             const buf = fs.readFileSync(localPath);
             const uploadRes = await fetch(APP_URL + '/api/studio/internal/ranking-result', {
@@ -145,10 +172,11 @@ async function main() {
         }
     }
 
+    const hasCommentary = commentaryData.length > 0;
     const finalResult = {
         ...result,
         videoUrl: videoUrl,
-        hasCommentary: false,
+        hasCommentary: hasCommentary,
         worker: 'fly'
     };
 
@@ -164,11 +192,19 @@ async function main() {
         }
     );
 
+    // If commentary was reserved but failed to produce audio, refund via flag for DO recovery
+    if (job.commentaryCreditsReserved && !hasCommentary) {
+        await db.collection('ranking_jobs').updateOne(
+            { _id: job._id },
+            { $set: { commentaryRefundNeeded: true } }
+        );
+    }
+
     if (job.usingTrial && job.userId) {
         await trialHelper.recordRankingVideoComplete(db, job.userId);
     }
 
-    console.log('Job complete:', videoUrl);
+    console.log('Job complete:', videoUrl, hasCommentary ? '(with commentary)' : '');
     await client.close();
 }
 
@@ -181,7 +217,14 @@ main().catch(async function(err) {
             const db = client.db();
             await db.collection('ranking_jobs').updateOne(
                 { _id: new ObjectId(JOB_ID) },
-                { $set: { status: 'failed', error: err.message, updatedAt: new Date() } }
+                {
+                    $set: {
+                        status: 'failed',
+                        error: err.message,
+                        commentaryRefundNeeded: true,
+                        updatedAt: new Date()
+                    }
+                }
             );
             await client.close();
         }
