@@ -81,7 +81,11 @@ serves clip uploads. The Studio UI only picks in/out points; it does not trim on
 
 POV captions, handles, and other hard-coded overlays can be removed via Replicate
 `hjunior29/video-text-remover` — **opt-in per clip** after preview (or while trimming).
-Requires `REPLICATE_API_KEY` on DigitalOcean. Not run automatically on every import.
+Requires on DigitalOcean:
+- `REPLICATE_API_KEY` (Replicate API token)
+- `APP_URL=https://viewhunt.app` (so Replicate can fetch `/studio/ranking-uploads/...`)
+
+Not run automatically on every import.
 
 ## Trial behavior
 

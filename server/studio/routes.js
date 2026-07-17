@@ -1398,7 +1398,11 @@ router.post('/ranking/clean-text', requireAuth, textCleanLimiter, async (req, re
         if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Clip not found' });
 
         var textClean = require('./formats/ranking/text-clean');
-        var result = await textClean.cleanBurnedInText(filePath);
+        var appBase = (process.env.APP_URL || process.env.PUBLIC_APP_URL || '').replace(/\/$/, '');
+        var publicUrl = appBase
+            ? (appBase + '/studio/ranking-uploads/' + encodeURIComponent(filename))
+            : null;
+        var result = await textClean.cleanBurnedInText(filePath, { publicUrl: publicUrl });
         if (result.skipped) {
             return res.status(503).json({
                 error: result.error || 'Text clean unavailable',
