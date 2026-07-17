@@ -48,7 +48,11 @@ async function main() {
     if (!MONGODB_URI) throw new Error('MONGODB_URI required');
     if (!APP_URL) throw new Error('APP_URL required');
 
-    console.log('Fly assembly worker starting for job', JOB_ID);
+    console.log('Fly assembly worker starting for job', JOB_ID, {
+        hasGemini: !!process.env.GEMINI_API_KEY,
+        hasOpenAI: !!process.env.OPENAI_API_KEY,
+        appUrl: APP_URL
+    });
 
     const client = new MongoClient(MONGODB_URI);
     await client.connect();
@@ -62,17 +66,29 @@ async function main() {
         return;
     }
 
+    // Immediate heartbeat so DO UI leaves "waiting for worker…"
+    await db.collection('ranking_jobs').updateOne(
+        { _id: job._id },
+        {
+            $set: {
+                status: 'processing',
+                message: 'Fly: worker online' +
+                    (process.env.GEMINI_API_KEY ? ' (Gemini ok)' : ' (no GEMINI_API_KEY)') +
+                    (process.env.OPENAI_API_KEY ? ' (OpenAI ok)' : ' (no OPENAI_API_KEY)') +
+                    ' — downloading clips…',
+                worker: 'fly',
+                flyHeartbeatAt: new Date(),
+                updatedAt: new Date()
+            }
+        }
+    );
+
     const payload = job.payload || {};
     const clipsMeta = payload.clips || [];
     if (!clipsMeta.length) throw new Error('Job has no clips payload');
 
     const enableCommentary = !!payload.enableCommentary;
     const titleText = (payload.title && payload.title.text) || '';
-
-    await db.collection('ranking_jobs').updateOne(
-        { _id: job._id },
-        { $set: { status: 'processing', message: 'Downloading clips on Fly...', worker: 'fly', updatedAt: new Date() } }
-    );
 
     const workDir = path.join('/tmp', 'ranking-' + JOB_ID);
     fs.mkdirSync(workDir, { recursive: true });

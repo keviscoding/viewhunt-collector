@@ -1738,10 +1738,21 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
 
         // Prefer Fly Machines for full pipeline (FFmpeg + Gemini commentary + Whisper timings)
         var flyStarted = false;
+        var flyMachineId = null;
+        var flySkipReason = null;
         try {
-            flyStarted = await startAssemblyMachine(jobId);
+            var flyResult = await startAssemblyMachine(jobId);
+            // Back-compat: older helper returned boolean
+            if (flyResult && typeof flyResult === 'object') {
+                flyStarted = !!flyResult.started;
+                flyMachineId = flyResult.machineId || null;
+                flySkipReason = flyResult.reason || null;
+            } else {
+                flyStarted = !!flyResult;
+            }
         } catch (flyErr) {
             console.warn('Fly assembly machine start failed:', flyErr.message);
+            flySkipReason = flyErr.message;
             if (process.env.REQUIRE_FLY === '1' || process.env.REQUIRE_FLY === 'true') {
                 await updateRankingJob(jobId, { status: 'failed', error: 'Fly required but failed: ' + flyErr.message });
                 if (!usingTrial) {
@@ -1752,13 +1763,14 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
         }
 
         if (!flyStarted && (process.env.REQUIRE_FLY === '1' || process.env.REQUIRE_FLY === 'true')) {
-            await updateRankingJob(jobId, { status: 'failed', error: 'Fly not configured (REQUIRE_FLY)' });
+            await updateRankingJob(jobId, { status: 'failed', error: 'Fly not configured (REQUIRE_FLY)' + (flySkipReason ? ': ' + flySkipReason : '') });
             if (!usingTrial) {
                 try { await credits.refundCredits(userId, 'ranking_assembly', 1, 'Fly not configured'); } catch (e) {}
             }
             return res.status(503).json({
                 error: 'Fly Machines required. Set FLY_API_TOKEN, FLY_ASSEMBLY_APP, FLY_ASSEMBLY_IMAGE on DigitalOcean.',
-                flyRequired: true
+                flyRequired: true,
+                reason: flySkipReason
             });
         }
 
@@ -1779,13 +1791,19 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             }
             await updateRankingJob(jobId, {
                 status: 'processing',
-                message: enableCommentary ? 'Fly: generating commentary + assembling...' : 'Running on Fly Machine...',
-                worker: 'fly'
+                message: 'Fly machine started — waiting for worker heartbeat…',
+                worker: 'fly',
+                flyMachineId: flyMachineId,
+                flyStartedAt: new Date()
             });
             return;
         }
 
-        await updateRankingJob(jobId, { status: 'processing', message: enableCommentary ? 'Generating AI commentary...' : 'Trimming clips...' });
+        if (flySkipReason) {
+            console.warn('Fly not used, local fallback:', flySkipReason);
+        }
+
+        await updateRankingJob(jobId, { status: 'processing', message: enableCommentary ? 'Generating AI commentary...' : 'Trimming clips...', worker: 'local' });
 
         // Run assembly in background (local fallback)
         (async function() {
@@ -1911,6 +1929,29 @@ router.get('/ranking/assemble/status/:jobId', requireAuth, async (req, res) => {
         if (!job) return res.status(404).json({ error: 'Job not found' });
         if (job.userId !== String(req.user.userId)) return res.status(403).json({ error: 'Not your job' });
 
+        // Watchdog: Fly claimed the job but never heartbeated / finished
+        if (job.status === 'processing' && job.worker === 'fly' && !job.flyWatchdogFired) {
+            var started = job.flyStartedAt || job.updatedAt || job.createdAt;
+            var ageMs = started ? (Date.now() - new Date(started).getTime()) : 0;
+            var msg = job.message || '';
+            var noHeartbeat = /waiting for worker heartbeat|generating commentary \+ assembling/i.test(msg);
+            // 3 min with no real progress, or 12 min absolute
+            if ((noHeartbeat && ageMs > 3 * 60 * 1000) || ageMs > 12 * 60 * 1000) {
+                var err =
+                    'Fly worker did not report progress. Usually: wrong/missing Mongo URI on the machine, ' +
+                    'stale FLY_ASSEMBLY_IMAGE, or APP_URL blocking clip downloads — not necessarily Gemini. ' +
+                    'Check DO env: V2_MONGO_URI/MONGODB_URI, APP_URL, FLY_ASSEMBLY_IMAGE, GEMINI_API_KEY, OPENAI_API_KEY.';
+                await updateRankingJob(req.params.jobId, {
+                    status: 'failed',
+                    error: err,
+                    flyWatchdogFired: true,
+                    commentaryRefundNeeded: !!job.commentaryCreditsReserved
+                });
+                job.status = 'failed';
+                job.error = err;
+            }
+        }
+
         // Refund reserved commentary credits if Fly failed / produced no commentary
         if (job.commentaryRefundNeeded && job.commentaryCreditsReserved && !job.commentaryRefunded) {
             try {
@@ -1925,6 +1966,7 @@ router.get('/ranking/assemble/status/:jobId', requireAuth, async (req, res) => {
         var response = { status: job.status, message: job.message || '' };
         if (job.status === 'complete') response.result = job.result;
         if (job.status === 'failed') response.error = job.error;
+        if (job.worker) response.worker = job.worker;
         res.json(response);
     } catch (error) {
         res.status(500).json({ error: 'Poll error' });

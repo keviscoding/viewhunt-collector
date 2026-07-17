@@ -5,13 +5,26 @@
  *   FLY_API_TOKEN
  *   FLY_ASSEMBLY_APP
  *   FLY_SCRAPER_APP
+ *   FLY_ASSEMBLY_IMAGE / FLY_SCRAPER_IMAGE
  *   WORKER_SECRET
- *   APP_URL (base URL of the DigitalOcean app)
+ *   APP_URL
+ *   Mongo: V2_MONGO_URI | MONGODB_URI | MONGO_URI | DATABASE_URL
  */
 const FLY_API = 'https://api.machines.dev/v1';
 
 function flyConfigured(appEnv) {
     return !!(process.env.FLY_API_TOKEN && process.env[appEnv]);
+}
+
+function resolveMongoUri() {
+    return (
+        process.env.V2_MONGO_URI ||
+        process.env.MONGODB_URI ||
+        process.env.MONGO_URI ||
+        process.env.DATABASE_URL ||
+        process.env.DB_URI ||
+        ''
+    ).trim();
 }
 
 async function flyRequest(method, path, body) {
@@ -32,46 +45,70 @@ async function flyRequest(method, path, body) {
     try { data = text ? JSON.parse(text) : null; } catch (e) { data = { raw: text }; }
 
     if (!res.ok) {
-        const msg = (data && (data.error || data.message)) || text || res.statusText;
-        throw new Error('Fly API ' + res.status + ': ' + msg);
+        const msg = (data && (data.error || data.message || data.detail)) || text || res.statusText;
+        throw new Error('Fly API ' + res.status + ': ' + (typeof msg === 'string' ? msg : JSON.stringify(msg)));
     }
     return data;
 }
 
 /**
  * Start an assembly machine for a ranking job.
- * Returns true if a machine was started, false if Fly is not configured.
+ * Returns { started: true, machineId } or { started: false, reason }.
  */
 async function startAssemblyMachine(jobId) {
     const app = process.env.FLY_ASSEMBLY_APP;
     if (!process.env.FLY_API_TOKEN || !app) {
         console.log('Fly assembly not configured — skipping machine start');
-        return false;
+        return { started: false, reason: 'FLY_API_TOKEN or FLY_ASSEMBLY_APP missing' };
     }
 
     const image = process.env.FLY_ASSEMBLY_IMAGE;
     if (!image) {
         console.warn('FLY_ASSEMBLY_IMAGE not set — cannot create machine');
-        return false;
+        return { started: false, reason: 'FLY_ASSEMBLY_IMAGE missing' };
+    }
+
+    const mongoUri = resolveMongoUri();
+    if (!mongoUri) {
+        // Without Mongo the worker cannot update job status — DO would look "stuck" forever
+        console.error('Fly assembly aborted: no Mongo URI in DO env (V2_MONGO_URI / MONGODB_URI / MONGO_URI)');
+        return { started: false, reason: 'Mongo URI missing on DigitalOcean — cannot hand off to Fly' };
+    }
+
+    const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
+    if (!appUrl) {
+        console.error('Fly assembly aborted: APP_URL missing');
+        return { started: false, reason: 'APP_URL missing — Fly worker cannot download clips' };
     }
 
     const env = {
         JOB_ID: String(jobId),
         JOB_TYPE: 'ranking_assemble',
         WORKER_SECRET: process.env.WORKER_SECRET || '',
-        APP_URL: process.env.APP_URL || '',
-        MONGODB_URI: process.env.V2_MONGO_URI || process.env.MONGODB_URI || process.env.MONGO_URI || '',
+        APP_URL: appUrl,
+        MONGODB_URI: mongoUri,
+        V2_MONGO_URI: mongoUri,
         AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || process.env.SPACES_KEY || '',
         AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || process.env.SPACES_SECRET || '',
         AWS_S3_BUCKET_NAME: process.env.AWS_S3_BUCKET_NAME || process.env.SPACES_BUCKET || '',
         AWS_REGION: process.env.AWS_REGION || process.env.SPACES_REGION || 'us-east-1',
         SPACES_ENDPOINT: process.env.SPACES_ENDPOINT || '',
         SPACES_CDN_URL: process.env.SPACES_CDN_URL || '',
-        GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-        OPENAI_API_KEY: process.env.OPENAI_API_KEY || ''
+        GEMINI_API_KEY: (process.env.GEMINI_API_KEY || '').trim(),
+        OPENAI_API_KEY: (process.env.OPENAI_API_KEY || '').trim(),
+        RANKING_TTS_PROVIDER: process.env.RANKING_TTS_PROVIDER || 'openai'
     };
 
-    // More RAM/CPU when jobs may run Gemini vision + TTS + Whisper + FFmpeg
+    console.log('Starting Fly assembly machine', {
+        app,
+        image: image.slice(0, 80),
+        jobId: String(jobId),
+        hasGemini: !!env.GEMINI_API_KEY,
+        hasOpenAI: !!env.OPENAI_API_KEY,
+        hasSpaces: !!(env.AWS_ACCESS_KEY_ID && env.AWS_S3_BUCKET_NAME),
+        mongoHost: (mongoUri.match(/@([^/]+)/) || [])[1] || '(local)'
+    });
+
     const machine = await flyRequest('POST', '/apps/' + app + '/machines', {
         name: 'rank-' + String(jobId).slice(-12),
         config: {
@@ -87,8 +124,9 @@ async function startAssemblyMachine(jobId) {
         }
     });
 
-    console.log('Fly assembly machine started:', machine && machine.id, 'for job', jobId);
-    return true;
+    const machineId = machine && machine.id;
+    console.log('Fly assembly machine started:', machineId, 'for job', jobId);
+    return { started: true, machineId: machineId || null };
 }
 
 /**
@@ -107,12 +145,14 @@ async function startScraperMachine(runId) {
         return false;
     }
 
+    const mongoUri = resolveMongoUri();
     const env = {
         RUN_ID: String(runId),
         JOB_TYPE: 'scrape',
         WORKER_SECRET: process.env.WORKER_SECRET || '',
         APP_URL: process.env.APP_URL || '',
-        MONGODB_URI: process.env.V2_MONGO_URI || process.env.MONGODB_URI || process.env.MONGO_URI || '',
+        MONGODB_URI: mongoUri,
+        V2_MONGO_URI: mongoUri,
         YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY || ''
     };
 
@@ -137,6 +177,7 @@ async function startScraperMachine(runId) {
 
 module.exports = {
     flyConfigured,
+    resolveMongoUri,
     startAssemblyMachine,
     startScraperMachine
 };

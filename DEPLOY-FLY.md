@@ -19,7 +19,7 @@ APP_URL=https://your-app.ondigitalocean.app
 FLY_API_TOKEN=<fly deploy token or org token>
 FLY_ASSEMBLY_APP=viewhunt-assembly
 FLY_SCRAPER_APP=viewhunt-scraper
-FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXREFQ2J1QD0C3Q12SX8FQAN
+FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXRFN34KDDPKE7C6P2F0AQVR
 FLY_SCRAPER_IMAGE=registry.fly.io/viewhunt-scraper:latest
 
 # Durable video storage (AWS S3 or DigitalOcean Spaces)
