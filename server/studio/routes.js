@@ -1406,11 +1406,17 @@ router.post('/ranking/clean-text', requireAuth, textCleanLimiter, async (req, re
         if (result.skipped) {
             return res.status(503).json({
                 error: result.error || 'Text clean unavailable',
-                tip: 'Set REPLICATE_API_KEY on DigitalOcean to enable burned-in text removal.'
+                tip: 'Set REPLICATE_API_TOKEN (official) or REPLICATE_API_KEY on DigitalOcean to the r8_… token from replicate.com/account/api-tokens, then redeploy. Also set APP_URL=https://viewhunt.app.',
+                tokenHint: result.tokenHint
             });
         }
         if (!result.ok) {
-            return res.status(422).json({ error: result.error || 'Text clean failed', keptOriginal: true });
+            return res.status(422).json({
+                error: result.error || 'Text clean failed',
+                keptOriginal: true,
+                tip: 'Confirm the DO env var has no quotes/spaces and the app redeployed after saving.',
+                tokenHint: result.tokenHint
+            });
         }
 
         var assemblerInfo = new RankingAssembler();

@@ -19,7 +19,7 @@ APP_URL=https://your-app.ondigitalocean.app
 FLY_API_TOKEN=<fly deploy token or org token>
 FLY_ASSEMBLY_APP=viewhunt-assembly
 FLY_SCRAPER_APP=viewhunt-scraper
-FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXRAJ0YW15CG71Q5DTH5WFM8
+FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXREFQ2J1QD0C3Q12SX8FQAN
 FLY_SCRAPER_IMAGE=registry.fly.io/viewhunt-scraper:latest
 
 # Durable video storage (AWS S3 or DigitalOcean Spaces)
@@ -39,7 +39,8 @@ YOUTUBE_API_KEY=
 GEMINI_API_KEY=
 APIFY_TOKEN=
 OPENAI_API_KEY=
-REPLICATE_API_KEY=
+REPLICATE_API_TOKEN=
+# REPLICATE_API_KEY=  (also accepted)
 ```
 
 If Fly vars are missing, ranking assembly falls back to in-process FFmpeg on the DO app
@@ -82,10 +83,19 @@ serves clip uploads. The Studio UI only picks in/out points; it does not trim on
 POV captions, handles, and other hard-coded overlays can be removed via Replicate
 `hjunior29/video-text-remover` — **opt-in per clip** after preview (or while trimming).
 Requires on DigitalOcean:
-- `REPLICATE_API_KEY` (Replicate API token)
+- `REPLICATE_API_TOKEN` (preferred) or `REPLICATE_API_KEY` — token from
+  https://replicate.com/account/api-tokens (starts with `r8_`, no quotes)
 - `APP_URL=https://viewhunt.app` (so Replicate can fetch `/studio/ranking-uploads/...`)
 
 Not run automatically on every import.
+
+## Why Fly commentary felt stuck
+
+Older builds uploaded **entire clips** to Gemini for every line, then tried Gemini TTS
+(often failing) before OpenAI. That can sit on “generating commentary…” for many minutes.
+
+Current worker: 2.5s low-res vision samples, OpenAI TTS first, Whisper timeout 12s,
+progress messages per clip, 8GB assembly machines.
 
 ## Trial behavior
 

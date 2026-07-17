@@ -80,7 +80,7 @@ async function startAssemblyMachine(jobId) {
             guest: {
                 cpu_kind: 'shared',
                 cpus: 4,
-                memory_mb: 4096
+                memory_mb: 8192
             },
             auto_destroy: true,
             restart: { policy: 'no' }

@@ -130,6 +130,12 @@ async function main() {
             console.log('🎙️ Running RankingCommentary on Fly');
             const commentaryGen = new RankingCommentary();
             commentaryGen.audioDir = audioDir;
+            commentaryGen.onProgress = async function(msg) {
+                await db.collection('ranking_jobs').updateOne(
+                    { _id: job._id },
+                    { $set: { message: 'Fly: ' + msg, updatedAt: new Date() } }
+                );
+            };
             commentaryResults = await commentaryGen.generateCommentary(
                 clipList,
                 titleText,

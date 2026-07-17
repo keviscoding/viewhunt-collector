@@ -1,19 +1,17 @@
 /**
  * Ranking Commentary Generator
- * Uses Gemini to watch trimmed clips and generate short one-liner commentary.
- * Also generates TTS audio for each line using Gemini TTS.
- * Word timings: OpenAI Whisper when OPENAI_API_KEY is set, else character-weighted.
- *
- * Output per clip:
- *   - Clip 1 (first): intro line reading out the ranking title
- *   - Clips 2+: short 3-10 word reaction/commentary
- *
- * Style: super fast, upbeat, friendly, casual
+ * Uses Gemini to watch short clip samples and generate one-liner commentary.
+ * TTS: OpenAI first when available (fast/reliable), else Gemini TTS.
+ * Word timings: OpenAI Whisper (short timeout) or character-weighted.
  */
 const { GoogleGenAI } = require('@google/genai');
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 const OpenAI = require('openai');
+const ffmpegPath = require('ffmpeg-static');
 
 class RankingCommentary {
     constructor() {
@@ -27,6 +25,35 @@ class RankingCommentary {
             : null;
         this.lastTtsProvider = null;
         this.lastTtsError = null;
+        this.onProgress = null; // optional async (message) => {}
+    }
+
+    async _progress(msg) {
+        console.log('🎙️', msg);
+        if (typeof this.onProgress === 'function') {
+            try { await this.onProgress(msg); } catch (e) {}
+        }
+    }
+
+    /**
+     * Tiny sample for Gemini vision — full clips are slow/expensive to upload.
+     */
+    async _makeVisionSample(clipPath) {
+        var out = path.join(this.audioDir, 'vision-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + '.mp4');
+        try {
+            await execFileAsync(ffmpegPath, [
+                '-y', '-ss', '0', '-i', clipPath,
+                '-t', '2.5',
+                '-vf', 'scale=360:-2',
+                '-an',
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '32',
+                out
+            ], { timeout: 30000 });
+            if (fs.existsSync(out) && fs.statSync(out).size > 500) return out;
+        } catch (err) {
+            console.warn('Vision sample failed, using original:', err.message);
+        }
+        return clipPath;
     }
 
     /**
@@ -37,6 +64,7 @@ class RankingCommentary {
         console.log(`🎙️ Ranking commentary: generating for ${clips.length} clips, title: "${rankingTitle}", voice: ${voiceName || 'Kore'}`);
         this.voiceName = voiceName || 'Kore';
 
+        await this._progress('Writing intro line…');
         const introLine = await this._generateIntroLine(rankingTitle);
         console.log(`  Intro: "${introLine}"`);
 
@@ -44,6 +72,7 @@ class RankingCommentary {
         for (let i = 1; i < clips.length; i++) {
             const clip = clips[i];
             try {
+                await this._progress('Watching clip ' + (i + 1) + ' of ' + clips.length + ' for commentary…');
                 const line = await this._analyzeClipAndComment(clip.path, rankingTitle, i + 1, clips.length);
                 commentaryLines.push({ clipIndex: i, line });
                 console.log(`  Clip ${i + 1}: "${line}"`);
@@ -53,6 +82,7 @@ class RankingCommentary {
             }
         }
 
+        await this._progress('Generating voiceover audio…');
         const ttsPromises = [];
 
         ttsPromises.push(
@@ -139,11 +169,18 @@ Reply with ONLY the intro line, nothing else. No quotes, no explanation.`;
     async _analyzeClipAndComment(clipPath, rankingTitle, clipNumber, totalClips) {
         if (!this.ai) throw new Error('GEMINI_API_KEY required for clip commentary');
 
-        const videoBuffer = fs.readFileSync(clipPath);
-        const base64Video = videoBuffer.toString('base64');
-        const mimeType = 'video/mp4';
+        var samplePath = await this._makeVisionSample(clipPath);
+        var cleanupSample = samplePath !== clipPath;
+        try {
+            const videoBuffer = fs.readFileSync(samplePath);
+            // Cap payload — Gemini stalls on huge base64 bodies
+            if (videoBuffer.length > 4 * 1024 * 1024) {
+                throw new Error('Vision sample still too large');
+            }
+            const base64Video = videoBuffer.toString('base64');
+            const mimeType = 'video/mp4';
 
-        const prompt = `You are a fast-paced, upbeat YouTube Shorts narrator for ranking/compilation videos.
+            const prompt = `You are a fast-paced, upbeat YouTube Shorts narrator for ranking/compilation videos.
 
 This is clip #${clipNumber} of ${totalClips} in a ranking video titled: "${rankingTitle}"
 
@@ -158,19 +195,29 @@ Style guide:
 
 Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
 
-        const response = await this.ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: [{
-                parts: [
-                    { inlineData: { mimeType, data: base64Video } },
-                    { text: prompt }
-                ]
-            }]
-        });
+            const response = await Promise.race([
+                this.ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: [{
+                        parts: [
+                            { inlineData: { mimeType, data: base64Video } },
+                            { text: prompt }
+                        ]
+                    }]
+                }),
+                new Promise(function(_, reject) {
+                    setTimeout(function() { reject(new Error('Gemini vision timeout (45s)')); }, 45000);
+                })
+            ]);
 
-        const text = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        if (!text) throw new Error('No commentary generated');
-        return text.replace(/^["']|["']$/g, '').trim();
+            const text = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (!text) throw new Error('No commentary generated');
+            return text.replace(/^["']|["']$/g, '').trim();
+        } finally {
+            if (cleanupSample) {
+                try { fs.unlinkSync(samplePath); } catch (e) {}
+            }
+        }
     }
 
     async _ttsLineWithTimings(line, label) {
@@ -179,7 +226,6 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
         if (!wordTimings || !wordTimings.length) {
             var dur = this._wavDurationSeconds(audioPath);
             if (!dur && this.openai && /\.mp3$/i.test(audioPath)) {
-                // Whisper path already failed; estimate ~2s for short lines
                 dur = Math.min(4, Math.max(1.2, String(line || '').split(/\s+/).length * 0.28));
             }
             wordTimings = this._charWeightedTimings(line, dur || 2.0);
@@ -188,36 +234,44 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
     }
 
     async _ttsLine(line, label) {
-        var geminiErr = null;
+        // Prefer OpenAI TTS when available — Gemini preview TTS is slow/flaky
+        var preferOpenAI = !!this.openai && process.env.RANKING_TTS_PROVIDER !== 'gemini';
+
+        if (preferOpenAI) {
+            try {
+                const filepath = await this._ttsOpenAI(line, label);
+                this.lastTtsProvider = 'openai';
+                return filepath;
+            } catch (err) {
+                console.warn(`  OpenAI TTS failed (${label}): ${err.message}`);
+                this.lastTtsError = err.message;
+            }
+        }
+
         if (this.ai) {
             try {
                 const filepath = await this._ttsGemini(line, label);
                 this.lastTtsProvider = 'gemini';
                 return filepath;
             } catch (err) {
-                geminiErr = err;
                 console.warn(`  Gemini TTS failed (${label}): ${err.message}`);
-                this.lastTtsError = err.message;
+                this.lastTtsError = (this.lastTtsError ? this.lastTtsError + '; ' : '') + err.message;
             }
-        } else {
-            geminiErr = new Error('GEMINI_API_KEY missing');
-            this.lastTtsError = geminiErr.message;
         }
 
-        if (this.openai) {
+        if (!preferOpenAI && this.openai) {
             try {
                 const filepath = await this._ttsOpenAI(line, label);
                 this.lastTtsProvider = 'openai';
-                console.log(`  ✓ OpenAI TTS fallback (${label})`);
                 return filepath;
             } catch (err) {
-                this.lastTtsError = (geminiErr ? geminiErr.message + '; ' : '') + err.message;
-                throw new Error('TTS failed (Gemini + OpenAI): ' + this.lastTtsError);
+                this.lastTtsError = (this.lastTtsError ? this.lastTtsError + '; ' : '') + err.message;
+                throw new Error('TTS failed: ' + this.lastTtsError);
             }
         }
 
-        throw new Error('TTS failed: ' + (geminiErr && geminiErr.message) +
-            ' — set OPENAI_API_KEY for fallback, or enable Gemini billing for gemini-2.5-flash-preview-tts');
+        throw new Error('TTS failed: ' + (this.lastTtsError || 'no provider') +
+            ' — set OPENAI_API_KEY for reliable voiceover');
     }
 
     async _ttsGemini(line, label) {
@@ -275,13 +329,21 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
      */
     async _alignWords(audioPath, line) {
         if (!this.openai || !audioPath || !fs.existsSync(audioPath)) return null;
+        if (process.env.RANKING_SKIP_WHISPER === '1' || process.env.RANKING_SKIP_WHISPER === 'true') {
+            return null;
+        }
         try {
-            const transcription = await this.openai.audio.transcriptions.create({
-                file: fs.createReadStream(audioPath),
-                model: 'whisper-1',
-                response_format: 'verbose_json',
-                timestamp_granularities: ['word']
-            });
+            const transcription = await Promise.race([
+                this.openai.audio.transcriptions.create({
+                    file: fs.createReadStream(audioPath),
+                    model: 'whisper-1',
+                    response_format: 'verbose_json',
+                    timestamp_granularities: ['word']
+                }),
+                new Promise(function(_, reject) {
+                    setTimeout(function() { reject(new Error('Whisper timeout')); }, 12000);
+                })
+            ]);
 
             const words = transcription.words || [];
             if (!words.length) return null;
@@ -299,7 +361,7 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
             }
             return timings.length ? timings : null;
         } catch (err) {
-            console.warn('  Whisper align failed, using char-weighted:', err.message);
+            console.warn('  Whisper align skipped:', err.message);
             return null;
         }
     }
