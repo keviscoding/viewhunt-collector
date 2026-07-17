@@ -207,26 +207,48 @@
         clips.forEach(function(clip, i) {
             html += '<div class="clip-item">';
             html += '<div class="clip-num">' + (i + 1) + '</div>';
-            if (clip.url && !clip.uploading) {
+            if (clip.downloading || clip.uploading || clip.cleaning) {
+                html += '<div class="clip-thumb is-loading"><div class="spinner"></div></div>';
+            } else if (clip.url) {
                 html += '<video class="clip-thumb" src="' + clip.url + '" muted playsinline preload="metadata"></video>';
             } else {
-                html += '<div class="clip-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:0.65rem">…</div>';
+                html += '<div class="clip-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:0.65rem">—</div>';
             }
             html += '<div class="clip-info" style="flex:1;min-width:0">';
-            if (clip.uploading) {
-                html += '<div class="clip-name">Uploading ' + (clip.originalName || '') + ' (' + (clip.uploadPct || 0) + '%)</div>';
+            if (clip.downloading) {
+                html += '<div class="clip-name">Downloading from link…</div>';
+                html += '<div class="clip-meta">' + escapeHtml(clip.originalName || 'video') +
+                    (clip.waitSecs != null ? ' · ' + clip.waitSecs + 's elapsed' : '') + '</div>';
+                html += '<div class="clip-meta" style="color:var(--accent)">Still working — TikTok/YouTube can take up to ~90s</div>';
+            } else if (clip.uploading) {
+                html += '<div class="clip-name">Uploading ' + escapeHtml(clip.originalName || '') + ' (' + (clip.uploadPct || 0) + '%)</div>';
+                html += '<div class="clip-meta">Keep this tab open</div>';
             } else if (clip.cleaning) {
-                html += '<div class="clip-name">Removing burned-in text…</div><div class="clip-meta">' + (clip.originalName || '') + '</div>';
+                html += '<div class="clip-name">Removing burned-in text…</div>';
+                html += '<div class="clip-meta">' + escapeHtml(clip.originalName || '') +
+                    (clip.waitSecs != null ? ' · ' + clip.waitSecs + 's elapsed' : '') + '</div>';
+                html += '<div class="clip-meta" style="color:var(--accent)">Replicate is processing — usually 30–120s</div>';
+            } else if (clip.importFailed) {
+                html += '<div class="clip-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+                    escapeHtml(clip.originalName || 'Import failed') + '</div>';
+                html += '<div class="clip-meta" style="color:var(--red)">' +
+                    escapeHtml(String(clip.textCleanError || clip.importError || 'Import failed').slice(0, 100)) + '</div>';
             } else {
-                html += '<div class="clip-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (clip.originalName || clip.filename) + '</div>';
+                html += '<div class="clip-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+                    escapeHtml(clip.originalName || clip.filename || '') + '</div>';
                 html += '<div class="clip-meta">' + (clip.duration || 0).toFixed(1) + 's' +
                     (clip.textCleaned ? ' · text cleaned' : '') + '</div>';
                 if (clip.textCleanError) {
-                    html += '<div class="clip-meta" style="color:var(--red)">' + escapeHtml(String(clip.textCleanError).slice(0, 80)) + '</div>';
+                    html += '<div class="clip-meta" style="color:var(--red)">' +
+                        escapeHtml(String(clip.textCleanError).slice(0, 80)) + '</div>';
                 }
             }
             html += '</div>';
-            if (!clip.uploading && !clip.cleaning && clip.filename) {
+            if (clip.importFailed) {
+                html += '<div class="clip-actions">';
+                html += '<button type="button" class="btn-mini danger" onclick="window._rk.remove(' + i + ')">Dismiss</button>';
+                html += '</div>';
+            } else if (!clip.uploading && !clip.downloading && !clip.cleaning && clip.filename) {
                 html += '<div class="clip-actions">';
                 if (!clip.textCleaned) {
                     html += '<button type="button" class="btn-mini" onclick="window._rk.cleanText(' + i + ')">Remove text</button>';
@@ -241,12 +263,71 @@
         list.innerHTML = html;
     }
 
+    function shortUrlLabel(url) {
+        try {
+            var u = new URL(url);
+            var host = u.hostname.replace(/^www\./, '');
+            var tail = u.pathname.split('/').filter(Boolean).slice(-2).join('/');
+            var s = host + '/' + tail;
+            return s.length > 52 ? s.slice(0, 52) + '…' : s;
+        } catch (e) {
+            return url.length > 48 ? url.slice(0, 48) + '…' : url;
+        }
+    }
+
+    function setImportProgress(visible, opts) {
+        opts = opts || {};
+        var panel = document.getElementById('import-progress');
+        if (!panel) return;
+        if (!visible) {
+            panel.classList.add('hidden');
+            return;
+        }
+        panel.classList.remove('hidden');
+        var done = opts.done || 0;
+        var total = opts.total || 0;
+        var label = opts.label || 'Downloading clips…';
+        var hint = opts.hint || 'Keep this tab open — imports continue in the background.';
+        var fill = document.getElementById('import-progress-fill');
+        var labelEl = document.getElementById('import-progress-label');
+        var countEl = document.getElementById('import-progress-count');
+        var hintEl = document.getElementById('import-progress-hint');
+        if (labelEl) labelEl.textContent = label;
+        if (countEl) countEl.textContent = done + ' / ' + total;
+        if (hintEl) hintEl.textContent = hint;
+        if (fill) fill.style.width = (total ? Math.round((done / total) * 100) : 0) + '%';
+    }
+
+    function startElapsedTicker(clip) {
+        clip._startedAt = Date.now();
+        clip.waitSecs = 0;
+        if (clip._tick) clearInterval(clip._tick);
+        clip._tick = setInterval(function() {
+            if (!clip.downloading && !clip.cleaning) {
+                clearInterval(clip._tick);
+                clip._tick = null;
+                return;
+            }
+            clip.waitSecs = Math.round((Date.now() - clip._startedAt) / 1000);
+            renderClipList();
+        }, 1000);
+    }
+
+    function stopElapsedTicker(clip) {
+        if (clip && clip._tick) {
+            clearInterval(clip._tick);
+            clip._tick = null;
+        }
+        if (clip) clip.waitSecs = null;
+    }
+
     async function cleanTextClip(clipIndex, fromTrim) {
         var clip = clips[clipIndex];
         if (!clip || !clip.filename || clip.textCleaned || clip.cleaning) return;
 
         clip.cleaning = true;
         clip.textCleanError = null;
+        startElapsedTicker(clip);
         renderClipList();
         updateNextButton();
         updateTrimCleanUi(fromTrim, 'Removing burned-in text… this can take a minute', false);
@@ -283,6 +364,7 @@
             clip.textCleanError = err.message;
             updateTrimCleanUi(fromTrim, err.message, false);
         }
+        stopElapsedTicker(clip);
         clip.cleaning = false;
         renderClipList();
         updateNextButton();
@@ -311,14 +393,16 @@
     }
 
     function updateNextButton() {
+        var busy = clips.some(function(c) { return c.uploading || c.downloading || c.cleaning; });
         var ready = clips.filter(function(c) {
-            return !c.uploading && !c.cleaning && c.filename;
+            return !c.uploading && !c.downloading && !c.cleaning && !c.importFailed && c.filename;
         }).length;
-        document.getElementById('btn-next-trim').disabled = ready < 2 || clips.some(function(c) { return c.uploading || c.cleaning; });
+        document.getElementById('btn-next-trim').disabled = ready < 2 || busy;
     }
 
     function removeClip(index) {
         var clip = clips[index];
+        if (clip) stopElapsedTicker(clip);
         if (clip && clip.filename) apiFetch('/api/studio/ranking/clip/' + clip.filename, { method: 'DELETE' }).catch(function(){});
         clips.splice(index, 1); renderClipList(); updateNextButton();
     }
@@ -338,7 +422,7 @@
         return out;
     }
 
-    async function importOneUrl(url) {
+    async function importOneUrl(url, placeholderIndex) {
         var res = await apiFetch('/api/studio/ranking/import-url', {
             method: 'POST',
             headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
@@ -348,13 +432,16 @@
         if (!res.ok || !data.success) {
             throw new Error(data.error || 'Import failed');
         }
-        clips.push({
+        var clip = clips[placeholderIndex];
+        if (!clip) return data;
+        stopElapsedTicker(clip);
+        clips[placeholderIndex] = {
             filename: data.filename, url: data.url,
             duration: data.duration, originalDuration: data.duration,
             label: '', startTime: 0, endTime: data.duration,
-            originalName: url.length > 48 ? url.substring(0, 48) + '…' : url,
-            uploading: false, cleaning: false, textCleaned: false
-        });
+            originalName: shortUrlLabel(url),
+            uploading: false, downloading: false, cleaning: false, textCleaned: false
+        };
         renderClipList();
         updateNextButton();
         return data;
@@ -374,44 +461,115 @@
         }
         if (clips.length >= 10) { alert('Maximum 10 clips reached'); return; }
 
-        var room = 10 - clips.length;
+        var room = 10 - clips.filter(function(c) { return !c.importFailed; }).length;
+        if (room <= 0) { alert('Maximum 10 clips reached'); return; }
         if (urls.length > room) urls = urls.slice(0, room);
 
         btn.disabled = true;
-        status.classList.remove('hidden');
-        status.style.color = 'var(--text-muted)';
+        input.disabled = true;
+        status.classList.add('hidden');
+
+        var placeholders = [];
+        for (var p = 0; p < urls.length; p++) {
+            var ph = {
+                _tempId: 'dl-' + Date.now() + '-' + p,
+                downloading: true,
+                originalName: shortUrlLabel(urls[p]),
+                importUrl: urls[p],
+                filename: null,
+                url: null,
+                duration: 0
+            };
+            startElapsedTicker(ph);
+            clips.push(ph);
+            placeholders.push(clips.length - 1);
+        }
+        renderClipList();
+        updateNextButton();
 
         var ok = 0;
         var fail = 0;
+        var startedAll = Date.now();
+        setImportProgress(true, {
+            done: 0,
+            total: urls.length,
+            label: 'Downloading clip 1 of ' + urls.length + '…',
+            hint: 'Still working — TikTok/YouTube imports often take 20–90 seconds each. Previews appear as each finishes.'
+        });
+
         for (var i = 0; i < urls.length; i++) {
-            btn.textContent = 'Importing ' + (i + 1) + '/' + urls.length + '…';
-            status.textContent = 'Importing ' + (i + 1) + ' of ' + urls.length + ' (preview appears when each finishes)…';
+            var idx = placeholders[i];
+            var elapsedAll = Math.round((Date.now() - startedAll) / 1000);
+            btn.textContent = 'Downloading ' + (i + 1) + '/' + urls.length + '…';
+            setImportProgress(true, {
+                done: i,
+                total: urls.length,
+                label: 'Downloading clip ' + (i + 1) + ' of ' + urls.length + '…',
+                hint: 'Elapsed ' + elapsedAll + 's total · keep this tab open. Finished clips show a preview below.'
+            });
             try {
-                await importOneUrl(urls[i]);
+                await importOneUrl(urls[i], idx);
                 ok++;
             } catch (err) {
                 fail++;
                 console.warn('Import failed for', urls[i], err.message);
-                status.style.color = 'var(--red)';
-                status.textContent = 'Failed (' + (i + 1) + '/' + urls.length + '): ' + err.message;
+                var failed = clips[idx];
+                if (failed) {
+                    stopElapsedTicker(failed);
+                    failed.downloading = false;
+                    failed.importFailed = true;
+                    failed.importError = err.message || 'Import failed';
+                    failed.originalName = shortUrlLabel(urls[i]);
+                }
+                renderClipList();
             }
+            setImportProgress(true, {
+                done: i + 1,
+                total: urls.length,
+                label: (i + 1 < urls.length)
+                    ? ('Downloaded ' + (i + 1) + ' of ' + urls.length + ' — starting next…')
+                    : ('Finished ' + (i + 1) + ' of ' + urls.length),
+                hint: fail
+                    ? (ok + ' imported, ' + fail + ' failed so far. You can dismiss failures and keep going.')
+                    : 'Previews appear under the list as each download completes.'
+            });
         }
 
         input.value = '';
+        input.disabled = false;
         btn.disabled = false;
         btn.textContent = 'Import links';
-        if (ok && !fail) {
-            status.style.color = 'var(--green)';
-            status.textContent = 'Imported ' + ok + ' clip' + (ok === 1 ? '' : 's') + '. Preview below — remove text only if needed.';
-            setTimeout(function() { status.classList.add('hidden'); }, 5000);
-        } else if (ok && fail) {
-            status.style.color = 'var(--text-muted)';
-            status.textContent = 'Imported ' + ok + ', failed ' + fail + '. Use Remove text on clips that need it.';
-        } else if (!ok) {
-            status.style.color = 'var(--red)';
-            status.textContent = (status.textContent || 'Import failed') + ' — try uploading the file instead.';
-        }
         updateNextButton();
+
+        var totalSec = Math.round((Date.now() - startedAll) / 1000);
+        if (ok && !fail) {
+            setImportProgress(true, {
+                done: urls.length,
+                total: urls.length,
+                label: 'Imported ' + ok + ' clip' + (ok === 1 ? '' : 's') + ' in ' + totalSec + 's',
+                hint: 'Preview below — use Remove text only on clips that need it.'
+            });
+            setTimeout(function() { setImportProgress(false); }, 4000);
+            status.classList.remove('hidden');
+            status.style.color = 'var(--green)';
+            status.textContent = 'Imported ' + ok + ' clip' + (ok === 1 ? '' : 's') + '.';
+            setTimeout(function() { status.classList.add('hidden'); }, 4500);
+        } else if (ok && fail) {
+            setImportProgress(true, {
+                done: urls.length,
+                total: urls.length,
+                label: 'Imported ' + ok + ', failed ' + fail,
+                hint: 'Dismiss failed rows or retry those links. Successful clips are ready to preview.'
+            });
+            status.classList.remove('hidden');
+            status.style.color = 'var(--text-muted)';
+            status.textContent = 'Imported ' + ok + ', failed ' + fail + '.';
+        } else {
+            setImportProgress(false);
+            status.classList.remove('hidden');
+            status.style.color = 'var(--red)';
+            status.textContent = 'All imports failed — try uploading the files instead.';
+        }
     }
 
     function initUrlImport() {

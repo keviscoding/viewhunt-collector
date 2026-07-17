@@ -50,6 +50,18 @@
         .url-batch:focus{outline:none;border-color:var(--accent)}
         .url-batch::placeholder{color:var(--text-dim)}
         #btn-trim-clean-text{margin-top:0.5rem}
+        .import-progress{margin:0.75rem 0 1rem;padding:0.85rem 1rem;border-radius:10px;border:1px solid rgba(167,139,250,0.35);background:rgba(167,139,250,0.08)}
+        .import-progress.hidden{display:none}
+        .import-progress-top{display:flex;align-items:center;gap:0.65rem;margin-bottom:0.55rem}
+        .import-progress-label{font-size:0.82rem;color:var(--text);flex:1}
+        .import-progress-count{font-size:0.75rem;color:var(--text-muted);font-variant-numeric:tabular-nums}
+        .import-progress-bar{height:6px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden}
+        .import-progress-fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,var(--accent),#c4b5fd);transition:width 0.25s ease}
+        .import-progress-hint{font-size:0.72rem;color:var(--text-dim);margin-top:0.45rem}
+        .spinner{width:16px;height:16px;border:2px solid rgba(167,139,250,0.25);border-top-color:var(--accent);border-radius:50%;animation:vh-spin 0.7s linear infinite;flex-shrink:0}
+        .clip-thumb.is-loading{display:flex;align-items:center;justify-content:center;background:rgba(167,139,250,0.1);animation:vh-pulse 1.4s ease-in-out infinite}
+        @keyframes vh-spin{to{transform:rotate(360deg)}}
+        @keyframes vh-pulse{0%,100%{opacity:0.55}50%{opacity:1}}
         .clip-num{width:32px;height:32px;border-radius:50%;background:var(--yellow);color:#0e0e12;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.9rem;flex-shrink:0}
         .clip-info{flex:1;min-width:0}
         .clip-name{font-size:0.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -197,6 +209,15 @@
             <button class="btn btn-secondary" id="btn-import-url" style="white-space:nowrap">Import links</button>
         </div>
         <div id="url-status" style="font-size:0.75rem;color:var(--text-dim);margin-bottom:0.75rem" class="hidden"></div>
+        <div id="import-progress" class="import-progress hidden" aria-live="polite">
+            <div class="import-progress-top">
+                <div class="spinner" aria-hidden="true"></div>
+                <div class="import-progress-label" id="import-progress-label">Downloading clips…</div>
+                <div class="import-progress-count" id="import-progress-count">0 / 0</div>
+            </div>
+            <div class="import-progress-bar"><div class="import-progress-fill" id="import-progress-fill"></div></div>
+            <div class="import-progress-hint" id="import-progress-hint">TikTok / YouTube imports can take 20–90s each — keep this tab open.</div>
+        </div>
         <div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:1rem">Imports stay fast — no automatic text removal. After preview, use <strong style="color:var(--text-muted)">Remove text</strong> on clips that have POV captions or handles. You can also do that while trimming.</div>
 
         <div class="upload-zone" id="upload-zone">
