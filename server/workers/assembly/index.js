@@ -1,6 +1,7 @@
 /**
  * Fly Machine entry — full ranking pipeline:
- * download clips → Gemini commentary + TTS → Whisper word timestamps → FFmpeg assemble → upload
+ * download clips → FFmpeg trim → Gemini commentary + TTS (OpenAI fallback) →
+ * Whisper word timestamps → FFmpeg assemble → upload
  *
  * Env: JOB_ID, APP_URL, MONGODB_URI, WORKER_SECRET, GEMINI_API_KEY, OPENAI_API_KEY, SPACES_/AWS_
  */
@@ -79,27 +80,54 @@ async function main() {
     fs.mkdirSync(audioDir, { recursive: true });
 
     const clipList = [];
+    const assemblerEarly = new RankingAssembler();
+    assemblerEarly.tempDir = path.join(workDir, 'temp');
+    assemblerEarly.outputDir = path.join(workDir, 'final');
+    assemblerEarly.uploadDir = workDir;
+    fs.mkdirSync(assemblerEarly.tempDir, { recursive: true });
+
     for (var i = 0; i < clipsMeta.length; i++) {
         const c = clipsMeta[i];
         const dest = path.join(workDir, c.filename || ('clip-' + i + '.mp4'));
         const url = APP_URL + '/studio/ranking-uploads/' + encodeURIComponent(c.filename);
         console.log('Downloading', url);
         await downloadFile(url, dest);
-        clipList.push({ path: dest, number: c.number || (i + 1), label: c.label || '' });
+
+        await db.collection('ranking_jobs').updateOne(
+            { _id: job._id },
+            { $set: { message: 'Fly: trimming clip ' + (i + 1) + ' of ' + clipsMeta.length + '...', updatedAt: new Date() } }
+        );
+
+        var finalPath = dest;
+        var startTime = typeof c.startTime === 'number' ? c.startTime : parseFloat(c.startTime) || 0;
+        var endTime = typeof c.endTime === 'number' ? c.endTime : (c.endTime != null ? parseFloat(c.endTime) : null);
+        var origDur = await assemblerEarly.getDuration(dest);
+        var endT = (endTime != null && !isNaN(endTime) && endTime > 0) ? endTime : origDur;
+        var needsTrim = startTime > 0.1 || Math.abs(endT - origDur) > 0.1;
+        if (needsTrim && endT > startTime + 0.05) {
+            var trimmedPath = path.join(workDir, 'trimmed-' + i + '-' + Date.now() + '.mp4');
+            console.log('Trimming clip', i + 1, startTime, '→', endT);
+            await assemblerEarly.trimClip(dest, startTime, endT, trimmedPath);
+            finalPath = trimmedPath;
+        }
+
+        clipList.push({ path: finalPath, number: c.number || (i + 1), label: c.label || '' });
     }
 
     var commentaryData = [];
     var commentaryResults = [];
+    var ttsProvider = null;
+    var ttsError = null;
 
     if (enableCommentary && titleText) {
-        if (!process.env.GEMINI_API_KEY) {
-            console.warn('GEMINI_API_KEY missing on Fly — skipping commentary');
+        if (!process.env.GEMINI_API_KEY && !process.env.OPENAI_API_KEY) {
+            console.warn('No GEMINI_API_KEY or OPENAI_API_KEY on Fly — skipping commentary');
         } else {
             await db.collection('ranking_jobs').updateOne(
                 { _id: job._id },
-                { $set: { message: 'Fly: Gemini commentary + TTS + word timings...', updatedAt: new Date() } }
+                { $set: { message: 'Fly: generating commentary + TTS...', updatedAt: new Date() } }
             );
-            console.log('🎙️ Running RankingCommentary on Fly (Gemini + Whisper if OPENAI_API_KEY set)');
+            console.log('🎙️ Running RankingCommentary on Fly');
             const commentaryGen = new RankingCommentary();
             commentaryGen.audioDir = audioDir;
             commentaryResults = await commentaryGen.generateCommentary(
@@ -107,8 +135,10 @@ async function main() {
                 titleText,
                 payload.voiceName || 'Kore'
             );
+            ttsProvider = commentaryResults.ttsProvider || commentaryGen.lastTtsProvider || null;
+            ttsError = commentaryResults.ttsError || commentaryGen.lastTtsError || null;
             commentaryData = commentaryResults.filter(function(c) { return c.audioPath; });
-            console.log('🎙️ Commentary ready:', commentaryData.length, 'audio lines');
+            console.log('🎙️ Commentary ready:', commentaryData.length, 'audio lines', ttsProvider || '');
         }
     }
 
@@ -117,11 +147,7 @@ async function main() {
         { $set: { message: 'Fly: FFmpeg assembling (' + clipList.length + ' clips)...', updatedAt: new Date() } }
     );
 
-    const assembler = new RankingAssembler();
-    assembler.tempDir = path.join(workDir, 'temp');
-    assembler.outputDir = path.join(workDir, 'final');
-    assembler.uploadDir = workDir;
-    fs.mkdirSync(assembler.tempDir, { recursive: true });
+    const assembler = assemblerEarly;
     fs.mkdirSync(assembler.outputDir, { recursive: true });
 
     const result = await assembler.assemble(clipList, payload.title || {}, {
@@ -177,6 +203,8 @@ async function main() {
         ...result,
         videoUrl: videoUrl,
         hasCommentary: hasCommentary,
+        ttsProvider: ttsProvider,
+        ttsError: hasCommentary ? null : ttsError,
         worker: 'fly'
     };
 
@@ -186,7 +214,9 @@ async function main() {
             $set: {
                 status: 'complete',
                 result: finalResult,
-                message: 'Complete',
+                message: hasCommentary
+                    ? ('Complete' + (ttsProvider ? ' (voice: ' + ttsProvider + ')' : ''))
+                    : (enableCommentary ? ('Complete — voiceover missing' + (ttsError ? ': ' + ttsError : '')) : 'Complete'),
                 updatedAt: new Date()
             }
         }

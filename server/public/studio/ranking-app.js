@@ -20,6 +20,7 @@
     var subtitleColor = 'yellow';
     var stylePreset = 'classic';
     var previewActiveClip = 0; // which clip looks "active" in dashboard preview
+    var cleanTextEnabled = true; // remove burned-in captions via Replicate
 
     var STYLE_PRESETS = {
         classic: {
@@ -184,7 +185,15 @@
                     var data = JSON.parse(xhr.responseText);
                     if (xhr.status >= 200 && xhr.status < 300 && data.success) {
                         var idx = clips.findIndex(function(c) { return c._tempId === tempId; });
-                        if (idx >= 0) clips[idx] = { filename: data.filename, url: data.url, duration: data.duration, originalDuration: data.duration, label: '', startTime: 0, endTime: data.duration, originalName: file.name, uploading: false };
+                        if (idx >= 0) {
+                            clips[idx] = {
+                                filename: data.filename, url: data.url, duration: data.duration,
+                                originalDuration: data.duration, label: '', startTime: 0, endTime: data.duration,
+                                originalName: file.name, uploading: false, cleaning: false, textCleaned: false
+                            };
+                            renderClipList(); updateNextButton();
+                            maybeCleanText(idx);
+                        }
                     } else { clips = clips.filter(function(c) { return c._tempId !== tempId; }); alert('Upload failed: ' + (data.error || 'Server error')); }
                 } catch (e) { clips = clips.filter(function(c) { return c._tempId !== tempId; }); alert('Upload failed'); }
                 renderClipList(); updateNextButton(); resolve();
@@ -199,16 +208,62 @@
         var list = document.getElementById('clip-list'); var html = '';
         clips.forEach(function(clip, i) {
             html += '<div class="clip-item"><div class="clip-num">' + (i + 1) + '</div><div class="clip-info">';
-            if (clip.uploading) { html += '<div class="clip-name">Uploading ' + (clip.originalName || '') + ' (' + (clip.uploadPct || 0) + '%)</div>'; }
-            else { html += '<div class="clip-name">' + (clip.originalName || clip.filename) + '</div><div class="clip-meta">' + clip.duration.toFixed(1) + 's</div>'; }
+            if (clip.uploading) {
+                html += '<div class="clip-name">Uploading ' + (clip.originalName || '') + ' (' + (clip.uploadPct || 0) + '%)</div>';
+            } else if (clip.cleaning) {
+                html += '<div class="clip-name">Removing burned-in text…</div><div class="clip-meta">' + (clip.originalName || '') + '</div>';
+            } else {
+                html += '<div class="clip-name">' + (clip.originalName || clip.filename) + '</div>';
+                html += '<div class="clip-meta">' + clip.duration.toFixed(1) + 's' +
+                    (clip.textCleaned ? ' · text cleaned' : '') +
+                    (clip.textCleanError ? ' · clean skipped' : '') + '</div>';
+            }
             html += '</div>';
-            if (!clip.uploading) html += '<div class="clip-actions"><button onclick="window._rk.remove(' + i + ')" class="danger" title="Remove">x</button></div>';
+            if (!clip.uploading && !clip.cleaning) html += '<div class="clip-actions"><button onclick="window._rk.remove(' + i + ')" class="danger" title="Remove">x</button></div>';
             html += '</div>';
         });
         list.innerHTML = html;
     }
 
-    function updateNextButton() { document.getElementById('btn-next-trim').disabled = clips.filter(function(c) { return !c.uploading && c.filename; }).length < 2; }
+    async function maybeCleanText(clipIndex) {
+        if (!cleanTextEnabled) return;
+        var clip = clips[clipIndex];
+        if (!clip || !clip.filename || clip.textCleaned || clip.cleaning) return;
+
+        clip.cleaning = true;
+        renderClipList();
+        try {
+            var res = await apiFetch('/api/studio/ranking/clean-text', {
+                method: 'POST',
+                headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+                body: JSON.stringify({ filename: clip.filename })
+            });
+            var data = await res.json();
+            if (res.ok && data.success) {
+                clip.duration = data.duration || clip.duration;
+                clip.originalDuration = data.duration || clip.originalDuration;
+                clip.endTime = data.duration || clip.endTime;
+                clip.url = data.url + '?t=' + Date.now();
+                clip.textCleaned = true;
+            } else {
+                clip.textCleanError = data.error || 'Text clean failed';
+                console.warn('Text clean skipped/failed:', clip.textCleanError);
+            }
+        } catch (err) {
+            clip.textCleanError = err.message;
+            console.warn('Text clean error:', err.message);
+        }
+        clip.cleaning = false;
+        renderClipList();
+        updateNextButton();
+    }
+
+    function updateNextButton() {
+        var ready = clips.filter(function(c) {
+            return !c.uploading && !c.cleaning && c.filename;
+        }).length;
+        document.getElementById('btn-next-trim').disabled = ready < 2 || clips.some(function(c) { return c.uploading || c.cleaning; });
+    }
 
     function removeClip(index) {
         var clip = clips[index];
@@ -248,18 +303,16 @@
                 duration: data.duration, originalDuration: data.duration,
                 label: '', startTime: 0, endTime: data.duration,
                 originalName: url.length > 40 ? url.substring(0, 40) + '...' : url,
-                uploading: false
+                uploading: false, cleaning: false, textCleaned: false
             });
 
             input.value = '';
             var plat = data.platform ? String(data.platform).toUpperCase() : 'LINK';
-            var wm = data.watermarkFree === true
-                ? ' · no-watermark source'
-                : (data.watermarkFree === false ? ' · may include platform watermark' : '');
             status.style.color = 'var(--green)';
-            status.textContent = 'Imported ' + plat + ' · ' + data.duration.toFixed(1) + 's' + wm;
+            status.textContent = 'Imported ' + plat + ' · ' + data.duration.toFixed(1) + 's';
             setTimeout(function() { status.classList.add('hidden'); }, 4500);
             renderClipList(); updateNextButton();
+            maybeCleanText(clips.length - 1);
         } catch (err) {
             status.style.color = 'var(--red)';
             var tip = /APIFY_TOKEN|upload the file|Download it on your phone/i.test(err.message || '')
@@ -277,6 +330,13 @@
         document.getElementById('url-input').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') { e.preventDefault(); importFromUrl(); }
         });
+        var cleanToggle = document.getElementById('clean-text-toggle');
+        if (cleanToggle) {
+            cleanTextEnabled = !!cleanToggle.checked;
+            cleanToggle.addEventListener('change', function() {
+                cleanTextEnabled = !!cleanToggle.checked;
+            });
+        }
     }
 
     // ==================== TRIM ====================
@@ -703,31 +763,24 @@
         btn.disabled = true; btn.textContent = 'Starting...';
         goToStep(4);
         var pf = document.getElementById('progress-fill'), pt = document.getElementById('progress-text');
-        pf.style.width = '0%'; pt.textContent = 'Trimming clips...';
+        pf.style.width = '0%'; pt.textContent = 'Submitting to Fly...';
         document.getElementById('assembly-progress').classList.remove('hidden');
 
         try {
-            // Step 1: Trim clips
-            var trimmedClips = [];
-            for (var i = 0; i < clips.length; i++) {
-                var clip = clips[i];
-                pf.style.width = Math.round(((i + 1) / clips.length) * 20) + '%';
-                pt.textContent = 'Trimming clip ' + (i + 1) + ' of ' + clips.length + '...';
-                var needsTrim = clip.startTime > 0.1 || Math.abs(clip.endTime - clip.originalDuration) > 0.1;
-                var filename = clip.filename;
-                if (needsTrim) {
-                    var tr = await apiFetch('/api/studio/ranking/trim', {
-                        method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
-                        body: JSON.stringify({ filename: clip.filename, startTime: clip.startTime, endTime: clip.endTime })
-                    });
-                    var td = await tr.json(); if (!td.success) throw new Error(td.error || 'Trim failed'); filename = td.filename;
-                }
-                trimmedClips.push({ filename: filename, number: clips.length - i, label: clip.label || '' });
-            }
+            // Trim runs on Fly (or local assemble worker) — send in/out times with the job
+            var clipPayload = clips.map(function(clip, i) {
+                return {
+                    filename: clip.filename,
+                    number: clips.length - i,
+                    label: clip.label || '',
+                    startTime: clip.startTime || 0,
+                    endTime: clip.endTime != null ? clip.endTime : clip.duration,
+                    originalDuration: clip.originalDuration || clip.duration
+                };
+            });
 
-            // Step 2: Submit assembly job (returns immediately with jobId)
-            pf.style.width = '25%';
-            pt.textContent = 'Submitting assembly job...';
+            pf.style.width = '20%';
+            pt.textContent = 'Submitting job to Fly (trim + assemble)...';
 
             var selectedVoice = document.getElementById('voice-picker').value || 'Kore';
             var selectedFont = document.getElementById('subtitle-font').value || 'Arial';
@@ -735,7 +788,7 @@
             var aRes = await apiFetch('/api/studio/ranking/assemble', {
                 method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
                 body: JSON.stringify({
-                    clips: trimmedClips,
+                    clips: clipPayload,
                     title: { text: document.getElementById('title-text').value || '', highlightWord: document.getElementById('title-highlight').value || '' },
                     layout: { listXPercent: layout.listX, titleYPercent: layout.titleY, titleFontSize: layout.titleSize, lineSpacing: layout.lineSpacing, numSize: layout.numSize },
                     commentary: enableCommentary,

@@ -1,7 +1,8 @@
 # Deploy: Fly Machines + DigitalOcean
 
 DigitalOcean continues to host the Express app (API, Studio UI, auth, Stripe).
-Fly Machines run ephemeral workers for ranking FFmpeg assembly and niche scraping.
+Fly Machines run ephemeral workers for ranking compute (trim + commentary + FFmpeg)
+and niche scraping.
 
 ## Environment variables (DigitalOcean App)
 
@@ -18,7 +19,7 @@ APP_URL=https://your-app.ondigitalocean.app
 FLY_API_TOKEN=<fly deploy token or org token>
 FLY_ASSEMBLY_APP=viewhunt-assembly
 FLY_SCRAPER_APP=viewhunt-scraper
-FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:latest
+FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXRAJ0YW15CG71Q5DTH5WFM8
 FLY_SCRAPER_IMAGE=registry.fly.io/viewhunt-scraper:latest
 
 # Durable video storage (AWS S3 or DigitalOcean Spaces)
@@ -32,28 +33,26 @@ AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_S3_BUCKET_NAME=
 AWS_REGION=us-east-1
-# Or Spaces:
-# SPACES_KEY=
-# SPACES_SECRET=
-# SPACES_BUCKET=viewhunt-media
-# SPACES_REGION=sfo3
-# SPACES_ENDPOINT=https://sfo3.digitaloceanspaces.com
-# SPACES_CDN_URL=
 
 # Scraper / collector / ranking AI
 YOUTUBE_API_KEY=
 GEMINI_API_KEY=
 APIFY_TOKEN=
 OPENAI_API_KEY=
+REPLICATE_API_KEY=
 ```
 
-If Fly vars are missing, ranking assembly and niche scrapes fall back to in-process
-FFmpeg / YouTube Data API on the DO app.
+If Fly vars are missing, ranking assembly falls back to in-process FFmpeg on the DO app
+(including trim from payload times).
 
-**Ranking pipeline on Fly:** download clips → Gemini commentary + TTS → Whisper word
-timestamps (`OPENAI_API_KEY`) → FFmpeg assemble → Spaces upload. Pass `GEMINI_API_KEY`
-and `OPENAI_API_KEY` into the assembly Machine (via DO env → `fly-machines.js`).
-Local DO assembly is fallback only when Fly is not configured.
+**Ranking pipeline on Fly:** download clips → FFmpeg trim (in/out from Studio) →
+Gemini commentary lines + TTS (OpenAI TTS fallback) → Whisper word timestamps →
+FFmpeg assemble → Spaces upload. Pass `GEMINI_API_KEY` and `OPENAI_API_KEY` into the
+assembly Machine (via DO env → `fly-machines.js`).
+
+**Gemini billing:** Studio TTS uses `gemini-2.5-flash-preview-tts`. If Google AI Studio
+has auto top-up / billing disabled, TTS fails. OpenAI TTS is used as fallback when
+`OPENAI_API_KEY` is set.
 
 ## Deploy Fly worker images
 
@@ -74,18 +73,16 @@ Set `FLY_ASSEMBLY_IMAGE` / `FLY_SCRAPER_IMAGE` to the image refs printed by Fly
 
 ## Ranking + AI commentary (on Fly)
 
-Full ranking jobs — including Gemini hook/commentary and Whisper word-level caption
-timings — run on **Fly Machines** (`viewhunt-assembly`). DigitalOcean only enqueues
-the job and serves clip uploads. Local assembly is fallback if Fly is not configured.
+Full ranking jobs — trim, Gemini hook/commentary, TTS, Whisper captions, FFmpeg —
+run on **Fly Machines** (`viewhunt-assembly`). DigitalOcean enqueues the job and
+serves clip uploads. The Studio UI only picks in/out points; it does not trim on DO.
 
-Required on the DO app (forwarded into Machines): `GEMINI_API_KEY`, optional
-`OPENAI_API_KEY` for true word timestamps on captions.
+## Burned-in text removal
 
-## Watermark handling (Phase A)
-
-Import prefers no-watermark CDN URLs from Apify (TikTok field `videoUrlNoWatermark`, etc.).
-True ML erasure of burned-in text is deferred (needs a GPU worker later).
-If a watermark remains, users should download a clean file and upload.
+POV captions, handles, and other hard-coded overlays are removed via Replicate
+`hjunior29/video-text-remover` after upload/import when the Studio toggle is on.
+Requires `REPLICATE_API_KEY` on DigitalOcean. This is an existing hosted API — not
+a custom model we train or self-host.
 
 ## Trial behavior
 
@@ -98,13 +95,4 @@ Stripe checkout converts `trial.status` → `converted`.
 
 ```
 POST /api/channels/niche-scrape          # start a scrape/rotation run
-GET  /api/channels/niche-scrape/status   # recent runs
-POST /api/channels/auto-collect          # legacy daily API collector
-```
-
-## Local smoke checks
-
-```bash
-cd server
-node workers/smoke-test.js
 ```

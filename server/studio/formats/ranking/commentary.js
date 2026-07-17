@@ -17,12 +17,16 @@ const OpenAI = require('openai');
 
 class RankingCommentary {
     constructor() {
-        this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        this.ai = process.env.GEMINI_API_KEY
+            ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
+            : null;
         this.audioDir = path.join(__dirname, '../../../public/studio/generated/audio');
         if (!fs.existsSync(this.audioDir)) fs.mkdirSync(this.audioDir, { recursive: true });
         this.openai = process.env.OPENAI_API_KEY
             ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
             : null;
+        this.lastTtsProvider = null;
+        this.lastTtsError = null;
     }
 
     /**
@@ -94,11 +98,20 @@ class RankingCommentary {
         const results = await Promise.all(ttsPromises);
 
         const successCount = results.filter(r => r.audioPath).length;
-        console.log(`🎙️ Commentary complete: ${successCount}/${clips.length} clips have audio`);
+        console.log(`🎙️ Commentary complete: ${successCount}/${clips.length} clips have audio` +
+            (this.lastTtsProvider ? ` (tts=${this.lastTtsProvider})` : '') +
+            (this.lastTtsError ? ` lastError=${this.lastTtsError}` : ''));
+        results.ttsProvider = this.lastTtsProvider;
+        results.ttsError = this.lastTtsError;
         return results;
     }
 
     async _generateIntroLine(rankingTitle) {
+        if (!this.ai) {
+            var t = String(rankingTitle || 'the best moments').trim();
+            return t.toLowerCase().startsWith('these are') ? t : ('These are ' + t);
+        }
+
         const prompt = `You are a fast-paced, upbeat YouTube Shorts narrator for ranking/compilation videos.
 
 Generate a single intro line that reads out this ranking title. Keep it natural, energetic, and under 12 words.
@@ -124,6 +137,8 @@ Reply with ONLY the intro line, nothing else. No quotes, no explanation.`;
     }
 
     async _analyzeClipAndComment(clipPath, rankingTitle, clipNumber, totalClips) {
+        if (!this.ai) throw new Error('GEMINI_API_KEY required for clip commentary');
+
         const videoBuffer = fs.readFileSync(clipPath);
         const base64Video = videoBuffer.toString('base64');
         const mimeType = 'video/mp4';
@@ -162,13 +177,50 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
         const audioPath = await this._ttsLine(line, label);
         let wordTimings = await this._alignWords(audioPath, line);
         if (!wordTimings || !wordTimings.length) {
-            const dur = this._wavDurationSeconds(audioPath) || 2.0;
-            wordTimings = this._charWeightedTimings(line, dur);
+            var dur = this._wavDurationSeconds(audioPath);
+            if (!dur && this.openai && /\.mp3$/i.test(audioPath)) {
+                // Whisper path already failed; estimate ~2s for short lines
+                dur = Math.min(4, Math.max(1.2, String(line || '').split(/\s+/).length * 0.28));
+            }
+            wordTimings = this._charWeightedTimings(line, dur || 2.0);
         }
         return { audioPath, wordTimings };
     }
 
     async _ttsLine(line, label) {
+        var geminiErr = null;
+        if (this.ai) {
+            try {
+                const filepath = await this._ttsGemini(line, label);
+                this.lastTtsProvider = 'gemini';
+                return filepath;
+            } catch (err) {
+                geminiErr = err;
+                console.warn(`  Gemini TTS failed (${label}): ${err.message}`);
+                this.lastTtsError = err.message;
+            }
+        } else {
+            geminiErr = new Error('GEMINI_API_KEY missing');
+            this.lastTtsError = geminiErr.message;
+        }
+
+        if (this.openai) {
+            try {
+                const filepath = await this._ttsOpenAI(line, label);
+                this.lastTtsProvider = 'openai';
+                console.log(`  ✓ OpenAI TTS fallback (${label})`);
+                return filepath;
+            } catch (err) {
+                this.lastTtsError = (geminiErr ? geminiErr.message + '; ' : '') + err.message;
+                throw new Error('TTS failed (Gemini + OpenAI): ' + this.lastTtsError);
+            }
+        }
+
+        throw new Error('TTS failed: ' + (geminiErr && geminiErr.message) +
+            ' — set OPENAI_API_KEY for fallback, or enable Gemini billing for gemini-2.5-flash-preview-tts');
+    }
+
+    async _ttsGemini(line, label) {
         const ttsPrompt = `Read this in a super fast, upbeat, friendly tone, in about 2 seconds:\n\n${line}`;
 
         const response = await this.ai.models.generateContent({
@@ -185,12 +237,36 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
         });
 
         const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (!audioData) throw new Error('No audio data from TTS');
+        if (!audioData) throw new Error('No audio data from Gemini TTS');
 
         const pcmBuffer = Buffer.from(audioData, 'base64');
         const filename = `ranking-${label}-${Date.now()}.wav`;
         const filepath = path.join(this.audioDir, filename);
         this._writeWav(filepath, pcmBuffer);
+        return filepath;
+    }
+
+    /** Map Gemini voice picker names to OpenAI TTS voices. */
+    _openaiVoice() {
+        var map = {
+            Kore: 'nova', Puck: 'onyx', Charon: 'echo', Fenrir: 'fable',
+            Aoede: 'shimmer', Leda: 'nova', Orus: 'onyx', Zephyr: 'alloy'
+        };
+        return map[this.voiceName] || 'nova';
+    }
+
+    async _ttsOpenAI(line, label) {
+        const speech = await this.openai.audio.speech.create({
+            model: 'tts-1-hd',
+            voice: this._openaiVoice(),
+            input: line,
+            speed: 1.2,
+            response_format: 'mp3'
+        });
+        const buffer = Buffer.from(await speech.arrayBuffer());
+        const filename = `ranking-${label}-${Date.now()}.mp3`;
+        const filepath = path.join(this.audioDir, filename);
+        fs.writeFileSync(filepath, buffer);
         return filepath;
     }
 

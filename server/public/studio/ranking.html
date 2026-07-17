@@ -188,7 +188,11 @@
             <button class="btn btn-secondary" id="btn-import-url" style="white-space:nowrap">Import</button>
         </div>
         <div id="url-status" style="font-size:0.75rem;color:var(--text-dim);margin-bottom:0.75rem" class="hidden"></div>
-        <div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:1rem">Public TikTok &amp; YouTube imports use Apify with multiple fallbacks. We prefer <strong style="color:var(--text-muted)">no-watermark</strong> CDN links when available. If import fails, download the clip and upload below.</div>
+        <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;cursor:pointer">
+            <input type="checkbox" id="clean-text-toggle" checked>
+            Remove burned-in captions / text overlays after upload (Replicate)
+        </label>
+        <div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:1rem">Public TikTok &amp; YouTube imports use Apify. Burned-in POV captions and handles are cleaned via API when the toggle above is on. If import fails, download the clip and upload below.</div>
 
         <div class="upload-zone" id="upload-zone">
             <div class="icon">+</div>

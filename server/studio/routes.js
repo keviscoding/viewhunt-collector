@@ -1382,6 +1382,51 @@ function runYtdlp(args, timeoutMs) {
 }
 
 const urlImportLimiter = rateLimit({ windowMs: 60000, max: 5, message: { error: 'Too many imports. Wait a minute.' } });
+const textCleanLimiter = rateLimit({ windowMs: 60000, max: 8, message: { error: 'Too many text-clean requests. Wait a minute.' } });
+
+// Remove burned-in captions/text via Replicate (hjunior29/video-text-remover)
+router.post('/ranking/clean-text', requireAuth, textCleanLimiter, async (req, res) => {
+    try {
+        var filename = req.body && req.body.filename;
+        if (!filename || typeof filename !== 'string') {
+            return res.status(400).json({ error: 'filename required' });
+        }
+        if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+            return res.status(400).json({ error: 'Invalid filename' });
+        }
+        var filePath = path.join(rankingUploadDir, filename);
+        if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Clip not found' });
+
+        var textClean = require('./formats/ranking/text-clean');
+        var result = await textClean.cleanBurnedInText(filePath);
+        if (result.skipped) {
+            return res.status(503).json({
+                error: result.error || 'Text clean unavailable',
+                tip: 'Set REPLICATE_API_KEY on DigitalOcean to enable burned-in text removal.'
+            });
+        }
+        if (!result.ok) {
+            return res.status(422).json({ error: result.error || 'Text clean failed', keptOriginal: true });
+        }
+
+        var assemblerInfo = new RankingAssembler();
+        var info = await assemblerInfo.getVideoInfo(filePath);
+        var duration = await assemblerInfo.getDuration(filePath);
+        res.json({
+            success: true,
+            filename: filename,
+            url: '/studio/ranking-uploads/' + filename,
+            duration: duration,
+            width: info.width,
+            height: info.height,
+            textCleaned: true
+        });
+    } catch (error) {
+        console.error('Ranking clean-text error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 router.post('/ranking/import-url', requireAuth, urlImportLimiter, async (req, res) => {
     try {
         var { url } = req.body;
@@ -1635,7 +1680,15 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
         var clipList = clips.map(function(c, i) {
             var filePath = path.join(rankingUploadDir, c.filename);
             if (!fs.existsSync(filePath)) throw new Error('Clip not found: ' + c.filename);
-            return { path: filePath, number: c.number || (i + 1), label: c.label || '', filename: c.filename };
+            return {
+                path: filePath,
+                number: c.number || (i + 1),
+                label: c.label || '',
+                filename: c.filename,
+                startTime: typeof c.startTime === 'number' ? c.startTime : parseFloat(c.startTime) || 0,
+                endTime: typeof c.endTime === 'number' ? c.endTime : (c.endTime != null ? parseFloat(c.endTime) : null),
+                originalDuration: typeof c.originalDuration === 'number' ? c.originalDuration : null
+            };
         });
 
         // Create job in MongoDB and return immediately
@@ -1645,7 +1698,14 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             usingTrial: usingTrial,
             payload: {
                 clips: clipList.map(function(c) {
-                    return { filename: c.filename, number: c.number, label: c.label };
+                    return {
+                        filename: c.filename,
+                        number: c.number,
+                        label: c.label,
+                        startTime: c.startTime,
+                        endTime: c.endTime,
+                        originalDuration: c.originalDuration
+                    };
                 }),
                 title: title || {},
                 layout: layout || {},
@@ -1715,7 +1775,7 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             return;
         }
 
-        await updateRankingJob(jobId, { status: 'processing', message: enableCommentary ? 'Generating AI commentary...' : 'Normalizing clips...' });
+        await updateRankingJob(jobId, { status: 'processing', message: enableCommentary ? 'Generating AI commentary...' : 'Trimming clips...' });
 
         // Run assembly in background (local fallback)
         (async function() {
@@ -1723,9 +1783,26 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                 var assembler = new RankingAssembler();
                 var commentaryData = [];
                 var commentaryResults = [];
-                var localClipList = clipList.map(function(c) {
-                    return { path: c.path, number: c.number, label: c.label };
-                });
+                var localClipList = [];
+
+                for (var li = 0; li < clipList.length; li++) {
+                    var src = clipList[li];
+                    await updateRankingJob(jobId, {
+                        message: 'Trimming clip ' + (li + 1) + ' of ' + clipList.length + '...'
+                    });
+                    var finalPath = src.path;
+                    var startTime = src.startTime || 0;
+                    var origDur = await assembler.getDuration(src.path);
+                    var endT = (src.endTime != null && !isNaN(src.endTime) && src.endTime > 0) ? src.endTime : origDur;
+                    var needsTrim = startTime > 0.1 || Math.abs(endT - origDur) > 0.1;
+                    if (needsTrim && endT > startTime + 0.05) {
+                        var trimmedName = 'trimmed-' + Date.now() + '-' + li + '.mp4';
+                        var trimmedPath = path.join(rankingUploadDir, trimmedName);
+                        await assembler.trimClip(src.path, startTime, endT, trimmedPath);
+                        finalPath = trimmedPath;
+                    }
+                    localClipList.push({ path: finalPath, number: src.number, label: src.label });
+                }
 
                 // Generate AI commentary if enabled (always credits — not covered by ranking trial)
                 if (enableCommentary && title && title.text) {
@@ -1740,7 +1817,14 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                         if (commentaryData.length > 0) {
                             await credits.deductCredits(userId, 'script_generation', 1, 'Ranking AI commentary');
                             rankingCreditsCharged += credits.COSTS.script_generation;
-                            await updateRankingJob(jobId, { creditsCharged: rankingCreditsCharged });
+                            await updateRankingJob(jobId, {
+                                creditsCharged: rankingCreditsCharged,
+                                message: 'Assembling… voice=' + (commentaryResults.ttsProvider || commentaryGen.lastTtsProvider || 'ok')
+                            });
+                        } else if (commentaryGen.lastTtsError) {
+                            await updateRankingJob(jobId, {
+                                message: 'Assembling without voiceover: ' + commentaryGen.lastTtsError
+                            });
                         }
                     } catch (commentaryErr) {
                         console.warn('Commentary generation failed, assembling without:', commentaryErr.message);
@@ -1758,12 +1842,17 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                     subtitleFont: subtitleFont || 'Arial',
                     subtitleY: subtitleY != null ? subtitleY : 55,
                     subtitleColor: subtitleColor || 'yellow',
-                    hookEnabled: !!enableCommentary
+                    hookEnabled: !!enableCommentary && commentaryData.length > 0
                 });
 
                 console.log('🏆 Ranking video assembled: ' + result.videoUrl + (commentaryData.length > 0 ? ' (with ' + commentaryData.length + ' commentary lines)' : ''));
 
-                var finalResult = { ...result, hasCommentary: commentaryData.length > 0 };
+                var finalResult = {
+                    ...result,
+                    hasCommentary: commentaryData.length > 0,
+                    ttsProvider: commentaryResults.ttsProvider || null,
+                    worker: 'local'
+                };
                 try {
                     var storage = require('../workers/storage');
                     if (storage.isConfigured() && result.videoUrl) {
