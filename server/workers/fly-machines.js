@@ -158,41 +158,28 @@ async function startAssemblyMachine(jobId, payload) {
         return { started: false, reason: 'Fly created machine without id' };
     }
 
-    // Wait until started — previous bug returned success while still "created", then worker
-    // crashed (exit 1) within ~10s with no heartbeat. Also force-start if stuck.
+    // Wait until started. Do NOT call /start while state is 'created' (Fly returns 412 —
+    // launch is already in progress). After started, watch ~15s for exit_code=1 crashes.
     var lastState = machine.state || 'created';
     var sawStarted = false;
-    for (var attempt = 0; attempt < 40; attempt++) {
+    var startedAt = 0;
+    for (var attempt = 0; attempt < 50; attempt++) {
         await new Promise(function(r) { setTimeout(r, 1500); });
         try {
             var live = await flyRequest('GET', '/apps/' + app + '/machines/' + machineId);
             lastState = (live && live.state) || lastState;
 
-            if (lastState === 'created' && attempt === 4) {
-                try {
-                    console.log('Fly machine still created — calling /start', machineId);
-                    await flyRequest('POST', '/apps/' + app + '/machines/' + machineId + '/start');
-                } catch (startErr) {
-                    console.warn('Fly machine start nudge failed:', startErr.message);
-                }
-            }
-
             if (lastState === 'started') {
-                sawStarted = true;
-                // Give worker a few seconds to send heartbeat; if it dies immediately, fail here
-                await new Promise(function(r) { setTimeout(r, 5000); });
-                try {
-                    var after = await flyRequest('GET', '/apps/' + app + '/machines/' + machineId);
-                    lastState = (after && after.state) || lastState;
-                } catch (e) {
-                    if (/404|not found/i.test(e.message || '')) {
-                        return {
-                            started: false,
-                            reason: 'Fly worker crashed immediately after start (exit + auto_destroy). Check WORKER_SECRET and APP_INTERNAL_URL.'
-                        };
-                    }
+                if (!sawStarted) {
+                    sawStarted = true;
+                    startedAt = Date.now();
+                    console.log('Fly machine reached started:', machineId);
                 }
-                if (lastState === 'started') break;
+                // Worker historically crashes ~12s after start with no heartbeat — wait it out
+                if (Date.now() - startedAt >= 15000) {
+                    break;
+                }
+                continue;
             }
 
             if (lastState === 'destroyed' || lastState === 'stopped') {
@@ -200,14 +187,14 @@ async function startAssemblyMachine(jobId, payload) {
                 return {
                     started: false,
                     reason: 'Fly worker exited immediately (' + lastState +
-                        '). Usually: HTTP callback blocked (IPv6) or module crash. Redeploy latest image.'
+                        '). Falling back to DigitalOcean assembly.'
                 };
             }
         } catch (pollErr) {
             if (/404|not found/i.test(pollErr.message || '')) {
                 return {
                     started: false,
-                    reason: 'Fly machine vanished right after start (crash + auto_destroy). Update FLY_ASSEMBLY_IMAGE and redeploy DO.'
+                    reason: 'Fly machine vanished right after start (crash + auto_destroy). Falling back to DigitalOcean assembly.'
                 };
             }
             console.warn('Fly machine poll error:', pollErr.message);

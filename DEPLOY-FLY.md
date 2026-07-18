@@ -20,7 +20,9 @@ FLY_API_TOKEN=<fly deploy token or org token>
 FLY_ASSEMBLY_APP=viewhunt-assembly
 FLY_SCRAPER_APP=viewhunt-scraper
 FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXV32TD5M8F3E2RTXGSG0X8W
-# If Fly is silent for ~30s, DigitalOcean automatically assembles locally (no hang).
+# Ranking assemble defaults to DigitalOcean (reliable). Opt in to Fly only when ready:
+# FLY_ASSEMBLY_ENABLED=1
+# If Fly is enabled but silent ~30s, DO still falls back locally.
 FLY_SCRAPER_IMAGE=registry.fly.io/viewhunt-scraper:latest
 # Max concurrent ranking Fly machines (extras wait in Mongo queue)
 FLY_ASSEMBLY_MAX_CONCURRENT=3

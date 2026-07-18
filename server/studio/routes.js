@@ -2122,13 +2122,19 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             trial: trialHelper.getTrialStatus(user)
         });
 
-        // Prefer Fly Machines for full pipeline (FFmpeg + Gemini commentary + Whisper timings)
+        // Fly Machines are opt-in: workers currently exit(1) ~12s after start without a
+        // reliable heartbeat. Default = assemble on DigitalOcean so ranking actually finishes.
+        // Set FLY_ASSEMBLY_ENABLED=1 on DO to try Fly again later.
+        var flyEnabled = process.env.FLY_ASSEMBLY_ENABLED === '1' || process.env.FLY_ASSEMBLY_ENABLED === 'true';
         var flyStarted = false;
         var flyQueued = false;
         var flyMachineId = null;
         var flySkipReason = null;
         var flyMax = assemblyMaxConcurrent();
-        try {
+        if (!flyEnabled) {
+            flySkipReason = 'FLY_ASSEMBLY_ENABLED not set — using DigitalOcean assembly';
+            console.log('Ranking assemble: Fly disabled (set FLY_ASSEMBLY_ENABLED=1 to use Fly)');
+        } else try {
             var activeFly = await countActiveFlyAssemblyJobs(db);
             if (activeFly >= flyMax) {
                 flyQueued = true;
