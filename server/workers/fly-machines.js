@@ -175,9 +175,84 @@ async function startScraperMachine(runId) {
     return true;
 }
 
+/**
+ * Max concurrent ranking Fly machines (default 3).
+ * Extra jobs stay queued in Mongo until a slot frees.
+ */
+function assemblyMaxConcurrent() {
+    const n = parseInt(process.env.FLY_ASSEMBLY_MAX_CONCURRENT || '3', 10);
+    return Number.isFinite(n) && n > 0 ? n : 3;
+}
+
+async function countActiveFlyAssemblyJobs(db) {
+    const cutoff = new Date(Date.now() - 45 * 60 * 1000);
+    return db.collection('ranking_jobs').countDocuments({
+        worker: 'fly',
+        status: 'processing',
+        flyStartedAt: { $gte: cutoff }
+    });
+}
+
+/**
+ * Start queued Fly ranking jobs until concurrency limit is reached.
+ * Returns number of machines started.
+ */
+async function drainFlyAssemblyQueue(db, updateJobFn) {
+    if (!db || typeof updateJobFn !== 'function') return 0;
+    let started = 0;
+    const max = assemblyMaxConcurrent();
+
+    while (true) {
+        const active = await countActiveFlyAssemblyJobs(db);
+        if (active >= max) break;
+
+        const next = await db.collection('ranking_jobs').findOne(
+            { status: 'queued', flyQueued: true, payload: { $exists: true } },
+            { sort: { createdAt: 1 } }
+        );
+        if (!next) break;
+
+        const jobId = String(next._id);
+        try {
+            const flyResult = await startAssemblyMachine(jobId);
+            if (flyResult && flyResult.started) {
+                await updateJobFn(jobId, {
+                    status: 'processing',
+                    message: 'Fly machine started — waiting for worker heartbeat…',
+                    worker: 'fly',
+                    flyQueued: false,
+                    flyMachineId: flyResult.machineId || null,
+                    flyStartedAt: new Date()
+                });
+                started += 1;
+            } else {
+                await updateJobFn(jobId, {
+                    status: 'failed',
+                    error: 'Fly start failed: ' + (flyResult && flyResult.reason ? flyResult.reason : 'unknown'),
+                    flyQueued: false,
+                    commentaryRefundNeeded: !!next.commentaryCreditsReserved
+                });
+                break;
+            }
+        } catch (err) {
+            await updateJobFn(jobId, {
+                status: 'failed',
+                error: 'Fly start failed: ' + err.message,
+                flyQueued: false,
+                commentaryRefundNeeded: !!next.commentaryCreditsReserved
+            });
+            break;
+        }
+    }
+    return started;
+}
+
 module.exports = {
     flyConfigured,
     resolveMongoUri,
     startAssemblyMachine,
-    startScraperMachine
+    startScraperMachine,
+    assemblyMaxConcurrent,
+    countActiveFlyAssemblyJobs,
+    drainFlyAssemblyQueue
 };

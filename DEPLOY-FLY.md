@@ -19,8 +19,10 @@ APP_URL=https://your-app.ondigitalocean.app
 FLY_API_TOKEN=<fly deploy token or org token>
 FLY_ASSEMBLY_APP=viewhunt-assembly
 FLY_SCRAPER_APP=viewhunt-scraper
-FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXRG2DW3NMWN3GVZ5F2RY9X7
+FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXTXPBGBK0SACQAB5XR8AWGE
 FLY_SCRAPER_IMAGE=registry.fly.io/viewhunt-scraper:latest
+# Max concurrent ranking Fly machines (extras wait in Mongo queue)
+FLY_ASSEMBLY_MAX_CONCURRENT=3
 
 # Durable video storage (AWS S3 or DigitalOcean Spaces)
 # ViewHunt Spaces example (sfo3) — do NOT reuse channelrecipe-media:
@@ -62,15 +64,29 @@ has auto top-up / billing disabled, TTS fails. OpenAI TTS is used as fallback wh
 fly apps create viewhunt-assembly
 fly apps create viewhunt-scraper
 
-# Build & push (from repo root)
+# Build & push only (from repo root) — do NOT full-deploy an always-on machine
 fly deploy -c fly.assembly.toml --build-only --push
 fly deploy -c fly.scraper.toml --build-only --push
 
-# Machines are started on demand via the Machines API — no need for always-on VMs.
+# Machines are started on demand via the Machines API — no always-on VMs.
+# If you accidentally full-deployed and see "Suspended / restarting too much",
+# destroy idle machines: fly machines list -a viewhunt-assembly && fly machine destroy <id> --force
 ```
 
 Set `FLY_ASSEMBLY_IMAGE` / `FLY_SCRAPER_IMAGE` to the image refs printed by Fly
 (or `registry.fly.io/viewhunt-assembly:latest`).
+
+**Required for heartbeats:** `WORKER_SECRET` must match on DigitalOcean (workers
+POST progress to `/api/studio/internal/ranking-job-update`). Also set
+`APP_URL=https://viewhunt.app`. If Mongo Atlas has IP allowlisting, either allow
+Fly egress or rely on that HTTP callback (preferred).
+
+## Queue / concurrency
+
+Studio editor (local DO) uses an in-memory one-at-a-time queue.
+**Ranking on Fly** uses a Mongo-backed queue: up to `FLY_ASSEMBLY_MAX_CONCURRENT`
+machines run at once (default 3); further jobs wait with a “Queued for Fly worker…”
+message and start when a slot frees (on status poll / job complete).
 
 ## Ranking + AI commentary (on Fly)
 

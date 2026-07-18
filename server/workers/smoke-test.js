@@ -66,6 +66,8 @@ function testFlyMachinesExports() {
     const fly = require('./fly-machines');
     assert.strictEqual(typeof fly.startAssemblyMachine, 'function');
     assert.strictEqual(typeof fly.startScraperMachine, 'function');
+    assert.strictEqual(typeof fly.drainFlyAssemblyQueue, 'function');
+    assert.strictEqual(typeof fly.assemblyMaxConcurrent, 'function');
     console.log('✓ fly-machines exports');
 }
 

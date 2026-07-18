@@ -43,8 +43,55 @@ async function downloadFile(url, destPath) {
     });
 }
 
+/** Report progress to DO even when Fly cannot reach Mongo (Atlas IP allowlist, etc.). */
+async function reportViaHttp(update) {
+    if (!APP_URL || !JOB_ID) return false;
+    try {
+        const res = await fetch(APP_URL + '/api/studio/internal/ranking-job-update', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Worker-Secret': process.env.WORKER_SECRET || ''
+            },
+            body: JSON.stringify({ jobId: JOB_ID, update: update })
+        });
+        if (!res.ok) {
+            console.warn('HTTP job update failed:', res.status, await res.text().catch(function() { return ''; }));
+            return false;
+        }
+        return true;
+    } catch (err) {
+        console.warn('HTTP job update error:', err.message);
+        return false;
+    }
+}
+
+async function updateJob(db, jobId, update) {
+    const patch = Object.assign({}, update, { updatedAt: new Date() });
+    let mongoOk = false;
+    if (db) {
+        try {
+            await db.collection('ranking_jobs').updateOne(
+                { _id: new ObjectId(jobId) },
+                { $set: patch }
+            );
+            mongoOk = true;
+        } catch (err) {
+            console.warn('Mongo job update failed:', err.message);
+        }
+    }
+    const httpOk = await reportViaHttp(patch);
+    if (!mongoOk && !httpOk) {
+        throw new Error('Could not update job via Mongo or APP_URL callback');
+    }
+}
+
 async function main() {
-    if (!JOB_ID) throw new Error('JOB_ID required');
+    // Always-on / accidental fly deploy machines have no JOB_ID — exit cleanly (no crash loop)
+    if (!JOB_ID) {
+        console.log('No JOB_ID set — idle image machine, exiting 0');
+        process.exit(0);
+    }
     if (!MONGODB_URI) throw new Error('MONGODB_URI required');
     if (!APP_URL) throw new Error('APP_URL required');
 
@@ -54,7 +101,23 @@ async function main() {
         appUrl: APP_URL
     });
 
-    const client = new MongoClient(MONGODB_URI);
+    // Heartbeat first via HTTP so UI unblocks even if Mongo from Fly is blocked
+    const heartbeatMsg =
+        'Fly: worker online' +
+        (process.env.GEMINI_API_KEY ? ' (Gemini ok)' : ' (no GEMINI_API_KEY)') +
+        (process.env.OPENAI_API_KEY ? ' (OpenAI ok)' : ' (no OPENAI_API_KEY)') +
+        ' — downloading clips…';
+    await reportViaHttp({
+        status: 'processing',
+        message: heartbeatMsg,
+        worker: 'fly',
+        flyHeartbeatAt: new Date().toISOString()
+    });
+
+    const client = new MongoClient(MONGODB_URI, {
+        serverSelectionTimeoutMS: 15000,
+        connectTimeoutMS: 15000
+    });
     await client.connect();
     const db = client.db();
 
@@ -66,22 +129,12 @@ async function main() {
         return;
     }
 
-    // Immediate heartbeat so DO UI leaves "waiting for worker…"
-    await db.collection('ranking_jobs').updateOne(
-        { _id: job._id },
-        {
-            $set: {
-                status: 'processing',
-                message: 'Fly: worker online' +
-                    (process.env.GEMINI_API_KEY ? ' (Gemini ok)' : ' (no GEMINI_API_KEY)') +
-                    (process.env.OPENAI_API_KEY ? ' (OpenAI ok)' : ' (no OPENAI_API_KEY)') +
-                    ' — downloading clips…',
-                worker: 'fly',
-                flyHeartbeatAt: new Date(),
-                updatedAt: new Date()
-            }
-        }
-    );
+    await updateJob(db, JOB_ID, {
+        status: 'processing',
+        message: heartbeatMsg,
+        worker: 'fly',
+        flyHeartbeatAt: new Date()
+    });
 
     const payload = job.payload || {};
     const clipsMeta = payload.clips || [];
@@ -109,10 +162,9 @@ async function main() {
         console.log('Downloading', url);
         await downloadFile(url, dest);
 
-        await db.collection('ranking_jobs').updateOne(
-            { _id: job._id },
-            { $set: { message: 'Fly: trimming clip ' + (i + 1) + ' of ' + clipsMeta.length + '...', updatedAt: new Date() } }
-        );
+        await updateJob(db, JOB_ID, {
+            message: 'Fly: trimming clip ' + (i + 1) + ' of ' + clipsMeta.length + '...'
+        });
 
         var finalPath = dest;
         var startTime = typeof c.startTime === 'number' ? c.startTime : parseFloat(c.startTime) || 0;
@@ -121,12 +173,10 @@ async function main() {
         var endT = (endTime != null && !isNaN(endTime) && endTime > 0) ? endTime : origDur;
         var needsTrim = startTime > 0.1 || Math.abs(endT - origDur) > 0.1;
         if (needsTrim && endT > startTime + 0.05) {
-            var trimmedPath = path.join(workDir, 'trimmed-' + i + '-' + Date.now() + '.mp4');
-            console.log('Trimming clip', i + 1, startTime, '→', endT);
+            var trimmedPath = path.join(workDir, 'trimmed-' + i + '.mp4');
             await assemblerEarly.trimClip(dest, startTime, endT, trimmedPath);
             finalPath = trimmedPath;
         }
-
         clipList.push({ path: finalPath, number: c.number || (i + 1), label: c.label || '' });
     }
 
@@ -139,18 +189,12 @@ async function main() {
         if (!process.env.GEMINI_API_KEY && !process.env.OPENAI_API_KEY) {
             console.warn('No GEMINI_API_KEY or OPENAI_API_KEY on Fly — skipping commentary');
         } else {
-            await db.collection('ranking_jobs').updateOne(
-                { _id: job._id },
-                { $set: { message: 'Fly: generating commentary + TTS...', updatedAt: new Date() } }
-            );
+            await updateJob(db, JOB_ID, { message: 'Fly: generating commentary + TTS...' });
             console.log('🎙️ Running RankingCommentary on Fly');
             const commentaryGen = new RankingCommentary();
             commentaryGen.audioDir = audioDir;
             commentaryGen.onProgress = async function(msg) {
-                await db.collection('ranking_jobs').updateOne(
-                    { _id: job._id },
-                    { $set: { message: 'Fly: ' + msg, updatedAt: new Date() } }
-                );
+                await updateJob(db, JOB_ID, { message: 'Fly: ' + msg });
             };
             commentaryResults = await commentaryGen.generateCommentary(
                 clipList,
@@ -164,10 +208,9 @@ async function main() {
         }
     }
 
-    await db.collection('ranking_jobs').updateOne(
-        { _id: job._id },
-        { $set: { message: 'Fly: FFmpeg assembling (' + clipList.length + ' clips)...', updatedAt: new Date() } }
-    );
+    await updateJob(db, JOB_ID, {
+        message: 'Fly: FFmpeg assembling (' + clipList.length + ' clips)...'
+    });
 
     const assembler = assemblerEarly;
     fs.mkdirSync(assembler.outputDir, { recursive: true });
@@ -175,7 +218,7 @@ async function main() {
     const result = await assembler.assemble(clipList, payload.title || {}, {
         layout: payload.layout || {},
         commentary: commentaryData,
-        commentaryLines: commentaryResults,
+        commentaryLines: enableCommentary ? commentaryResults : [],
         colorPalette: payload.colorPalette || 'yellow',
         checkeredMode: !!payload.checkeredMode,
         subtitleFont: payload.subtitleFont || 'Arial',
@@ -230,26 +273,16 @@ async function main() {
         worker: 'fly'
     };
 
-    await db.collection('ranking_jobs').updateOne(
-        { _id: job._id },
-        {
-            $set: {
-                status: 'complete',
-                result: finalResult,
-                message: hasCommentary
-                    ? ('Complete' + (ttsProvider ? ' (voice: ' + ttsProvider + ')' : ''))
-                    : (enableCommentary ? ('Complete — voiceover missing' + (ttsError ? ': ' + ttsError : '')) : 'Complete'),
-                updatedAt: new Date()
-            }
-        }
-    );
+    await updateJob(db, JOB_ID, {
+        status: 'complete',
+        result: finalResult,
+        message: hasCommentary
+            ? ('Complete' + (ttsProvider ? ' (voice: ' + ttsProvider + ')' : ''))
+            : (enableCommentary ? ('Complete — voiceover missing' + (ttsError ? ': ' + ttsError : '')) : 'Complete')
+    });
 
-    // If commentary was reserved but failed to produce audio, refund via flag for DO recovery
     if (job.commentaryCreditsReserved && !hasCommentary) {
-        await db.collection('ranking_jobs').updateOne(
-            { _id: job._id },
-            { $set: { commentaryRefundNeeded: true } }
-        );
+        await updateJob(db, JOB_ID, { commentaryRefundNeeded: true });
     }
 
     if (job.usingTrial && job.userId) {
@@ -262,21 +295,28 @@ async function main() {
 
 main().catch(async function(err) {
     console.error('Assembly worker failed:', err);
+    const failUpdate = {
+        status: 'failed',
+        error: err.message,
+        commentaryRefundNeeded: true,
+        updatedAt: new Date()
+    };
+    try {
+        await reportViaHttp(failUpdate);
+    } catch (e) {
+        console.error('HTTP fail report error:', e.message);
+    }
     try {
         if (MONGODB_URI && JOB_ID) {
-            const client = new MongoClient(MONGODB_URI);
+            const client = new MongoClient(MONGODB_URI, {
+                serverSelectionTimeoutMS: 10000,
+                connectTimeoutMS: 10000
+            });
             await client.connect();
             const db = client.db();
             await db.collection('ranking_jobs').updateOne(
                 { _id: new ObjectId(JOB_ID) },
-                {
-                    $set: {
-                        status: 'failed',
-                        error: err.message,
-                        commentaryRefundNeeded: true,
-                        updatedAt: new Date()
-                    }
-                }
+                { $set: failUpdate }
             );
             await client.close();
         }

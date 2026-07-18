@@ -1,6 +1,8 @@
-# Fly app for ranking FFmpeg assembly workers
-# Deploy: fly apps create viewhunt-assembly && fly deploy -c fly.assembly.toml --build-only
-# Then set FLY_ASSEMBLY_IMAGE to the resulting image ref on the DO app.
+# Fly app for ranking FFmpeg assembly workers.
+# Deploy image only (no always-on VM):
+#   fly deploy -c fly.assembly.toml --build-only --push
+# Then set FLY_ASSEMBLY_IMAGE on DigitalOcean to the printed registry ref.
+# Machines are created on-demand via the Machines API with JOB_ID set.
 
 app = 'viewhunt-assembly'
 primary_region = 'iad'
@@ -11,12 +13,8 @@ primary_region = 'iad'
 [env]
   NODE_ENV = 'production'
 
-# Machines are created on-demand via API; no always-on service needed.
-[http_service]
-  auto_stop_machines = 'stop'
-  auto_start_machines = false
-  min_machines_running = 0
-  processes = ['app']
+# No [http_service] — this is not a public web app. Avoid always-on machines
+# that crash-loop without JOB_ID.
 
 [[vm]]
   size = 'shared-cpu-4x'

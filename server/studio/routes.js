@@ -20,8 +20,15 @@ const taskManager = require('./task-manager');
 const TimelapseGenerator = require('./formats/timelapse/generator');
 const rateLimit = require('express-rate-limit');
 let startAssemblyMachine = async function() { return false; };
+let countActiveFlyAssemblyJobs = async function() { return 0; };
+let drainFlyAssemblyQueue = async function() { return 0; };
+let assemblyMaxConcurrent = function() { return 3; };
 try {
-    startAssemblyMachine = require('../workers/fly-machines').startAssemblyMachine;
+    var flyMachines = require('../workers/fly-machines');
+    startAssemblyMachine = flyMachines.startAssemblyMachine;
+    countActiveFlyAssemblyJobs = flyMachines.countActiveFlyAssemblyJobs;
+    drainFlyAssemblyQueue = flyMachines.drainFlyAssemblyQueue;
+    assemblyMaxConcurrent = flyMachines.assemblyMaxConcurrent;
 } catch (e) {
     console.warn('Fly machines module not loaded:', e.message);
 }
@@ -1738,17 +1745,24 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
 
         // Prefer Fly Machines for full pipeline (FFmpeg + Gemini commentary + Whisper timings)
         var flyStarted = false;
+        var flyQueued = false;
         var flyMachineId = null;
         var flySkipReason = null;
+        var flyMax = assemblyMaxConcurrent();
         try {
-            var flyResult = await startAssemblyMachine(jobId);
-            // Back-compat: older helper returned boolean
-            if (flyResult && typeof flyResult === 'object') {
-                flyStarted = !!flyResult.started;
-                flyMachineId = flyResult.machineId || null;
-                flySkipReason = flyResult.reason || null;
+            var activeFly = await countActiveFlyAssemblyJobs(db);
+            if (activeFly >= flyMax) {
+                flyQueued = true;
+                console.log('Fly assembly at capacity (' + activeFly + '/' + flyMax + ') — queueing job', jobId);
             } else {
-                flyStarted = !!flyResult;
+                var flyResult = await startAssemblyMachine(jobId);
+                if (flyResult && typeof flyResult === 'object') {
+                    flyStarted = !!flyResult.started;
+                    flyMachineId = flyResult.machineId || null;
+                    flySkipReason = flyResult.reason || null;
+                } else {
+                    flyStarted = !!flyResult;
+                }
             }
         } catch (flyErr) {
             console.warn('Fly assembly machine start failed:', flyErr.message);
@@ -1762,7 +1776,7 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             }
         }
 
-        if (!flyStarted && (process.env.REQUIRE_FLY === '1' || process.env.REQUIRE_FLY === 'true')) {
+        if (!flyStarted && !flyQueued && (process.env.REQUIRE_FLY === '1' || process.env.REQUIRE_FLY === 'true')) {
             await updateRankingJob(jobId, { status: 'failed', error: 'Fly not configured (REQUIRE_FLY)' + (flySkipReason ? ': ' + flySkipReason : '') });
             if (!usingTrial) {
                 try { await credits.refundCredits(userId, 'ranking_assembly', 1, 'Fly not configured'); } catch (e) {}
@@ -1774,7 +1788,7 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             });
         }
 
-        if (flyStarted) {
+        if (flyStarted || flyQueued) {
             // Commentary credits charged when Fly job completes with hasCommentary (via worker status);
             // reserve script credits upfront so balance can't be overspent while machine runs.
             if (enableCommentary && title && title.text && !usingTrial) {
@@ -1789,13 +1803,29 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                     console.warn('Commentary credit reserve skipped:', e.message);
                 }
             }
-            await updateRankingJob(jobId, {
-                status: 'processing',
-                message: 'Fly machine started — waiting for worker heartbeat…',
-                worker: 'fly',
-                flyMachineId: flyMachineId,
-                flyStartedAt: new Date()
-            });
+            if (flyQueued) {
+                var queuedAhead = await db.collection('ranking_jobs').countDocuments({
+                    status: 'queued',
+                    flyQueued: true,
+                    createdAt: { $lt: new Date() }
+                });
+                await updateRankingJob(jobId, {
+                    status: 'queued',
+                    message: 'Queued for Fly worker (slot opens soon; max ' + flyMax + ' concurrent)…',
+                    worker: 'fly',
+                    flyQueued: true,
+                    queuePosition: queuedAhead
+                });
+            } else {
+                await updateRankingJob(jobId, {
+                    status: 'processing',
+                    message: 'Fly machine started — waiting for worker heartbeat…',
+                    worker: 'fly',
+                    flyQueued: false,
+                    flyMachineId: flyMachineId,
+                    flyStartedAt: new Date()
+                });
+            }
             return;
         }
 
@@ -1929,6 +1959,19 @@ router.get('/ranking/assemble/status/:jobId', requireAuth, async (req, res) => {
         if (!job) return res.status(404).json({ error: 'Job not found' });
         if (job.userId !== String(req.user.userId)) return res.status(403).json({ error: 'Not your job' });
 
+        // Drain Fly queue when slots free (other jobs finished / failed)
+        if (job.status === 'queued' || job.status === 'processing' || job.status === 'complete' || job.status === 'failed') {
+            try {
+                var dbPoll = await getDb();
+                await drainFlyAssemblyQueue(dbPoll, updateRankingJob);
+                if (job.status === 'queued') {
+                    job = await getRankingJob(req.params.jobId);
+                }
+            } catch (drainErr) {
+                console.warn('Fly queue drain skipped:', drainErr.message);
+            }
+        }
+
         // Watchdog: Fly claimed the job but never heartbeated / finished
         if (job.status === 'processing' && job.worker === 'fly' && !job.flyWatchdogFired) {
             var started = job.flyStartedAt || job.updatedAt || job.createdAt;
@@ -1939,8 +1982,8 @@ router.get('/ranking/assemble/status/:jobId', requireAuth, async (req, res) => {
             if ((noHeartbeat && ageMs > 3 * 60 * 1000) || ageMs > 12 * 60 * 1000) {
                 var err =
                     'Fly worker did not report progress. Usually: wrong/missing Mongo URI on the machine, ' +
-                    'stale FLY_ASSEMBLY_IMAGE, or APP_URL blocking clip downloads — not necessarily Gemini. ' +
-                    'Check DO env: V2_MONGO_URI/MONGODB_URI, APP_URL, FLY_ASSEMBLY_IMAGE, GEMINI_API_KEY, OPENAI_API_KEY.';
+                    'stale FLY_ASSEMBLY_IMAGE, APP_URL/WORKER_SECRET mismatch, or Mongo blocked from Fly. ' +
+                    'Check DO env: V2_MONGO_URI/MONGODB_URI, APP_URL, WORKER_SECRET, FLY_ASSEMBLY_IMAGE, GEMINI_API_KEY, OPENAI_API_KEY.';
                 await updateRankingJob(req.params.jobId, {
                     status: 'failed',
                     error: err,
@@ -1949,6 +1992,10 @@ router.get('/ranking/assemble/status/:jobId', requireAuth, async (req, res) => {
                 });
                 job.status = 'failed';
                 job.error = err;
+                try {
+                    var dbWd = await getDb();
+                    await drainFlyAssemblyQueue(dbWd, updateRankingJob);
+                } catch (e) {}
             }
         }
 
@@ -1970,6 +2017,40 @@ router.get('/ranking/assemble/status/:jobId', requireAuth, async (req, res) => {
         res.json(response);
     } catch (error) {
         res.status(500).json({ error: 'Poll error' });
+    }
+});
+
+// Internal: Fly worker progress / heartbeat (works even if Fly cannot reach Mongo)
+router.post('/internal/ranking-job-update', express.json({ limit: '2mb' }), async (req, res) => {
+    try {
+        var secret = req.headers['x-worker-secret'];
+        if (!process.env.WORKER_SECRET || secret !== process.env.WORKER_SECRET) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        var jobId = req.body.jobId;
+        var update = req.body.update;
+        if (!jobId || !update || typeof update !== 'object') {
+            return res.status(400).json({ error: 'jobId and update required' });
+        }
+        var patch = Object.assign({}, update);
+        if (patch.flyHeartbeatAt && typeof patch.flyHeartbeatAt === 'string') {
+            patch.flyHeartbeatAt = new Date(patch.flyHeartbeatAt);
+        }
+        if (patch.updatedAt && typeof patch.updatedAt === 'string') {
+            patch.updatedAt = new Date(patch.updatedAt);
+        }
+        patch.updatedAt = patch.updatedAt || new Date();
+        await updateRankingJob(jobId, patch);
+        if (patch.status === 'complete' || patch.status === 'failed') {
+            try {
+                var dbUp = await getDb();
+                await drainFlyAssemblyQueue(dbUp, updateRankingJob);
+            } catch (e) {}
+        }
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Internal ranking-job-update error:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
