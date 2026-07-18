@@ -2165,12 +2165,13 @@ router.get('/ranking/assemble/status/:jobId', requireAuth, async (req, res) => {
             var ageMs = started ? (Date.now() - new Date(started).getTime()) : 0;
             var msg = job.message || '';
             var noHeartbeat = /waiting for worker heartbeat|generating commentary \+ assembling/i.test(msg);
-            // 3 min with no real progress, or 12 min absolute
-            if ((noHeartbeat && ageMs > 3 * 60 * 1000) || ageMs > 12 * 60 * 1000) {
+            // 90s with no heartbeat, or 12 min absolute
+            if ((noHeartbeat && ageMs > 90 * 1000) || ageMs > 12 * 60 * 1000) {
                 var err =
-                    'Fly worker did not report progress. Usually: wrong/missing Mongo URI on the machine, ' +
-                    'stale FLY_ASSEMBLY_IMAGE, APP_URL/WORKER_SECRET mismatch, or Mongo blocked from Fly. ' +
-                    'Check DO env: V2_MONGO_URI/MONGODB_URI, APP_URL, WORKER_SECRET, FLY_ASSEMBLY_IMAGE, GEMINI_API_KEY, OPENAI_API_KEY.';
+                    'Fly worker did not report progress. Fix: (1) Atlas Network Access allow 0.0.0.0/0, ' +
+                    '(2) set APP_INTERNAL_URL to your *.ondigitalocean.app URL, ' +
+                    '(3) FLY_ASSEMBLY_IMAGE=latest deployment tag, (4) WORKER_SECRET set. ' +
+                    'Also confirm V2_MONGO_URI/MONGODB_URI and APP_URL on DigitalOcean.';
                 await updateRankingJob(req.params.jobId, {
                     status: 'failed',
                     error: err,

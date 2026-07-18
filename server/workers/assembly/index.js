@@ -4,6 +4,7 @@
  * Whisper word timestamps → FFmpeg assemble → upload
  *
  * Env: JOB_ID, APP_URL, MONGODB_URI, WORKER_SECRET, GEMINI_API_KEY, OPENAI_API_KEY, SPACES_/AWS_
+ * Optional: APP_INTERNAL_URL (ondigitalocean.app) — preferred for callbacks/downloads from Fly
  */
 const path = require('path');
 const fs = require('fs');
@@ -18,13 +19,37 @@ const trialHelper = require('./lib/trial');
 
 const JOB_ID = process.env.JOB_ID;
 const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
+const APP_INTERNAL_URL = (process.env.APP_INTERNAL_URL || '').replace(/\/$/, '');
 const MONGODB_URI = process.env.MONGODB_URI || process.env.V2_MONGO_URI || process.env.MONGO_URI;
+
+/** Prefer DO ingress for Fly→app calls (avoids Cloudflare hanging custom-domain POSTs). */
+function appBases() {
+    const bases = [];
+    if (APP_INTERNAL_URL) bases.push(APP_INTERNAL_URL);
+    if (APP_URL && APP_URL !== APP_INTERNAL_URL) bases.push(APP_URL);
+    return bases;
+}
+
+function clipBaseUrl() {
+    const bases = appBases();
+    return bases[0] || APP_URL;
+}
+
+async function fetchWithTimeout(url, opts, ms) {
+    const controller = new AbortController();
+    const timer = setTimeout(function() { controller.abort(); }, ms || 8000);
+    try {
+        return await fetch(url, Object.assign({}, opts, { signal: controller.signal }));
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 async function downloadFile(url, destPath) {
     return new Promise(function(resolve, reject) {
         const mod = url.startsWith('https') ? https : http;
         const file = fs.createWriteStream(destPath);
-        mod.get(url, function(res) {
+        const req = mod.get(url, function(res) {
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                 file.close();
                 try { fs.unlinkSync(destPath); } catch (e) {}
@@ -36,7 +61,11 @@ async function downloadFile(url, destPath) {
             }
             res.pipe(file);
             file.on('finish', function() { file.close(resolve); });
-        }).on('error', function(err) {
+        });
+        req.setTimeout(60000, function() {
+            req.destroy(new Error('Download timeout for ' + url));
+        });
+        req.on('error', function(err) {
             try { fs.unlinkSync(destPath); } catch (e) {}
             reject(err);
         });
@@ -45,25 +74,32 @@ async function downloadFile(url, destPath) {
 
 /** Report progress to DO even when Fly cannot reach Mongo (Atlas IP allowlist, etc.). */
 async function reportViaHttp(update) {
-    if (!APP_URL || !JOB_ID) return false;
-    try {
-        const res = await fetch(APP_URL + '/api/studio/internal/ranking-job-update', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Worker-Secret': process.env.WORKER_SECRET || ''
-            },
-            body: JSON.stringify({ jobId: JOB_ID, update: update })
-        });
-        if (!res.ok) {
-            console.warn('HTTP job update failed:', res.status, await res.text().catch(function() { return ''; }));
-            return false;
+    if (!JOB_ID) return false;
+    const bases = appBases();
+    if (!bases.length) return false;
+    const secret = process.env.WORKER_SECRET || '';
+    for (var i = 0; i < bases.length; i++) {
+        const base = bases[i];
+        try {
+            const res = await fetchWithTimeout(base + '/api/studio/internal/ranking-job-update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Worker-Secret': secret
+                },
+                body: JSON.stringify({ jobId: JOB_ID, update: update })
+            }, 8000);
+            if (!res.ok) {
+                console.warn('HTTP job update failed via', base, res.status, await res.text().catch(function() { return ''; }));
+                continue;
+            }
+            console.log('HTTP job update ok via', base);
+            return true;
+        } catch (err) {
+            console.warn('HTTP job update error via', base + ':', err.name, err.message);
         }
-        return true;
-    } catch (err) {
-        console.warn('HTTP job update error:', err.message);
-        return false;
     }
+    return false;
 }
 
 async function updateJob(db, jobId, update) {
@@ -93,33 +129,77 @@ async function main() {
         process.exit(0);
     }
     if (!MONGODB_URI) throw new Error('MONGODB_URI required');
-    if (!APP_URL) throw new Error('APP_URL required');
+    if (!APP_URL && !APP_INTERNAL_URL) throw new Error('APP_URL or APP_INTERNAL_URL required');
 
     console.log('Fly assembly worker starting for job', JOB_ID, {
         hasGemini: !!process.env.GEMINI_API_KEY,
         hasOpenAI: !!process.env.OPENAI_API_KEY,
-        appUrl: APP_URL
+        appUrl: APP_URL,
+        appInternal: APP_INTERNAL_URL || '(none)',
+        hasWorkerSecret: !!(process.env.WORKER_SECRET || '').trim()
     });
 
-    // Heartbeat first via HTTP so UI unblocks even if Mongo from Fly is blocked
     const heartbeatMsg =
         'Fly: worker online' +
         (process.env.GEMINI_API_KEY ? ' (Gemini ok)' : ' (no GEMINI_API_KEY)') +
         (process.env.OPENAI_API_KEY ? ' (OpenAI ok)' : ' (no OPENAI_API_KEY)') +
         ' — downloading clips…';
-    await reportViaHttp({
+
+    // Mongo first (short timeout) — do NOT hang forever on Cloudflare→custom domain
+    const client = new MongoClient(MONGODB_URI, {
+        serverSelectionTimeoutMS: 12000,
+        connectTimeoutMS: 12000
+    });
+    let db = null;
+    let mongoConnected = false;
+    try {
+        await client.connect();
+        db = client.db();
+        mongoConnected = true;
+        console.log('Mongo connected from Fly');
+    } catch (mongoErr) {
+        console.warn('Mongo connect from Fly failed:', mongoErr.message);
+    }
+
+    // Fire HTTP heartbeat with timeout (secondary). Never block startup forever.
+    const httpPromise = reportViaHttp({
         status: 'processing',
         message: heartbeatMsg,
         worker: 'fly',
         flyHeartbeatAt: new Date().toISOString()
     });
 
-    const client = new MongoClient(MONGODB_URI, {
-        serverSelectionTimeoutMS: 15000,
-        connectTimeoutMS: 15000
-    });
-    await client.connect();
-    const db = client.db();
+    if (mongoConnected) {
+        await db.collection('ranking_jobs').updateOne(
+            { _id: new ObjectId(JOB_ID) },
+            {
+                $set: {
+                    status: 'processing',
+                    message: heartbeatMsg,
+                    worker: 'fly',
+                    flyHeartbeatAt: new Date(),
+                    updatedAt: new Date()
+                }
+            }
+        );
+        console.log('Mongo heartbeat written');
+    }
+
+    const httpOk = await httpPromise;
+    if (!mongoConnected && !httpOk) {
+        throw new Error(
+            'Fly worker cannot reach Mongo or APP_URL. ' +
+            'Set Atlas Network Access to allow 0.0.0.0/0 (or Fly IPs), and set APP_INTERNAL_URL to your ' +
+            '*.ondigitalocean.app URL so callbacks bypass Cloudflare.'
+        );
+    }
+    if (!mongoConnected) {
+        // Need Mongo for job payload — fail clearly
+        throw new Error(
+            'Fly cannot connect to MongoDB (Atlas IP allowlist?). ' +
+            'In Atlas → Network Access, allow 0.0.0.0/0 temporarily, or whitelist Fly egress.'
+        );
+    }
 
     const job = await db.collection('ranking_jobs').findOne({ _id: new ObjectId(JOB_ID) });
     if (!job) throw new Error('Job not found: ' + JOB_ID);
@@ -155,10 +235,11 @@ async function main() {
     assemblerEarly.uploadDir = workDir;
     fs.mkdirSync(assemblerEarly.tempDir, { recursive: true });
 
+    const base = clipBaseUrl();
     for (var i = 0; i < clipsMeta.length; i++) {
         const c = clipsMeta[i];
         const dest = path.join(workDir, c.filename || ('clip-' + i + '.mp4'));
-        const url = APP_URL + '/studio/ranking-uploads/' + encodeURIComponent(c.filename);
+        const url = base + '/studio/ranking-uploads/' + encodeURIComponent(c.filename);
         console.log('Downloading', url);
         await downloadFile(url, dest);
 
@@ -237,10 +318,11 @@ async function main() {
             videoUrl = uploaded;
             console.log('Uploaded final to object storage:', videoUrl);
         }
-    } else if (fs.existsSync(localPath) && APP_URL) {
+    } else if (fs.existsSync(localPath) && (APP_INTERNAL_URL || APP_URL)) {
         try {
             const buf = fs.readFileSync(localPath);
-            const uploadRes = await fetch(APP_URL + '/api/studio/internal/ranking-result', {
+            const uploadBase = APP_INTERNAL_URL || APP_URL;
+            const uploadRes = await fetchWithTimeout(uploadBase + '/api/studio/internal/ranking-result', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -251,7 +333,7 @@ async function main() {
                     filename: localName,
                     base64: buf.toString('base64')
                 })
-            });
+            }, 120000);
             if (uploadRes.ok) {
                 const data = await uploadRes.json();
                 if (data.videoUrl) videoUrl = data.videoUrl;

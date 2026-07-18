@@ -19,7 +19,7 @@ APP_URL=https://your-app.ondigitalocean.app
 FLY_API_TOKEN=<fly deploy token or org token>
 FLY_ASSEMBLY_APP=viewhunt-assembly
 FLY_SCRAPER_APP=viewhunt-scraper
-FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXTXPBGBK0SACQAB5XR8AWGE
+FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXTZTVZ9E2RR4R7DC6SSB0XG
 FLY_SCRAPER_IMAGE=registry.fly.io/viewhunt-scraper:latest
 # Max concurrent ranking Fly machines (extras wait in Mongo queue)
 FLY_ASSEMBLY_MAX_CONCURRENT=3
@@ -78,14 +78,15 @@ Set `FLY_ASSEMBLY_IMAGE` / `FLY_SCRAPER_IMAGE` to the image refs printed by Fly
 
 **Required for heartbeats (all of these on DigitalOcean, then redeploy DO):**
 1. `WORKER_SECRET` — random string you generate (`openssl rand -hex 32`)
-2. `APP_URL=https://viewhunt.app`
-3. `FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXTXPBGBK0SACQAB5XR8AWGE`
-4. App code from `main` that includes `/api/studio/internal/ranking-job-update`
+2. `APP_URL=https://viewhunt.app` (clip URLs for browsers)
+3. `APP_INTERNAL_URL=https://YOUR-APP.ondigitalocean.app` — **critical**  
+   Copy from DigitalOcean App → Overview (default ingress). Fly callbacks/downloads
+   should use this so Cloudflare on the custom domain does not hang Fly POSTs.
+4. `FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-…` (full registry tag)
+5. **Mongo Atlas → Network Access → allow `0.0.0.0/0`** (or Fly egress IPs).  
+   If Atlas blocks Fly, the worker cannot load the job or write heartbeats.
 
-`viewhunt-assembly` showing **Suspended / no machines** on Fly is normal when idle —
-workers are created per job and auto-destroy. Stuck on “waiting for worker heartbeat”
-almost always means DO still has the old image tag, missing `WORKER_SECRET`, or DO
-has not redeployed the new callback code yet.
+`viewhunt-assembly` showing **Suspended / no machines** on Fly is normal when idle.
 
 **Drafts / restarts:** Ranking projects autosave to Mongo (`ranking_drafts`). Fly
 jobs are **not** cancelled when DigitalOcean restarts; reopen Studio to resume.

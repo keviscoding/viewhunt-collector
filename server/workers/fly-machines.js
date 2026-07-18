@@ -81,11 +81,16 @@ async function startAssemblyMachine(jobId) {
         return { started: false, reason: 'APP_URL missing — Fly worker cannot download clips' };
     }
 
+    // Prefer DO default ingress for Fly→app (Cloudflare on custom domains can hang POSTs from Fly)
+    const appInternal = (process.env.APP_INTERNAL_URL || process.env.DIGITALOCEAN_APP_URL || '')
+        .replace(/\/$/, '');
+
     const env = {
         JOB_ID: String(jobId),
         JOB_TYPE: 'ranking_assemble',
-        WORKER_SECRET: process.env.WORKER_SECRET || '',
+        WORKER_SECRET: (process.env.WORKER_SECRET || '').trim(),
         APP_URL: appUrl,
+        APP_INTERNAL_URL: appInternal,
         MONGODB_URI: mongoUri,
         V2_MONGO_URI: mongoUri,
         AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || process.env.SPACES_KEY || '',
@@ -99,13 +104,20 @@ async function startAssemblyMachine(jobId) {
         RANKING_TTS_PROVIDER: process.env.RANKING_TTS_PROVIDER || 'openai'
     };
 
+    if (!env.WORKER_SECRET) {
+        console.error('Fly assembly aborted: WORKER_SECRET missing on DigitalOcean');
+        return { started: false, reason: 'WORKER_SECRET missing on DigitalOcean' };
+    }
+
     console.log('Starting Fly assembly machine', {
         app,
-        image: image.slice(0, 80),
+        image: image.slice(0, 100),
         jobId: String(jobId),
         hasGemini: !!env.GEMINI_API_KEY,
         hasOpenAI: !!env.OPENAI_API_KEY,
         hasSpaces: !!(env.AWS_ACCESS_KEY_ID && env.AWS_S3_BUCKET_NAME),
+        hasWorkerSecret: true,
+        appInternal: appInternal || '(none — set APP_INTERNAL_URL to *.ondigitalocean.app)',
         mongoHost: (mongoUri.match(/@([^/]+)/) || [])[1] || '(local)'
     });
 
