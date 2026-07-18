@@ -1,11 +1,10 @@
 /**
  * Durable object storage for assembled videos (AWS S3 or DigitalOcean Spaces).
- * Falls back to null when not configured — callers keep local disk URLs.
  *
  * DigitalOcean Spaces + AWS SDK v3:
- *   endpoint = https://<dc>.digitaloceanspaces.com  (e.g. sfo3)
- *   region   = us-east-1  (SDK signing requirement; DC comes from endpoint)
- *   forcePathStyle = false
+ *   endpoint = https://<dc>.digitaloceanspaces.com  (e.g. sfo3) — NOT the bucket URL
+ *   region   = us-east-1  (SDK signing; datacenter comes from endpoint)
+ *   forcePathStyle = true  (avoids bucket.endpoint TLS hostname bugs)
  */
 const fs = require('fs');
 const path = require('path');
@@ -13,28 +12,76 @@ const crypto = require('crypto');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 
 let client = null;
+let cachedConfig = null;
 
-function spacesDatacenter() {
-    const fromEnv = process.env.SPACES_REGION || '';
-    if (/^[a-z]{3}\d$/i.test(fromEnv)) return fromEnv.toLowerCase();
-    const endpoint = process.env.SPACES_ENDPOINT || process.env.S3_ENDPOINT || '';
-    const m = endpoint.match(/https?:\/\/([a-z]{3}\d)\.digitaloceanspaces\.com/i);
-    if (m) return m[1].toLowerCase();
-    const awsRegion = process.env.AWS_REGION || '';
-    if (/^[a-z]{3}\d$/i.test(awsRegion)) return awsRegion.toLowerCase();
-    return null;
+/**
+ * Normalize Spaces env. Common misconfig:
+ *   SPACES_ENDPOINT=https://viewhunt-media.sfo3.digitaloceanspaces.com
+ *   SPACES_BUCKET=justselfiesbro
+ * → SDK tries justselfiesbro.viewhunt-media.sfo3... and TLS fails.
+ */
+function getSpacesConfig() {
+    if (cachedConfig) return cachedConfig;
+
+    let endpoint = (process.env.SPACES_ENDPOINT || process.env.S3_ENDPOINT || '').replace(/\/$/, '');
+    let bucket = process.env.SPACES_BUCKET || process.env.AWS_S3_BUCKET_NAME || null;
+
+    // Virtual-hosted: https://bucket.sfo3.digitaloceanspaces.com
+    const vh = endpoint.match(/^https?:\/\/([^.]+)\.([a-z]{3}\d)\.digitaloceanspaces\.com$/i);
+    if (vh) {
+        const hostBucket = vh[1];
+        const dc = vh[2].toLowerCase();
+        endpoint = 'https://' + dc + '.digitaloceanspaces.com';
+        if (!bucket || bucket !== hostBucket) {
+            console.warn(
+                'Spaces config: using bucket "' + hostBucket + '" from SPACES_ENDPOINT' +
+                (bucket && bucket !== hostBucket ? ' (ignored SPACES_BUCKET=' + bucket + ')' : '')
+            );
+            bucket = hostBucket;
+        }
+        cachedConfig = { endpoint: endpoint, bucket: bucket, dc: dc, spaces: true };
+        return cachedConfig;
+    }
+
+    // Regional: https://sfo3.digitaloceanspaces.com
+    const regional = endpoint.match(/^https?:\/\/([a-z]{3}\d)\.digitaloceanspaces\.com$/i);
+    if (regional) {
+        cachedConfig = {
+            endpoint: endpoint,
+            bucket: bucket,
+            dc: regional[1].toLowerCase(),
+            spaces: true
+        };
+        return cachedConfig;
+    }
+
+    // Infer from SPACES_REGION / AWS_REGION like sfo3
+    const regionHint = process.env.SPACES_REGION || process.env.AWS_REGION || '';
+    if (/^[a-z]{3}\d$/i.test(regionHint) && bucket) {
+        cachedConfig = {
+            endpoint: 'https://' + regionHint.toLowerCase() + '.digitaloceanspaces.com',
+            bucket: bucket,
+            dc: regionHint.toLowerCase(),
+            spaces: true
+        };
+        return cachedConfig;
+    }
+
+    if (endpoint) {
+        cachedConfig = { endpoint: endpoint, bucket: bucket, dc: null, spaces: true };
+        return cachedConfig;
+    }
+
+    cachedConfig = { endpoint: null, bucket: bucket, dc: null, spaces: false };
+    return cachedConfig;
 }
 
 function resolveEndpoint() {
-    const explicit = process.env.SPACES_ENDPOINT || process.env.S3_ENDPOINT || '';
-    if (explicit) return explicit.replace(/\/$/, '');
-    const dc = spacesDatacenter();
-    if (dc) return 'https://' + dc + '.digitaloceanspaces.com';
-    return null;
+    return getSpacesConfig().endpoint;
 }
 
 function isSpaces() {
-    return !!resolveEndpoint();
+    return getSpacesConfig().spaces;
 }
 
 function getClient() {
@@ -43,34 +90,35 @@ function getClient() {
     const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY || process.env.SPACES_SECRET;
     if (!accessKeyId || !secretAccessKey) return null;
 
-    const endpoint = resolveEndpoint();
-    // DO Spaces requires AWS region us-east-1 for SDK signing; real DC is the endpoint.
-    const region = endpoint ? 'us-east-1' : (process.env.AWS_REGION || 'us-east-1');
+    const cfg = getSpacesConfig();
+    const region = cfg.spaces ? 'us-east-1' : (process.env.AWS_REGION || 'us-east-1');
 
     client = new S3Client({
-        region,
-        endpoint: endpoint || undefined,
-        forcePathStyle: false,
-        credentials: { accessKeyId, secretAccessKey }
+        region: region,
+        endpoint: cfg.endpoint || undefined,
+        // Path-style: https://sfo3.digitaloceanspaces.com/bucket/key — cert matches
+        forcePathStyle: !!cfg.endpoint,
+        credentials: { accessKeyId: accessKeyId, secretAccessKey: secretAccessKey }
     });
     return client;
 }
 
 function getBucket() {
-    return process.env.AWS_S3_BUCKET_NAME || process.env.SPACES_BUCKET || null;
+    return getSpacesConfig().bucket;
 }
 
 function getPublicBaseUrl() {
     if (process.env.SPACES_CDN_URL) return process.env.SPACES_CDN_URL.replace(/\/$/, '');
     if (process.env.S3_PUBLIC_BASE_URL) return process.env.S3_PUBLIC_BASE_URL.replace(/\/$/, '');
-    const bucket = getBucket();
-    const endpoint = resolveEndpoint();
-    if (endpoint && bucket) {
-        // https://bucket.sfo3.digitaloceanspaces.com
-        return endpoint.replace(/\/$/, '').replace('://', '://' + bucket + '.');
+    const cfg = getSpacesConfig();
+    if (cfg.spaces && cfg.bucket && cfg.dc) {
+        return 'https://' + cfg.bucket + '.' + cfg.dc + '.digitaloceanspaces.com';
+    }
+    if (cfg.endpoint && cfg.bucket) {
+        return cfg.endpoint.replace(/\/$/, '').replace('://', '://' + cfg.bucket + '.');
     }
     const region = process.env.AWS_REGION || 'us-east-1';
-    if (bucket) return 'https://' + bucket + '.s3.' + region + '.amazonaws.com';
+    if (cfg.bucket) return 'https://' + cfg.bucket + '.s3.' + region + '.amazonaws.com';
     return null;
 }
 
@@ -116,7 +164,6 @@ async function uploadFile(localPath, keyPrefix) {
         publicBase: getPublicBaseUrl()
     });
 
-    // Prefer no ACL first — some Spaces buckets reject canned ACLs with opaque UnknownError
     try {
         await s3.send(new PutObjectCommand(baseParams));
     } catch (noAclErr) {
