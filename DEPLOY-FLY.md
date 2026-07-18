@@ -33,9 +33,11 @@ SPACES_KEY=
 SPACES_SECRET=
 SPACES_BUCKET=viewhunt-media
 SPACES_REGION=sfo3
+# REGION endpoint only — not the bucket URL (bucket URL causes TLS cert errors):
 SPACES_ENDPOINT=https://sfo3.digitaloceanspaces.com
-# Public files: https://viewhunt-media.sfo3.digitaloceanspaces.com/...
-# Use a Spaces access key (not a DO personal API token). Bucket must allow public-read or CDN.
+# WRONG: https://viewhunt-media.sfo3.digitaloceanspaces.com
+# Do NOT set SPACES_BUCKET to another Space (e.g. justselfiesbro).
+# Public: https://viewhunt-media.sfo3.digitaloceanspaces.com/...
 
 # Scraper / collector / ranking AI
 YOUTUBE_API_KEY=
