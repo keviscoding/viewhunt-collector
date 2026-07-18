@@ -3,26 +3,55 @@
  * Uses Gemini to watch short clip samples and generate one-liner commentary.
  * TTS: OpenAI first when available (fast/reliable), else Gemini TTS.
  * Word timings: OpenAI Whisper (short timeout) or character-weighted.
+ *
+ * NOTE: @google/genai is lazy-loaded — requiring it at top-level crashes the
+ * Fly assembly image (verified exit_code=14). Keep OpenAI path working without it.
  */
-const { GoogleGenAI } = require('@google/genai');
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
-const OpenAI = require('openai');
 const ffmpegPath = process.env.FFMPEG_PATH || require('ffmpeg-static');
+
+let GoogleGenAI = null;
+let googleGenAiLoadError = null;
+function loadGoogleGenAI() {
+    if (GoogleGenAI || googleGenAiLoadError) return GoogleGenAI;
+    try {
+        GoogleGenAI = require('@google/genai').GoogleGenAI;
+    } catch (err) {
+        googleGenAiLoadError = err;
+        console.warn('@google/genai unavailable:', err.message);
+        GoogleGenAI = null;
+    }
+    return GoogleGenAI;
+}
+
+function loadOpenAI() {
+    try {
+        return require('openai');
+    } catch (err) {
+        console.warn('openai unavailable:', err.message);
+        return null;
+    }
+}
 
 class RankingCommentary {
     constructor() {
-        this.ai = process.env.GEMINI_API_KEY
-            ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
+        var GenAI = loadGoogleGenAI();
+        this.ai = (process.env.GEMINI_API_KEY && GenAI)
+            ? new GenAI({ apiKey: process.env.GEMINI_API_KEY })
             : null;
+        if (process.env.GEMINI_API_KEY && !this.ai && googleGenAiLoadError) {
+            console.warn('GEMINI_API_KEY set but SDK failed to load — using OpenAI-only commentary path');
+        }
         this.audioDir = (process.env.JOB_ID || process.env.JOB_TYPE === 'ranking_assemble')
             ? path.join('/tmp', 'ranking-audio')
             : path.join(__dirname, '../../../public/studio/generated/audio');
         if (!fs.existsSync(this.audioDir)) fs.mkdirSync(this.audioDir, { recursive: true });
-        this.openai = process.env.OPENAI_API_KEY
+        var OpenAI = loadOpenAI();
+        this.openai = (process.env.OPENAI_API_KEY && OpenAI)
             ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
             : null;
         this.lastTtsProvider = null;

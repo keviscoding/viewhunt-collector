@@ -19,10 +19,11 @@ APP_URL=https://your-app.ondigitalocean.app
 FLY_API_TOKEN=<fly deploy token or org token>
 FLY_ASSEMBLY_APP=viewhunt-assembly
 FLY_SCRAPER_APP=viewhunt-scraper
-FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXV32TD5M8F3E2RTXGSG0X8W
-# Ranking assemble defaults to DigitalOcean (reliable). Opt in to Fly only when ready:
-# FLY_ASSEMBLY_ENABLED=1
-# If Fly is enabled but silent ~30s, DO still falls back locally.
+FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXV570SHH0TT5SDJGRJ1Q4FQ
+# Fly is ON by default. Set FLY_ASSEMBLY_ENABLED=0 to force DigitalOcean-only assembly.
+# If Fly is silent ~30s, DO still falls back locally.
+# Prior crash: @google/genai top-level require exited the Fly worker (fixed via lazy-load).
+# Verified 2026-07-18: machine exit_code=0 with commentary module loaded on this image.
 FLY_SCRAPER_IMAGE=registry.fly.io/viewhunt-scraper:latest
 # Max concurrent ranking Fly machines (extras wait in Mongo queue)
 FLY_ASSEMBLY_MAX_CONCURRENT=3

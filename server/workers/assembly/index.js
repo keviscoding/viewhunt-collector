@@ -131,10 +131,10 @@ async function main() {
     let trialHelper;
     try {
         RankingAssembler = require('./lib/ranking/assembler');
-        RankingCommentary = require('./lib/ranking/commentary');
         storage = require('./lib/storage');
         trialHelper = require('./lib/trial');
-        console.log('Heavy modules loaded');
+        // Load commentary only when needed — its Gemini SDK previously crashed Fly boot
+        console.log('Core modules loaded (assembler/storage/trial)');
     } catch (loadErr) {
         console.error('Module load failed:', loadErr);
         await reportViaHttp({
@@ -303,20 +303,31 @@ async function main() {
         if (!process.env.GEMINI_API_KEY && !process.env.OPENAI_API_KEY) {
             console.warn('No GEMINI_API_KEY or OPENAI_API_KEY on Fly — skipping commentary');
         } else {
-            await updateJob(db, { message: 'Fly: generating commentary + TTS...' });
-            const commentaryGen = new RankingCommentary();
-            commentaryGen.audioDir = audioDir;
-            commentaryGen.onProgress = async function(msg) {
-                await updateJob(db, { message: 'Fly: ' + msg });
-            };
-            commentaryResults = await commentaryGen.generateCommentary(
-                clipList,
-                titleText,
-                payload.voiceName || 'Kore'
-            );
-            ttsProvider = commentaryResults.ttsProvider || commentaryGen.lastTtsProvider || null;
-            ttsError = commentaryResults.ttsError || commentaryGen.lastTtsError || null;
-            commentaryData = commentaryResults.filter(function(c) { return c.audioPath; });
+            try {
+                RankingCommentary = require('./lib/ranking/commentary');
+            } catch (cErr) {
+                console.error('Commentary module failed to load:', cErr.message);
+                await updateJob(db, {
+                    message: 'Fly: commentary unavailable (' + cErr.message + ') — assembling without voiceover'
+                });
+                RankingCommentary = null;
+            }
+            if (RankingCommentary) {
+                await updateJob(db, { message: 'Fly: generating commentary + TTS...' });
+                const commentaryGen = new RankingCommentary();
+                commentaryGen.audioDir = audioDir;
+                commentaryGen.onProgress = async function(msg) {
+                    await updateJob(db, { message: 'Fly: ' + msg });
+                };
+                commentaryResults = await commentaryGen.generateCommentary(
+                    clipList,
+                    titleText,
+                    payload.voiceName || 'Kore'
+                );
+                ttsProvider = commentaryResults.ttsProvider || commentaryGen.lastTtsProvider || null;
+                ttsError = commentaryResults.ttsError || commentaryGen.lastTtsError || null;
+                commentaryData = commentaryResults.filter(function(c) { return c.audioPath; });
+            }
         }
     }
 
