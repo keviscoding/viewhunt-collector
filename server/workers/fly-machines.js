@@ -111,12 +111,14 @@ async function startAssemblyMachine(jobId, payload) {
         AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || process.env.SPACES_KEY || '',
         AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || process.env.SPACES_SECRET || '',
         AWS_S3_BUCKET_NAME: process.env.AWS_S3_BUCKET_NAME || process.env.SPACES_BUCKET || '',
-        // Prefer Spaces region (e.g. sfo3) so the worker does not talk to AWS S3 by mistake
-        AWS_REGION: process.env.SPACES_REGION || process.env.AWS_REGION || 'us-east-1',
-        SPACES_REGION: process.env.SPACES_REGION || process.env.AWS_REGION || '',
-        SPACES_BUCKET: process.env.SPACES_BUCKET || process.env.AWS_S3_BUCKET_NAME || '',
+        // Spaces SDK signing requires us-east-1; datacenter comes from SPACES_ENDPOINT
+        AWS_REGION: 'us-east-1',
         SPACES_KEY: process.env.SPACES_KEY || process.env.AWS_ACCESS_KEY_ID || '',
         SPACES_SECRET: process.env.SPACES_SECRET || process.env.AWS_SECRET_ACCESS_KEY || '',
+        SPACES_BUCKET: process.env.SPACES_BUCKET || process.env.AWS_S3_BUCKET_NAME || '',
+        SPACES_REGION: (process.env.SPACES_REGION && /^[a-z]{3}\d$/i.test(process.env.SPACES_REGION))
+            ? process.env.SPACES_REGION
+            : '',
         SPACES_ENDPOINT: process.env.SPACES_ENDPOINT || (
             process.env.SPACES_REGION && /^[a-z]{3}\d$/i.test(process.env.SPACES_REGION)
                 ? ('https://' + process.env.SPACES_REGION + '.digitaloceanspaces.com')

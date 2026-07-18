@@ -353,20 +353,34 @@ async function main() {
     const localName = path.basename(result.videoUrl);
     const localPath = path.join(assembler.outputDir, localName);
     let videoUrl = result.videoUrl;
+    let durableUpload = false;
 
     if (fs.existsSync(localPath) && storage.isConfigured()) {
         try {
             const uploaded = await storage.uploadFile(localPath, 'studio/ranking-final');
             if (uploaded) {
                 videoUrl = uploaded;
+                durableUpload = true;
                 console.log('Uploaded result to object storage:', uploaded);
             }
         } catch (spacesErr) {
-            console.error('Object storage upload failed:', spacesErr && spacesErr.message ? spacesErr.message : spacesErr);
+            console.error(
+                'Object storage upload failed:',
+                storage.formatS3Error ? storage.formatS3Error(spacesErr) : (spacesErr && spacesErr.message)
+            );
         }
     }
     // Fallback: POST finished file to DigitalOcean when Spaces missing or failed
-    if (fs.existsSync(localPath) && videoUrl === result.videoUrl && (APP_INTERNAL_URL || APP_URL)) {
+    // (small videos only — DO App Platform rejects large JSON bodies with HTTP 413)
+    const localBytes = fs.existsSync(localPath) ? fs.statSync(localPath).size : 0;
+    const maxAppUploadBytes = 8 * 1024 * 1024; // ~8MB raw → ~11MB base64
+    if (
+        !durableUpload &&
+        fs.existsSync(localPath) &&
+        localBytes > 0 &&
+        localBytes <= maxAppUploadBytes &&
+        (APP_INTERNAL_URL || APP_URL)
+    ) {
         try {
             await updateJob(db, { message: 'Fly: uploading finished video to app…' });
             const buf = fs.readFileSync(localPath);
@@ -385,7 +399,10 @@ async function main() {
             }, 180000);
             if (uploadRes.ok) {
                 const data = await uploadRes.json();
-                if (data.videoUrl) videoUrl = data.videoUrl;
+                if (data.videoUrl) {
+                    videoUrl = data.videoUrl;
+                    durableUpload = true;
+                }
                 console.log('Uploaded result via app:', videoUrl);
             } else {
                 const errText = await uploadRes.text().catch(function() { return ''; });
@@ -394,6 +411,16 @@ async function main() {
         } catch (uploadErr) {
             console.warn('Could not upload result to app:', uploadErr.message);
         }
+    } else if (!durableUpload && localBytes > maxAppUploadBytes) {
+        console.warn('Skipping app base64 upload — file too large (' + localBytes + ' bytes); Spaces required');
+    }
+
+    // Fly disk is ephemeral — never report complete without a durable URL
+    if (!durableUpload || !videoUrl) {
+        throw new Error(
+            'Finished video could not be uploaded to Spaces (check SPACES_KEY/SECRET/BUCKET/ENDPOINT on DigitalOcean). ' +
+            'Local path is not downloadable after the Fly machine exits.'
+        );
     }
 
     const hasCommentary = commentaryData.length > 0;

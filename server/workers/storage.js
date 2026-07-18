@@ -1,6 +1,11 @@
 /**
  * Durable object storage for assembled videos (AWS S3 or DigitalOcean Spaces).
  * Falls back to null when not configured — callers keep local disk URLs.
+ *
+ * DigitalOcean Spaces + AWS SDK v3:
+ *   endpoint = https://<dc>.digitaloceanspaces.com  (e.g. sfo3)
+ *   region   = us-east-1  (SDK signing requirement; DC comes from endpoint)
+ *   forcePathStyle = false
  */
 const fs = require('fs');
 const path = require('path');
@@ -9,16 +14,27 @@ const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 
 let client = null;
 
+function spacesDatacenter() {
+    const fromEnv = process.env.SPACES_REGION || '';
+    if (/^[a-z]{3}\d$/i.test(fromEnv)) return fromEnv.toLowerCase();
+    const endpoint = process.env.SPACES_ENDPOINT || process.env.S3_ENDPOINT || '';
+    const m = endpoint.match(/https?:\/\/([a-z]{3}\d)\.digitaloceanspaces\.com/i);
+    if (m) return m[1].toLowerCase();
+    const awsRegion = process.env.AWS_REGION || '';
+    if (/^[a-z]{3}\d$/i.test(awsRegion)) return awsRegion.toLowerCase();
+    return null;
+}
+
 function resolveEndpoint() {
     const explicit = process.env.SPACES_ENDPOINT || process.env.S3_ENDPOINT || '';
     if (explicit) return explicit.replace(/\/$/, '');
-    // DO Spaces keys without endpoint would otherwise hit AWS S3 and fail auth.
-    // Regions look like sfo3 / nyc3 / fra1 (not AWS-style us-east-1).
-    const region = process.env.SPACES_REGION || process.env.AWS_REGION || '';
-    if (/^[a-z]{3}\d$/i.test(region)) {
-        return 'https://' + region + '.digitaloceanspaces.com';
-    }
+    const dc = spacesDatacenter();
+    if (dc) return 'https://' + dc + '.digitaloceanspaces.com';
     return null;
+}
+
+function isSpaces() {
+    return !!resolveEndpoint();
 }
 
 function getClient() {
@@ -28,12 +44,13 @@ function getClient() {
     if (!accessKeyId || !secretAccessKey) return null;
 
     const endpoint = resolveEndpoint();
-    const region = process.env.AWS_REGION || process.env.SPACES_REGION || 'us-east-1';
+    // DO Spaces requires AWS region us-east-1 for SDK signing; real DC is the endpoint.
+    const region = endpoint ? 'us-east-1' : (process.env.AWS_REGION || 'us-east-1');
 
     client = new S3Client({
         region,
         endpoint: endpoint || undefined,
-        forcePathStyle: !!endpoint,
+        forcePathStyle: false,
         credentials: { accessKeyId, secretAccessKey }
     });
     return client;
@@ -47,14 +64,27 @@ function getPublicBaseUrl() {
     if (process.env.SPACES_CDN_URL) return process.env.SPACES_CDN_URL.replace(/\/$/, '');
     if (process.env.S3_PUBLIC_BASE_URL) return process.env.S3_PUBLIC_BASE_URL.replace(/\/$/, '');
     const bucket = getBucket();
-    const region = process.env.AWS_REGION || process.env.SPACES_REGION || 'us-east-1';
     const endpoint = resolveEndpoint();
     if (endpoint && bucket) {
-        // DigitalOcean Spaces style: https://bucket.region.digitaloceanspaces.com
+        // https://bucket.sfo3.digitaloceanspaces.com
         return endpoint.replace(/\/$/, '').replace('://', '://' + bucket + '.');
     }
+    const region = process.env.AWS_REGION || 'us-east-1';
     if (bucket) return 'https://' + bucket + '.s3.' + region + '.amazonaws.com';
     return null;
+}
+
+function formatS3Error(err) {
+    if (!err) return 'unknown';
+    const parts = [
+        err.name,
+        err.Code || err.code,
+        err.message,
+        err.$metadata && err.$metadata.httpStatusCode
+            ? ('http=' + err.$metadata.httpStatusCode)
+            : null
+    ].filter(Boolean);
+    return parts.join(' | ');
 }
 
 /**
@@ -77,12 +107,25 @@ async function uploadFile(localPath, keyPrefix) {
         ContentType: contentType
     };
 
+    console.log('Object storage upload', {
+        bucket: bucket,
+        key: key,
+        bytes: body.length,
+        endpoint: resolveEndpoint() || '(aws default)',
+        spaces: isSpaces(),
+        publicBase: getPublicBaseUrl()
+    });
+
     try {
         await s3.send(new PutObjectCommand(Object.assign({}, baseParams, { ACL: 'public-read' })));
     } catch (aclErr) {
-        // Bucket owner-enforced / Spaces without ACL support — retry without ACL
-        console.warn('S3 upload with ACL failed, retrying without ACL:', aclErr.message);
-        await s3.send(new PutObjectCommand(baseParams));
+        console.warn('S3 upload with ACL failed, retrying without ACL:', formatS3Error(aclErr));
+        try {
+            await s3.send(new PutObjectCommand(baseParams));
+        } catch (err2) {
+            console.error('S3 upload failed:', formatS3Error(err2));
+            throw err2;
+        }
     }
 
     const base = getPublicBaseUrl();
@@ -97,5 +140,7 @@ function isConfigured() {
 module.exports = {
     uploadFile,
     isConfigured,
-    getPublicBaseUrl
+    getPublicBaseUrl,
+    resolveEndpoint,
+    formatS3Error
 };

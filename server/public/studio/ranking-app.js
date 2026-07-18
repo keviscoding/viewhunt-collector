@@ -1377,11 +1377,29 @@
 
     function showResult(data) {
         document.getElementById('assembly-progress').classList.add('hidden');
-        var v = document.getElementById('result-video'); v.src = data.videoUrl; v.classList.remove('hidden'); v.load();
+        var v = document.getElementById('result-video');
+        var url = data && data.videoUrl;
+        if (!url) {
+            document.getElementById('result-info').textContent =
+                'Video finished but no download URL was returned. Re-run assemble.';
+            document.getElementById('result-info').classList.remove('hidden');
+            document.getElementById('result-actions').classList.remove('hidden');
+            v.classList.add('hidden');
+            return;
+        }
+        v.onerror = function() {
+            document.getElementById('result-info').textContent =
+                'Could not play this file (missing or not a video). Re-run assemble — storage upload may have failed.';
+            document.getElementById('result-info').classList.remove('hidden');
+        };
+        v.src = url;
+        v.classList.remove('hidden');
+        v.load();
         document.getElementById('result-info').textContent = data.clipCount + ' clips, ' + data.duration.toFixed(1) + 's' + (data.hasCommentary ? ' (with commentary)' : '');
         document.getElementById('result-info').classList.remove('hidden');
         document.getElementById('result-actions').classList.remove('hidden');
-        document.getElementById('btn-download').href = data.videoUrl;
+        document.getElementById('btn-download').href = url;
+        document.getElementById('btn-download').setAttribute('download', 'ranking-video.mp4');
     }
 
     function moveUp(i) { if (i <= 0) return; var x = clips.splice(i, 1)[0]; clips.splice(i - 1, 0, x); renderOrderList(); renderPreview('preview-dash'); }
