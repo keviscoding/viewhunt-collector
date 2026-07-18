@@ -18,7 +18,9 @@ class RankingCommentary {
         this.ai = process.env.GEMINI_API_KEY
             ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
             : null;
-        this.audioDir = path.join(__dirname, '../../../public/studio/generated/audio');
+        this.audioDir = (process.env.JOB_ID || process.env.JOB_TYPE === 'ranking_assemble')
+            ? path.join('/tmp', 'ranking-audio')
+            : path.join(__dirname, '../../../public/studio/generated/audio');
         if (!fs.existsSync(this.audioDir)) fs.mkdirSync(this.audioDir, { recursive: true });
         this.openai = process.env.OPENAI_API_KEY
             ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })

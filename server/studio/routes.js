@@ -1843,6 +1843,197 @@ async function getRankingJob(jobId) {
     catch (e) { return null; }
 }
 
+/**
+ * Run ranking assembly on the DigitalOcean app (local FFmpeg).
+ * Used as primary when Fly is disabled, or as automatic fallback when Fly never heartbeats.
+ */
+async function runLocalRankingAssembly(opts) {
+    var jobId = opts.jobId;
+    var userId = opts.userId;
+    var clipList = opts.clipList;
+    var title = opts.title || {};
+    var layout = opts.layout || {};
+    var enableCommentary = !!opts.enableCommentary;
+    var voiceName = opts.voiceName || 'Kore';
+    var colorPalette = opts.colorPalette || 'yellow';
+    var checkeredMode = !!opts.checkeredMode;
+    var subtitleFont = opts.subtitleFont || 'Arial';
+    var subtitleY = opts.subtitleY != null ? opts.subtitleY : 55;
+    var subtitleColor = opts.subtitleColor || 'yellow';
+    var usingTrial = !!opts.usingTrial;
+    var rankingCreditsCharged = opts.rankingCreditsCharged || 0;
+    var db = opts.db || (await getDb());
+
+    await updateRankingJob(jobId, {
+        status: 'processing',
+        message: enableCommentary ? 'Generating AI commentary...' : 'Trimming clips...',
+        worker: 'local',
+        flyLocalFallback: !!opts.fromFlyFallback
+    });
+
+    try {
+        var assembler = new RankingAssembler();
+        var commentaryData = [];
+        var commentaryResults = [];
+        var localClipList = [];
+
+        for (var li = 0; li < clipList.length; li++) {
+            var src = clipList[li];
+            await updateRankingJob(jobId, {
+                message: 'Trimming clip ' + (li + 1) + ' of ' + clipList.length + '...'
+            });
+            var finalPath = src.path;
+            var startTime = src.startTime || 0;
+            var origDur = await assembler.getDuration(src.path);
+            var endT = (src.endTime != null && !isNaN(src.endTime) && src.endTime > 0) ? src.endTime : origDur;
+            var needsTrim = startTime > 0.1 || Math.abs(endT - origDur) > 0.1;
+            if (needsTrim && endT > startTime + 0.05) {
+                var trimmedName = 'trimmed-' + Date.now() + '-' + li + '.mp4';
+                var trimmedPath = path.join(rankingUploadDir, trimmedName);
+                await assembler.trimClip(src.path, startTime, endT, trimmedPath);
+                finalPath = trimmedPath;
+            }
+            localClipList.push({ path: finalPath, number: src.number, label: src.label });
+        }
+
+        if (enableCommentary && title && title.text) {
+            try {
+                await updateRankingJob(jobId, { message: 'Generating AI commentary...' });
+                console.log('🎙️ Generating AI commentary for ranking video...');
+                var RankingCommentary = require('./formats/ranking/commentary');
+                var commentaryGen = new RankingCommentary();
+                commentaryResults = await commentaryGen.generateCommentary(localClipList, title.text, voiceName || 'Kore');
+                commentaryData = commentaryResults.filter(function(c) { return c.audioPath; });
+
+                if (commentaryData.length > 0) {
+                    await credits.deductCredits(userId, 'script_generation', 1, 'Ranking AI commentary');
+                    rankingCreditsCharged += credits.COSTS.script_generation;
+                    await updateRankingJob(jobId, {
+                        creditsCharged: rankingCreditsCharged,
+                        message: 'Assembling… voice=' + (commentaryResults.ttsProvider || commentaryGen.lastTtsProvider || 'ok')
+                    });
+                } else if (commentaryGen.lastTtsError) {
+                    await updateRankingJob(jobId, {
+                        message: 'Assembling without voiceover: ' + commentaryGen.lastTtsError
+                    });
+                }
+            } catch (commentaryErr) {
+                console.warn('Commentary generation failed, assembling without:', commentaryErr.message);
+            }
+        }
+
+        await updateRankingJob(jobId, { message: 'Assembling video (' + localClipList.length + ' clips)...' });
+
+        var result = await assembler.assemble(localClipList, title || {}, {
+            layout: layout || {},
+            commentary: commentaryData,
+            commentaryLines: enableCommentary ? commentaryResults : [],
+            colorPalette: colorPalette || 'yellow',
+            checkeredMode: !!checkeredMode,
+            subtitleFont: subtitleFont || 'Arial',
+            subtitleY: subtitleY != null ? subtitleY : 55,
+            subtitleColor: subtitleColor || 'yellow',
+            hookEnabled: !!enableCommentary && commentaryData.length > 0
+        });
+
+        console.log('🏆 Ranking video assembled: ' + result.videoUrl + (commentaryData.length > 0 ? ' (with ' + commentaryData.length + ' commentary lines)' : ''));
+
+        var finalResult = {
+            ...result,
+            hasCommentary: commentaryData.length > 0,
+            ttsProvider: commentaryResults.ttsProvider || null,
+            worker: 'local'
+        };
+        try {
+            var storage = require('../workers/storage');
+            if (storage.isConfigured() && result.videoUrl) {
+                var localFinal = path.join(__dirname, '../public', result.videoUrl.replace(/^\//, ''));
+                if (fs.existsSync(localFinal)) {
+                    var uploaded = await storage.uploadFile(localFinal, 'studio/ranking-final');
+                    if (uploaded) finalResult.videoUrl = uploaded;
+                }
+            }
+        } catch (storageErr) {
+            console.warn('Durable upload skipped:', storageErr.message);
+        }
+
+        await updateRankingJob(jobId, { status: 'complete', result: finalResult });
+
+        if (usingTrial) {
+            await trialHelper.recordRankingVideoComplete(db, userId);
+        }
+    } catch (error) {
+        console.error('Ranking assembly error:', error.message);
+        await updateRankingJob(jobId, { status: 'failed', error: error.message }).catch(function() {});
+        try {
+            if (!usingTrial) {
+                await credits.refundCredits(userId, 'ranking_assembly', 1, 'Assembly failed: ' + error.message);
+            }
+            if (rankingCreditsCharged > (usingTrial ? 0 : credits.COSTS.ranking_assembly)) {
+                await credits.refundCredits(userId, 'script_generation', 1, 'Commentary refund (assembly failed)');
+            }
+        } catch (refundErr) {
+            console.error('Ranking refund error:', refundErr.message);
+        }
+    }
+}
+
+/** If Fly never heartbeats, reclaim the job and assemble on DO. */
+async function watchFlyThenLocalFallback(opts) {
+    var jobId = opts.jobId;
+    var waitMs = opts.waitMs != null ? opts.waitMs : 30000;
+    var step = 3000;
+    var waited = 0;
+    try {
+        while (waited < waitMs) {
+            await new Promise(function(r) { setTimeout(r, step); });
+            waited += step;
+            var job = await getRankingJob(jobId);
+            if (!job) return;
+            if (job.status === 'complete' || job.status === 'failed') return;
+            if (job.flyHeartbeatAt) {
+                console.log('Fly heartbeat received for', jobId, '— local fallback cancelled');
+                return;
+            }
+            if (job.message && /^Fly: worker online/i.test(job.message)) {
+                console.log('Fly progress for', jobId, '— local fallback cancelled');
+                return;
+            }
+            if (job.worker === 'local') return;
+        }
+
+        var db = await getDb();
+        var claimed = await db.collection('ranking_jobs').findOneAndUpdate(
+            {
+                _id: new ObjectId(jobId),
+                status: 'processing',
+                worker: 'fly',
+                flyHeartbeatAt: { $exists: false },
+                flyLocalFallback: { $ne: true }
+            },
+            {
+                $set: {
+                    worker: 'local',
+                    flyLocalFallback: true,
+                    flyWatchdogFired: true,
+                    message: 'Fly worker silent — assembling on app server…',
+                    updatedAt: new Date()
+                }
+            },
+            { returnDocument: 'after' }
+        );
+        var doc = claimed && (claimed.value || claimed);
+        if (!doc || !doc._id) {
+            console.log('Fly fallback not claimed for', jobId, '(Fly may have taken over)');
+            return;
+        }
+        console.warn('⚠️ Fly silent for', jobId, '— running local assembly fallback');
+        await runLocalRankingAssembly(Object.assign({}, opts, { fromFlyFallback: true, db: db }));
+    } catch (err) {
+        console.error('Fly→local fallback error:', err.message);
+    }
+}
+
 router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req, res) => {
     try {
         var { clips, title, layout, commentary: enableCommentary, voiceName, colorPalette, checkeredMode, subtitleFont, subtitleY, subtitleColor } = req.body;
@@ -2013,6 +2204,27 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                     flyMachineId: flyMachineId,
                     flyStartedAt: new Date()
                 });
+                // CRITICAL: if Fly dies silently (current bug), assemble on DO after 30s
+                var localOpts = {
+                    jobId: jobId,
+                    userId: userId,
+                    clipList: clipList,
+                    title: title,
+                    layout: layout,
+                    enableCommentary: enableCommentary,
+                    voiceName: voiceName,
+                    colorPalette: colorPalette,
+                    checkeredMode: checkeredMode,
+                    subtitleFont: subtitleFont,
+                    subtitleY: subtitleY,
+                    subtitleColor: subtitleColor,
+                    usingTrial: usingTrial,
+                    rankingCreditsCharged: rankingCreditsCharged,
+                    db: db
+                };
+                watchFlyThenLocalFallback(localOpts).catch(function(e) {
+                    console.error('Fly watchdog failed:', e.message);
+                });
             }
             return;
         }
@@ -2021,118 +2233,26 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             console.warn('Fly not used, local fallback:', flySkipReason);
         }
 
-        await updateRankingJob(jobId, { status: 'processing', message: enableCommentary ? 'Generating AI commentary...' : 'Trimming clips...', worker: 'local' });
-
-        // Run assembly in background (local fallback)
-        (async function() {
-            try {
-                var assembler = new RankingAssembler();
-                var commentaryData = [];
-                var commentaryResults = [];
-                var localClipList = [];
-
-                for (var li = 0; li < clipList.length; li++) {
-                    var src = clipList[li];
-                    await updateRankingJob(jobId, {
-                        message: 'Trimming clip ' + (li + 1) + ' of ' + clipList.length + '...'
-                    });
-                    var finalPath = src.path;
-                    var startTime = src.startTime || 0;
-                    var origDur = await assembler.getDuration(src.path);
-                    var endT = (src.endTime != null && !isNaN(src.endTime) && src.endTime > 0) ? src.endTime : origDur;
-                    var needsTrim = startTime > 0.1 || Math.abs(endT - origDur) > 0.1;
-                    if (needsTrim && endT > startTime + 0.05) {
-                        var trimmedName = 'trimmed-' + Date.now() + '-' + li + '.mp4';
-                        var trimmedPath = path.join(rankingUploadDir, trimmedName);
-                        await assembler.trimClip(src.path, startTime, endT, trimmedPath);
-                        finalPath = trimmedPath;
-                    }
-                    localClipList.push({ path: finalPath, number: src.number, label: src.label });
-                }
-
-                // Generate AI commentary if enabled (always credits — not covered by ranking trial)
-                if (enableCommentary && title && title.text) {
-                    try {
-                        await updateRankingJob(jobId, { message: 'Generating AI commentary...' });
-                        console.log('🎙️ Generating AI commentary for ranking video...');
-                        var RankingCommentary = require('./formats/ranking/commentary');
-                        var commentaryGen = new RankingCommentary();
-                        commentaryResults = await commentaryGen.generateCommentary(localClipList, title.text, voiceName || 'Kore');
-                        commentaryData = commentaryResults.filter(function(c) { return c.audioPath; });
-
-                        if (commentaryData.length > 0) {
-                            await credits.deductCredits(userId, 'script_generation', 1, 'Ranking AI commentary');
-                            rankingCreditsCharged += credits.COSTS.script_generation;
-                            await updateRankingJob(jobId, {
-                                creditsCharged: rankingCreditsCharged,
-                                message: 'Assembling… voice=' + (commentaryResults.ttsProvider || commentaryGen.lastTtsProvider || 'ok')
-                            });
-                        } else if (commentaryGen.lastTtsError) {
-                            await updateRankingJob(jobId, {
-                                message: 'Assembling without voiceover: ' + commentaryGen.lastTtsError
-                            });
-                        }
-                    } catch (commentaryErr) {
-                        console.warn('Commentary generation failed, assembling without:', commentaryErr.message);
-                    }
-                }
-
-                await updateRankingJob(jobId, { message: 'Assembling video (' + localClipList.length + ' clips)...' });
-
-                var result = await assembler.assemble(localClipList, title || {}, {
-                    layout: layout || {},
-                    commentary: commentaryData,
-                    commentaryLines: enableCommentary ? commentaryResults : [],
-                    colorPalette: colorPalette || 'yellow',
-                    checkeredMode: !!checkeredMode,
-                    subtitleFont: subtitleFont || 'Arial',
-                    subtitleY: subtitleY != null ? subtitleY : 55,
-                    subtitleColor: subtitleColor || 'yellow',
-                    hookEnabled: !!enableCommentary && commentaryData.length > 0
-                });
-
-                console.log('🏆 Ranking video assembled: ' + result.videoUrl + (commentaryData.length > 0 ? ' (with ' + commentaryData.length + ' commentary lines)' : ''));
-
-                var finalResult = {
-                    ...result,
-                    hasCommentary: commentaryData.length > 0,
-                    ttsProvider: commentaryResults.ttsProvider || null,
-                    worker: 'local'
-                };
-                try {
-                    var storage = require('../workers/storage');
-                    if (storage.isConfigured() && result.videoUrl) {
-                        var localFinal = path.join(__dirname, '../public', result.videoUrl.replace(/^\//, ''));
-                        if (fs.existsSync(localFinal)) {
-                            var uploaded = await storage.uploadFile(localFinal, 'studio/ranking-final');
-                            if (uploaded) finalResult.videoUrl = uploaded;
-                        }
-                    }
-                } catch (storageErr) {
-                    console.warn('Durable upload skipped:', storageErr.message);
-                }
-
-                await updateRankingJob(jobId, { status: 'complete', result: finalResult });
-
-                if (usingTrial) {
-                    await trialHelper.recordRankingVideoComplete(db, userId);
-                }
-            } catch (error) {
-                console.error('Ranking assembly error:', error.message);
-                await updateRankingJob(jobId, { status: 'failed', error: error.message }).catch(function() {});
-                // Refund credits charged for this job (trial jobs have 0 ranking_assembly charge)
-                try {
-                    if (!usingTrial) {
-                        await credits.refundCredits(userId, 'ranking_assembly', 1, 'Assembly failed: ' + error.message);
-                    }
-                    if (rankingCreditsCharged > (usingTrial ? 0 : credits.COSTS.ranking_assembly)) {
-                        await credits.refundCredits(userId, 'script_generation', 1, 'Commentary refund (assembly failed)');
-                    }
-                } catch (refundErr) {
-                    console.error('Ranking refund error:', refundErr.message);
-                }
-            }
-        })();
+        // Run assembly in background on DigitalOcean
+        runLocalRankingAssembly({
+            jobId: jobId,
+            userId: userId,
+            clipList: clipList,
+            title: title,
+            layout: layout,
+            enableCommentary: enableCommentary,
+            voiceName: voiceName,
+            colorPalette: colorPalette,
+            checkeredMode: checkeredMode,
+            subtitleFont: subtitleFont,
+            subtitleY: subtitleY,
+            subtitleColor: subtitleColor,
+            usingTrial: usingTrial,
+            rankingCreditsCharged: rankingCreditsCharged,
+            db: db
+        }).catch(function(e) {
+            console.error('Local assembly failed:', e.message);
+        });
 
     } catch (error) {
         console.error('Ranking assembly error:', error.message);
@@ -2160,31 +2280,75 @@ router.get('/ranking/assemble/status/:jobId', requireAuth, async (req, res) => {
             }
         }
 
-        // Watchdog: Fly claimed the job but never heartbeated / finished
-        if (job.status === 'processing' && job.worker === 'fly' && !job.flyWatchdogFired) {
+        // Status poll also triggers local fallback if Fly is silent (covers server restart mid-watch)
+        if (job.status === 'processing' && job.worker === 'fly' && !job.flyHeartbeatAt && !job.flyLocalFallback) {
             var started = job.flyStartedAt || job.updatedAt || job.createdAt;
             var ageMs = started ? (Date.now() - new Date(started).getTime()) : 0;
             var msg = job.message || '';
             var noHeartbeat = /waiting for worker heartbeat|generating commentary \+ assembling/i.test(msg);
-            // 90s with no heartbeat, or 12 min absolute
-            if ((noHeartbeat && ageMs > 90 * 1000) || ageMs > 12 * 60 * 1000) {
-                var err =
-                    'Fly worker did not report progress. Fix: (1) Atlas Network Access allow 0.0.0.0/0, ' +
-                    '(2) set APP_INTERNAL_URL to your *.ondigitalocean.app URL, ' +
-                    '(3) FLY_ASSEMBLY_IMAGE=latest deployment tag, (4) WORKER_SECRET set. ' +
-                    'Also confirm V2_MONGO_URI/MONGODB_URI and APP_URL on DigitalOcean.';
-                await updateRankingJob(req.params.jobId, {
-                    status: 'failed',
-                    error: err,
-                    flyWatchdogFired: true,
-                    commentaryRefundNeeded: !!job.commentaryCreditsReserved
-                });
-                job.status = 'failed';
-                job.error = err;
-                try {
-                    var dbWd = await getDb();
-                    await drainFlyAssemblyQueue(dbWd, updateRankingJob);
-                } catch (e) {}
+            if (noHeartbeat && ageMs > 30 * 1000) {
+                var dbFb = await getDb();
+                var claimed = await dbFb.collection('ranking_jobs').findOneAndUpdate(
+                    {
+                        _id: new ObjectId(req.params.jobId),
+                        status: 'processing',
+                        worker: 'fly',
+                        flyHeartbeatAt: { $exists: false },
+                        flyLocalFallback: { $ne: true }
+                    },
+                    {
+                        $set: {
+                            worker: 'local',
+                            flyLocalFallback: true,
+                            flyWatchdogFired: true,
+                            message: 'Fly worker silent — assembling on app server…',
+                            updatedAt: new Date()
+                        }
+                    },
+                    { returnDocument: 'after' }
+                );
+                var claimedDoc = claimed && (claimed.value || claimed);
+                if (claimedDoc && claimedDoc.payload && claimedDoc.payload.clips) {
+                    console.warn('⚠️ Status-poll Fly fallback for', req.params.jobId);
+                    var payload = claimedDoc.payload;
+                    var fallbackClips = (payload.clips || []).map(function(c) {
+                        return {
+                            path: path.join(rankingUploadDir, c.filename),
+                            filename: c.filename,
+                            number: c.number,
+                            label: c.label,
+                            startTime: c.startTime || 0,
+                            endTime: c.endTime,
+                            originalDuration: c.originalDuration
+                        };
+                    }).filter(function(c) { return fs.existsSync(c.path); });
+                    if (fallbackClips.length) {
+                        runLocalRankingAssembly({
+                            jobId: req.params.jobId,
+                            userId: String(req.user.userId),
+                            clipList: fallbackClips,
+                            title: payload.title,
+                            layout: payload.layout,
+                            enableCommentary: !!payload.enableCommentary,
+                            voiceName: payload.voiceName,
+                            colorPalette: payload.colorPalette,
+                            checkeredMode: !!payload.checkeredMode,
+                            subtitleFont: payload.subtitleFont,
+                            subtitleY: payload.subtitleY,
+                            subtitleColor: payload.subtitleColor,
+                            usingTrial: !!claimedDoc.usingTrial,
+                            rankingCreditsCharged: claimedDoc.creditsCharged || 0,
+                            fromFlyFallback: true,
+                            db: dbFb
+                        }).catch(function(e) { console.error(e); });
+                    } else {
+                        await updateRankingJob(req.params.jobId, {
+                            status: 'failed',
+                            error: 'Fly silent and clip files missing on server for local fallback.'
+                        });
+                    }
+                    job = await getRankingJob(req.params.jobId);
+                }
             }
         }
 

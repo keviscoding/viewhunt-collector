@@ -19,9 +19,16 @@ const ffprobePath = process.env.FFPROBE_PATH || require('ffprobe-static').path;
 
 class RankingAssembler {
     constructor() {
-        this.tempDir = path.join(__dirname, '../../../public/studio/generated/temp');
-        this.outputDir = path.join(__dirname, '../../../public/studio/generated/final');
-        this.uploadDir = path.join(__dirname, '../../../public/studio/ranking-uploads');
+        // On Fly workers, never mkdir under /public (paths resolve outside /app)
+        if (process.env.JOB_ID || process.env.JOB_TYPE === 'ranking_assemble') {
+            this.tempDir = path.join('/tmp', 'ranking-temp');
+            this.outputDir = path.join('/tmp', 'ranking-final');
+            this.uploadDir = path.join('/tmp', 'ranking-uploads');
+        } else {
+            this.tempDir = path.join(__dirname, '../../../public/studio/generated/temp');
+            this.outputDir = path.join(__dirname, '../../../public/studio/generated/final');
+            this.uploadDir = path.join(__dirname, '../../../public/studio/ranking-uploads');
+        }
 
         for (var dir of [this.tempDir, this.outputDir, this.uploadDir]) {
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
