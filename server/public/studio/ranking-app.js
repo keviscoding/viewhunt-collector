@@ -233,7 +233,9 @@
                     return;
                 }
                 if (pollData.status === 'failed') {
-                    throw new Error(pollData.error || 'Assembly failed — credits refunded');
+                    var failErr = new Error(pollData.error || 'Assembly failed — credits refunded');
+                    failErr.jobFailed = true;
+                    throw failErr;
                 }
                 var msg = pollData.message || 'Processing...';
                 pt.textContent = msg;
@@ -243,7 +245,16 @@
                 // Poll faster while waiting on Fly heartbeat / early progress
                 pollInterval = /waiting for worker heartbeat|Fly machine start/i.test(msg) ? 2000 : 4000;
             } catch (e) {
-                if (e.message && (e.message.includes('Assembly') || e.message.includes('Auth failed') || e.message.includes('credits') || e.message.includes('failed'))) throw e;
+                // Real job failures must surface — do not hide behind "still waiting"
+                if (e && (e.jobFailed || (e.message && (
+                    e.message.includes('Assembly') ||
+                    e.message.includes('Auth failed') ||
+                    e.message.includes('credits') ||
+                    e.message.includes('failed') ||
+                    e.message.includes('Spaces') ||
+                    e.message.includes('uploaded') ||
+                    e.message.includes('Job was lost')
+                )))) throw e;
                 failCount++;
                 if (failCount > 5) pollInterval = 8000;
                 if (failCount > 10) pt.textContent = 'Server is busy processing your video... still waiting';

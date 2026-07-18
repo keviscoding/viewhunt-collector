@@ -19,7 +19,7 @@ APP_URL=https://your-app.ondigitalocean.app
 FLY_API_TOKEN=<fly deploy token or org token>
 FLY_ASSEMBLY_APP=viewhunt-assembly
 FLY_SCRAPER_APP=viewhunt-scraper
-FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXV6B21PD17QNAGM7NV51ZYR
+FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXV7CCA1XN5P7VX671RMNHJJ
 # Fly is ON by default. Set FLY_ASSEMBLY_ENABLED=0 to force DigitalOcean-only assembly.
 # If Fly is silent ~30s, DO still falls back locally.
 # SPACES_* must be set or finishes show MIME errors (broken local URL).

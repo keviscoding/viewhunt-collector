@@ -2433,7 +2433,28 @@ router.post('/internal/ranking-job-update', express.json({ limit: '2mb' }), asyn
     }
 });
 
-// Internal: Fly worker uploads assembled ranking video back to the app disk
+async function persistRankingResultFile(jobId, filename, buffer) {
+    var finalDir = path.join(__dirname, '../public/studio/generated/final');
+    if (!fs.existsSync(finalDir)) fs.mkdirSync(finalDir, { recursive: true });
+    var safeName = path.basename(filename || ('fly-' + Date.now() + '.mp4')).replace(/[^a-zA-Z0-9._-]/g, '_');
+    var outPath = path.join(finalDir, safeName);
+    fs.writeFileSync(outPath, buffer);
+
+    var videoUrl = '/studio/generated/final/' + safeName;
+    try {
+        var storage = require('../workers/storage');
+        if (storage.isConfigured()) {
+            var uploaded = await storage.uploadFile(outPath, 'studio/ranking-final');
+            if (uploaded) videoUrl = uploaded;
+        }
+    } catch (e) {
+        console.warn('Internal result storage upload failed (serving from app disk):', e.message);
+    }
+    console.log('Ranking result saved for job', jobId, '→', videoUrl, '(' + buffer.length + ' bytes)');
+    return videoUrl;
+}
+
+// Internal: Fly worker uploads assembled ranking video (base64 JSON — small files only)
 router.post('/internal/ranking-result', express.json({ limit: '200mb' }), async (req, res) => {
     try {
         var secret = req.headers['x-worker-secret'];
@@ -2445,26 +2466,30 @@ router.post('/internal/ranking-result', express.json({ limit: '200mb' }), async 
         var base64 = req.body.base64;
         if (!jobId || !base64) return res.status(400).json({ error: 'jobId and base64 required' });
 
-        var finalDir = path.join(__dirname, '../public/studio/generated/final');
-        if (!fs.existsSync(finalDir)) fs.mkdirSync(finalDir, { recursive: true });
-        var safeName = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
-        var outPath = path.join(finalDir, safeName);
-        fs.writeFileSync(outPath, Buffer.from(base64, 'base64'));
-
-        var videoUrl = '/studio/generated/final/' + safeName;
-        try {
-            var storage = require('../workers/storage');
-            if (storage.isConfigured()) {
-                var uploaded = await storage.uploadFile(outPath, 'studio/ranking-final');
-                if (uploaded) videoUrl = uploaded;
-            }
-        } catch (e) {
-            console.warn('Internal result storage upload failed:', e.message);
-        }
-
+        var videoUrl = await persistRankingResultFile(jobId, filename, Buffer.from(base64, 'base64'));
         res.json({ success: true, videoUrl: videoUrl });
     } catch (error) {
         console.error('Internal ranking-result error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Internal: Fly worker uploads assembled MP4 as raw binary (avoids base64 413 on DO)
+router.post('/internal/ranking-result-bin', express.raw({ type: 'application/octet-stream', limit: '80mb' }), async (req, res) => {
+    try {
+        var secret = req.headers['x-worker-secret'];
+        if (!process.env.WORKER_SECRET || secret !== process.env.WORKER_SECRET) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        var jobId = req.headers['x-job-id'];
+        var filename = req.headers['x-filename'] || ('fly-' + Date.now() + '.mp4');
+        if (!jobId) return res.status(400).json({ error: 'X-Job-Id required' });
+        if (!req.body || !req.body.length) return res.status(400).json({ error: 'empty body' });
+
+        var videoUrl = await persistRankingResultFile(jobId, filename, Buffer.from(req.body));
+        res.json({ success: true, videoUrl: videoUrl });
+    } catch (error) {
+        console.error('Internal ranking-result-bin error:', error);
         res.status(500).json({ error: error.message });
     }
 });

@@ -370,32 +370,23 @@ async function main() {
             );
         }
     }
-    // Fallback: POST finished file to DigitalOcean when Spaces missing or failed
-    // (small videos only — DO App Platform rejects large JSON bodies with HTTP 413)
+    // Fallback: POST finished MP4 to DigitalOcean as raw binary (avoids base64 413)
     const localBytes = fs.existsSync(localPath) ? fs.statSync(localPath).size : 0;
-    const maxAppUploadBytes = 8 * 1024 * 1024; // ~8MB raw → ~11MB base64
-    if (
-        !durableUpload &&
-        fs.existsSync(localPath) &&
-        localBytes > 0 &&
-        localBytes <= maxAppUploadBytes &&
-        (APP_INTERNAL_URL || APP_URL)
-    ) {
+    if (!durableUpload && fs.existsSync(localPath) && localBytes > 0 && (APP_INTERNAL_URL || APP_URL)) {
         try {
             await updateJob(db, { message: 'Fly: uploading finished video to app…' });
             const buf = fs.readFileSync(localPath);
             const uploadBase = APP_INTERNAL_URL || APP_URL;
-            const uploadRes = await fetchWithTimeout(uploadBase + '/api/studio/internal/ranking-result', {
+            console.log('App binary upload', { bytes: buf.length, to: uploadBase });
+            const uploadRes = await fetchWithTimeout(uploadBase + '/api/studio/internal/ranking-result-bin', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-Worker-Secret': (process.env.WORKER_SECRET || '').trim()
+                    'Content-Type': 'application/octet-stream',
+                    'X-Worker-Secret': (process.env.WORKER_SECRET || '').trim(),
+                    'X-Job-Id': String(JOB_ID),
+                    'X-Filename': localName
                 },
-                body: JSON.stringify({
-                    jobId: JOB_ID,
-                    filename: localName,
-                    base64: buf.toString('base64')
-                })
+                body: buf
             }, 180000);
             if (uploadRes.ok) {
                 const data = await uploadRes.json();
@@ -406,13 +397,11 @@ async function main() {
                 console.log('Uploaded result via app:', videoUrl);
             } else {
                 const errText = await uploadRes.text().catch(function() { return ''; });
-                console.error('App result upload HTTP', uploadRes.status, errText.slice(0, 300));
+                console.error('App binary upload HTTP', uploadRes.status, errText.slice(0, 300));
             }
         } catch (uploadErr) {
             console.warn('Could not upload result to app:', uploadErr.message);
         }
-    } else if (!durableUpload && localBytes > maxAppUploadBytes) {
-        console.warn('Skipping app base64 upload — file too large (' + localBytes + ' bytes); Spaces required');
     }
 
     // Fly disk is ephemeral — never report complete without a durable URL

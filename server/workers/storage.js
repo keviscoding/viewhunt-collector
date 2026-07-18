@@ -116,12 +116,13 @@ async function uploadFile(localPath, keyPrefix) {
         publicBase: getPublicBaseUrl()
     });
 
+    // Prefer no ACL first — some Spaces buckets reject canned ACLs with opaque UnknownError
     try {
-        await s3.send(new PutObjectCommand(Object.assign({}, baseParams, { ACL: 'public-read' })));
-    } catch (aclErr) {
-        console.warn('S3 upload with ACL failed, retrying without ACL:', formatS3Error(aclErr));
+        await s3.send(new PutObjectCommand(baseParams));
+    } catch (noAclErr) {
+        console.warn('S3 upload without ACL failed, retrying with public-read:', formatS3Error(noAclErr));
         try {
-            await s3.send(new PutObjectCommand(baseParams));
+            await s3.send(new PutObjectCommand(Object.assign({}, baseParams, { ACL: 'public-read' })));
         } catch (err2) {
             console.error('S3 upload failed:', formatS3Error(err2));
             throw err2;
