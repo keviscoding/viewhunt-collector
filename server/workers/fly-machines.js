@@ -111,8 +111,17 @@ async function startAssemblyMachine(jobId, payload) {
         AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || process.env.SPACES_KEY || '',
         AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || process.env.SPACES_SECRET || '',
         AWS_S3_BUCKET_NAME: process.env.AWS_S3_BUCKET_NAME || process.env.SPACES_BUCKET || '',
-        AWS_REGION: process.env.AWS_REGION || process.env.SPACES_REGION || 'us-east-1',
-        SPACES_ENDPOINT: process.env.SPACES_ENDPOINT || '',
+        // Prefer Spaces region (e.g. sfo3) so the worker does not talk to AWS S3 by mistake
+        AWS_REGION: process.env.SPACES_REGION || process.env.AWS_REGION || 'us-east-1',
+        SPACES_REGION: process.env.SPACES_REGION || process.env.AWS_REGION || '',
+        SPACES_BUCKET: process.env.SPACES_BUCKET || process.env.AWS_S3_BUCKET_NAME || '',
+        SPACES_KEY: process.env.SPACES_KEY || process.env.AWS_ACCESS_KEY_ID || '',
+        SPACES_SECRET: process.env.SPACES_SECRET || process.env.AWS_SECRET_ACCESS_KEY || '',
+        SPACES_ENDPOINT: process.env.SPACES_ENDPOINT || (
+            process.env.SPACES_REGION && /^[a-z]{3}\d$/i.test(process.env.SPACES_REGION)
+                ? ('https://' + process.env.SPACES_REGION + '.digitaloceanspaces.com')
+                : ''
+        ),
         SPACES_CDN_URL: process.env.SPACES_CDN_URL || '',
         GEMINI_API_KEY: (process.env.GEMINI_API_KEY || '').trim(),
         OPENAI_API_KEY: (process.env.OPENAI_API_KEY || '').trim(),
@@ -131,11 +140,16 @@ async function startAssemblyMachine(jobId, payload) {
         hasGemini: !!env.GEMINI_API_KEY,
         hasOpenAI: !!env.OPENAI_API_KEY,
         hasSpaces: !!(env.AWS_ACCESS_KEY_ID && env.AWS_S3_BUCKET_NAME),
+        spacesEndpoint: env.SPACES_ENDPOINT || '(auto/none)',
+        spacesRegion: env.AWS_REGION || '',
         hasWorkerSecret: true,
         hasPayload: !!payloadJson,
         appInternal: appInternal || '(none — set APP_INTERNAL_URL to *.ondigitalocean.app)',
         mongoHost: mongoUri ? ((mongoUri.match(/@([^/]+)/) || [])[1] || '(local)') : '(none)'
     });
+    if (env.AWS_ACCESS_KEY_ID && env.AWS_S3_BUCKET_NAME && !env.SPACES_ENDPOINT) {
+        console.warn('SPACES_ENDPOINT missing — Fly worker may fail Spaces upload (set https://REGION.digitaloceanspaces.com)');
+    }
 
     const machine = await flyRequest('POST', '/apps/' + app + '/machines', {
         name: 'rank-' + String(jobId).slice(-12),

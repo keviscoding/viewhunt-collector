@@ -19,26 +19,23 @@ APP_URL=https://your-app.ondigitalocean.app
 FLY_API_TOKEN=<fly deploy token or org token>
 FLY_ASSEMBLY_APP=viewhunt-assembly
 FLY_SCRAPER_APP=viewhunt-scraper
-FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXV570SHH0TT5SDJGRJ1Q4FQ
+FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXV5TJPWPHDGMD54XBPVDS6H
 # Fly is ON by default. Set FLY_ASSEMBLY_ENABLED=0 to force DigitalOcean-only assembly.
 # If Fly is silent ~30s, DO still falls back locally.
-# Prior crash: @google/genai top-level require exited the Fly worker (fixed via lazy-load).
-# Verified 2026-07-18: machine exit_code=0 with commentary module loaded on this image.
+# Also set SPACES_* (ENDPOINT/REGION/BUCKET/KEY/SECRET) so Fly can upload the finished MP4.
 FLY_SCRAPER_IMAGE=registry.fly.io/viewhunt-scraper:latest
 # Max concurrent ranking Fly machines (extras wait in Mongo queue)
 FLY_ASSEMBLY_MAX_CONCURRENT=3
 
-# Durable video storage (AWS S3 or DigitalOcean Spaces)
+# Durable video storage (DigitalOcean Spaces) — required for Fly to return the finished video
 # ViewHunt Spaces example (sfo3) — do NOT reuse channelrecipe-media:
-#   SPACES_KEY / SPACES_SECRET
-#   SPACES_BUCKET=viewhunt-media
-#   SPACES_REGION=sfo3
-#   SPACES_ENDPOINT=https://sfo3.digitaloceanspaces.com
+SPACES_KEY=
+SPACES_SECRET=
+SPACES_BUCKET=viewhunt-media
+SPACES_REGION=sfo3
+SPACES_ENDPOINT=https://sfo3.digitaloceanspaces.com
 # Public files resolve to https://viewhunt-media.sfo3.digitaloceanspaces.com/...
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_S3_BUCKET_NAME=
-AWS_REGION=us-east-1
+# If Spaces upload fails, Fly falls back to POSTing the file to DigitalOcean.
 
 # Scraper / collector / ranking AI
 YOUTUBE_API_KEY=

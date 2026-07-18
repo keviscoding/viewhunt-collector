@@ -355,10 +355,20 @@ async function main() {
     let videoUrl = result.videoUrl;
 
     if (fs.existsSync(localPath) && storage.isConfigured()) {
-        const uploaded = await storage.uploadFile(localPath, 'studio/ranking-final');
-        if (uploaded) videoUrl = uploaded;
-    } else if (fs.existsSync(localPath) && (APP_INTERNAL_URL || APP_URL)) {
         try {
+            const uploaded = await storage.uploadFile(localPath, 'studio/ranking-final');
+            if (uploaded) {
+                videoUrl = uploaded;
+                console.log('Uploaded result to object storage:', uploaded);
+            }
+        } catch (spacesErr) {
+            console.error('Object storage upload failed:', spacesErr && spacesErr.message ? spacesErr.message : spacesErr);
+        }
+    }
+    // Fallback: POST finished file to DigitalOcean when Spaces missing or failed
+    if (fs.existsSync(localPath) && videoUrl === result.videoUrl && (APP_INTERNAL_URL || APP_URL)) {
+        try {
+            await updateJob(db, { message: 'Fly: uploading finished video to app…' });
             const buf = fs.readFileSync(localPath);
             const uploadBase = APP_INTERNAL_URL || APP_URL;
             const uploadRes = await fetchWithTimeout(uploadBase + '/api/studio/internal/ranking-result', {
@@ -372,10 +382,14 @@ async function main() {
                     filename: localName,
                     base64: buf.toString('base64')
                 })
-            }, 120000);
+            }, 180000);
             if (uploadRes.ok) {
                 const data = await uploadRes.json();
                 if (data.videoUrl) videoUrl = data.videoUrl;
+                console.log('Uploaded result via app:', videoUrl);
+            } else {
+                const errText = await uploadRes.text().catch(function() { return ''; });
+                console.error('App result upload HTTP', uploadRes.status, errText.slice(0, 300));
             }
         } catch (uploadErr) {
             console.warn('Could not upload result to app:', uploadErr.message);
