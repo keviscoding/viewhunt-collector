@@ -11,7 +11,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 const OpenAI = require('openai');
-const ffmpegPath = require('ffmpeg-static');
+const ffmpegPath = process.env.FFMPEG_PATH || require('ffmpeg-static');
 
 class RankingCommentary {
     constructor() {

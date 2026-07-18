@@ -14,8 +14,8 @@ const execFileAsync = promisify(execFile);
 const fs = require('fs');
 const path = require('path');
 
-const ffmpegPath = require('ffmpeg-static');
-const ffprobePath = require('ffprobe-static').path;
+const ffmpegPath = process.env.FFMPEG_PATH || require('ffmpeg-static');
+const ffprobePath = process.env.FFPROBE_PATH || require('ffprobe-static').path;
 
 class RankingAssembler {
     constructor() {

@@ -139,6 +139,7 @@ async function startAssemblyMachine(jobId, payload) {
 
     const machine = await flyRequest('POST', '/apps/' + app + '/machines', {
         name: 'rank-' + String(jobId).slice(-12),
+        region: process.env.FLY_ASSEMBLY_REGION || 'iad',
         config: {
             image,
             env,
@@ -157,32 +158,67 @@ async function startAssemblyMachine(jobId, payload) {
         return { started: false, reason: 'Fly created machine without id' };
     }
 
-    // Wait briefly — catch immediate crash (bad image, missing deps) before UI hangs on heartbeat
+    // Wait until started — previous bug returned success while still "created", then worker
+    // crashed (exit 1) within ~10s with no heartbeat. Also force-start if stuck.
     var lastState = machine.state || 'created';
-    for (var attempt = 0; attempt < 8; attempt++) {
+    var sawStarted = false;
+    for (var attempt = 0; attempt < 40; attempt++) {
         await new Promise(function(r) { setTimeout(r, 1500); });
         try {
             var live = await flyRequest('GET', '/apps/' + app + '/machines/' + machineId);
             lastState = (live && live.state) || lastState;
-            if (lastState === 'started') break;
+
+            if (lastState === 'created' && attempt === 4) {
+                try {
+                    console.log('Fly machine still created — calling /start', machineId);
+                    await flyRequest('POST', '/apps/' + app + '/machines/' + machineId + '/start');
+                } catch (startErr) {
+                    console.warn('Fly machine start nudge failed:', startErr.message);
+                }
+            }
+
+            if (lastState === 'started') {
+                sawStarted = true;
+                // Give worker a few seconds to send heartbeat; if it dies immediately, fail here
+                await new Promise(function(r) { setTimeout(r, 5000); });
+                try {
+                    var after = await flyRequest('GET', '/apps/' + app + '/machines/' + machineId);
+                    lastState = (after && after.state) || lastState;
+                } catch (e) {
+                    if (/404|not found/i.test(e.message || '')) {
+                        return {
+                            started: false,
+                            reason: 'Fly worker crashed immediately after start (exit + auto_destroy). Check WORKER_SECRET and APP_INTERNAL_URL.'
+                        };
+                    }
+                }
+                if (lastState === 'started') break;
+            }
+
             if (lastState === 'destroyed' || lastState === 'stopped') {
-                console.error('Fly assembly machine died early:', machineId, lastState);
+                console.error('Fly assembly machine died early:', machineId, lastState, 'sawStarted=', sawStarted);
                 return {
                     started: false,
-                    reason: 'Fly machine exited immediately (' + lastState +
-                        '). Check FLY_ASSEMBLY_IMAGE is the latest build and WORKER_SECRET/APP_URL are set on DO.'
+                    reason: 'Fly worker exited immediately (' + lastState +
+                        '). Usually: HTTP callback blocked (IPv6) or module crash. Redeploy latest image.'
                 };
             }
         } catch (pollErr) {
-            // Machine may auto_destroy after exit — treat as failure
             if (/404|not found/i.test(pollErr.message || '')) {
                 return {
                     started: false,
                     reason: 'Fly machine vanished right after start (crash + auto_destroy). Update FLY_ASSEMBLY_IMAGE and redeploy DO.'
                 };
             }
-            break;
+            console.warn('Fly machine poll error:', pollErr.message);
         }
+    }
+
+    if (lastState !== 'started') {
+        return {
+            started: false,
+            reason: 'Fly machine never reached started (last state=' + lastState + '). Try again or check Fly capacity in region.'
+        };
     }
 
     console.log('Fly assembly machine started:', machineId, 'state=' + lastState, 'for job', jobId);

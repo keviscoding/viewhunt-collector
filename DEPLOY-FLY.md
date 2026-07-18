@@ -19,7 +19,7 @@ APP_URL=https://your-app.ondigitalocean.app
 FLY_API_TOKEN=<fly deploy token or org token>
 FLY_ASSEMBLY_APP=viewhunt-assembly
 FLY_SCRAPER_APP=viewhunt-scraper
-FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXV14QTXRQGSNMMFS4QNBYMZ
+FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXV22TQMSDVZHRV2HKH04HDB
 FLY_SCRAPER_IMAGE=registry.fly.io/viewhunt-scraper:latest
 # Max concurrent ranking Fly machines (extras wait in Mongo queue)
 FLY_ASSEMBLY_MAX_CONCURRENT=3

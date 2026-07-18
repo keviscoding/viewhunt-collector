@@ -5,10 +5,24 @@
  * Env: JOB_ID, APP_URL, APP_INTERNAL_URL, MONGODB_URI, WORKER_SECRET,
  *      JOB_PAYLOAD_JSON (optional — preferred), GEMINI/OPENAI/SPACES
  */
+
+// Fly is IPv6-first; DO App Platform / many HTTPS hosts are IPv4-only → fetch hangs without this
+try {
+    require('dns').setDefaultResultOrder('ipv4first');
+} catch (e) {}
+
 const JOB_ID = process.env.JOB_ID;
 const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
 const APP_INTERNAL_URL = (process.env.APP_INTERNAL_URL || '').replace(/\/$/, '');
 const MONGODB_URI = process.env.MONGODB_URI || process.env.V2_MONGO_URI || process.env.MONGO_URI;
+
+// Prefer system ffmpeg from the image (more reliable than npm static binaries on Fly)
+if (!process.env.FFMPEG_PATH && require('fs').existsSync('/usr/bin/ffmpeg')) {
+    process.env.FFMPEG_PATH = '/usr/bin/ffmpeg';
+}
+if (!process.env.FFPROBE_PATH && require('fs').existsSync('/usr/bin/ffprobe')) {
+    process.env.FFPROBE_PATH = '/usr/bin/ffprobe';
+}
 
 function appBases() {
     const bases = [];
@@ -23,7 +37,7 @@ function clipBaseUrl() {
 
 async function fetchWithTimeout(url, opts, ms) {
     const controller = new AbortController();
-    const timer = setTimeout(function() { controller.abort(); }, ms || 8000);
+    const timer = setTimeout(function() { controller.abort(); }, ms || 5000);
     try {
         return await fetch(url, Object.assign({}, opts, { signal: controller.signal }));
     } finally {
@@ -39,6 +53,7 @@ async function reportViaHttp(update) {
     for (var i = 0; i < bases.length; i++) {
         const base = bases[i];
         try {
+            console.log('HTTP heartbeat →', base);
             const res = await fetchWithTimeout(base + '/api/studio/internal/ranking-job-update', {
                 method: 'POST',
                 headers: {
@@ -46,7 +61,7 @@ async function reportViaHttp(update) {
                     'X-Worker-Secret': secret
                 },
                 body: JSON.stringify({ jobId: JOB_ID, update: update })
-            }, 8000);
+            }, 5000);
             const text = await res.text().catch(function() { return ''; });
             if (!res.ok) {
                 console.warn('HTTP job update failed via', base, res.status, text.slice(0, 200));
@@ -79,7 +94,8 @@ async function main() {
         appInternal: APP_INTERNAL_URL || '(none)',
         hasMongo: !!MONGODB_URI,
         hasWorkerSecret: !!(process.env.WORKER_SECRET || '').trim(),
-        hasPayload: !!process.env.JOB_PAYLOAD_JSON
+        hasPayload: !!process.env.JOB_PAYLOAD_JSON,
+        ffmpeg: process.env.FFMPEG_PATH || 'npm-static'
     });
 
     if (!JOB_ID) {
@@ -96,22 +112,38 @@ async function main() {
         (process.env.OPENAI_API_KEY ? ' (OpenAI ok)' : ' (no OPENAI_API_KEY)') +
         ' — starting…';
 
-    // CRITICAL: heartbeat BEFORE heavy requires (ffmpeg-static / @google/genai can crash load)
+    // CRITICAL: heartbeat BEFORE heavy requires
     const hbOk = await bootHeartbeat(heartbeatMsg);
+    console.log('Initial heartbeat result:', hbOk);
     if (!hbOk) {
-        console.warn('Initial HTTP heartbeat failed — continuing; will retry via Mongo');
+        console.warn('Initial HTTP heartbeat failed — will retry after loading modules / Mongo');
     }
 
-    // Lazy-load heavy modules only after heartbeat
     const path = require('path');
     const fs = require('fs');
     const https = require('https');
     const http = require('http');
     const { MongoClient, ObjectId } = require('mongodb');
-    const RankingAssembler = require('./lib/ranking/assembler');
-    const RankingCommentary = require('./lib/ranking/commentary');
-    const storage = require('./lib/storage');
-    const trialHelper = require('./lib/trial');
+
+    let RankingAssembler;
+    let RankingCommentary;
+    let storage;
+    let trialHelper;
+    try {
+        RankingAssembler = require('./lib/ranking/assembler');
+        RankingCommentary = require('./lib/ranking/commentary');
+        storage = require('./lib/storage');
+        trialHelper = require('./lib/trial');
+        console.log('Heavy modules loaded');
+    } catch (loadErr) {
+        console.error('Module load failed:', loadErr);
+        await reportViaHttp({
+            status: 'failed',
+            error: 'Fly worker failed to load modules: ' + loadErr.message,
+            commentaryRefundNeeded: true
+        });
+        throw loadErr;
+    }
 
     await bootHeartbeat(
         'Fly: worker online' +
@@ -185,7 +217,8 @@ async function main() {
         try {
             client = new MongoClient(MONGODB_URI, {
                 serverSelectionTimeoutMS: 12000,
-                connectTimeoutMS: 12000
+                connectTimeoutMS: 12000,
+                family: 4
             });
             await client.connect();
             db = client.db();
@@ -210,8 +243,7 @@ async function main() {
 
     if (!payload || !payload.clips || !payload.clips.length) {
         throw new Error(
-            'No job payload available (Mongo unreachable and JOB_PAYLOAD_JSON missing). ' +
-            'Redeploy DO with latest code so machines receive JOB_PAYLOAD_JSON.'
+            'No job payload available (Mongo unreachable and JOB_PAYLOAD_JSON missing).'
         );
     }
 
@@ -234,6 +266,7 @@ async function main() {
     assemblerEarly.outputDir = path.join(workDir, 'final');
     assemblerEarly.uploadDir = workDir;
     fs.mkdirSync(assemblerEarly.tempDir, { recursive: true });
+    fs.mkdirSync(assemblerEarly.outputDir, { recursive: true });
 
     const base = clipBaseUrl();
     for (var i = 0; i < clipsMeta.length; i++) {
@@ -382,7 +415,8 @@ main().catch(async function(err) {
             const { MongoClient, ObjectId } = require('mongodb');
             const client = new MongoClient(MONGODB_URI, {
                 serverSelectionTimeoutMS: 10000,
-                connectTimeoutMS: 10000
+                connectTimeoutMS: 10000,
+                family: 4
             });
             await client.connect();
             await client.db().collection('ranking_jobs').updateOne(
