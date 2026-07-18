@@ -125,8 +125,40 @@ async function startAssemblyMachine(jobId) {
     });
 
     const machineId = machine && machine.id;
-    console.log('Fly assembly machine started:', machineId, 'for job', jobId);
-    return { started: true, machineId: machineId || null };
+    if (!machineId) {
+        return { started: false, reason: 'Fly created machine without id' };
+    }
+
+    // Wait briefly — catch immediate crash (bad image, missing deps) before UI hangs on heartbeat
+    var lastState = machine.state || 'created';
+    for (var attempt = 0; attempt < 8; attempt++) {
+        await new Promise(function(r) { setTimeout(r, 1500); });
+        try {
+            var live = await flyRequest('GET', '/apps/' + app + '/machines/' + machineId);
+            lastState = (live && live.state) || lastState;
+            if (lastState === 'started') break;
+            if (lastState === 'destroyed' || lastState === 'stopped') {
+                console.error('Fly assembly machine died early:', machineId, lastState);
+                return {
+                    started: false,
+                    reason: 'Fly machine exited immediately (' + lastState +
+                        '). Check FLY_ASSEMBLY_IMAGE is the latest build and WORKER_SECRET/APP_URL are set on DO.'
+                };
+            }
+        } catch (pollErr) {
+            // Machine may auto_destroy after exit — treat as failure
+            if (/404|not found/i.test(pollErr.message || '')) {
+                return {
+                    started: false,
+                    reason: 'Fly machine vanished right after start (crash + auto_destroy). Update FLY_ASSEMBLY_IMAGE and redeploy DO.'
+                };
+            }
+            break;
+        }
+    }
+
+    console.log('Fly assembly machine started:', machineId, 'state=' + lastState, 'for job', jobId);
+    return { started: true, machineId: machineId, state: lastState };
 }
 
 /**

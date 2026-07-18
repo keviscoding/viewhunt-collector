@@ -717,13 +717,20 @@ async function recoverStaleTasks() {
         console.log('📋 Recovered task ' + task._id + ': ' + imagesDelivered + ' imgs, ' + videosDelivered + ' vids, refunded ' + refundAmount + ' credits');
     }
 
-    // 2. Recover ranking assembly jobs stuck in 'processing'
+    // 2. Recover LOCAL ranking jobs stuck in 'processing'.
+    // Fly jobs keep running on Machines — do NOT cancel/refund them on DO restart.
     var staleRankingJobs = await db.collection('ranking_jobs').find({
-        status: 'processing'
+        status: 'processing',
+        $or: [
+            { worker: 'local' },
+            { worker: { $exists: false } },
+            { worker: null }
+        ]
     }).toArray();
 
     for (var j = 0; j < staleRankingJobs.length; j++) {
         var rJob = staleRankingJobs[j];
+        if (rJob.worker === 'fly') continue;
         var rRefundAmount = rJob.creditsCharged || credits.COSTS.ranking_assembly; // fallback to 2 if not tracked
         try {
             var rUserId = rJob.userId;
@@ -749,13 +756,36 @@ async function recoverStaleTasks() {
 
         await db.collection('ranking_jobs').updateOne(
             { _id: rJob._id },
-            { $set: { status: 'failed', error: 'Server restarted during assembly. Credits refunded — please try again.', updatedAt: new Date() } }
+            { $set: { status: 'failed', error: 'Server restarted during local assembly. Credits refunded — please try again.', updatedAt: new Date() } }
         );
+    }
+
+    // Re-attach queued Fly jobs after restart (slots may be free)
+    var flyResumed = 0;
+    try {
+        var flyMachines = require('../workers/fly-machines');
+        flyResumed = await flyMachines.drainFlyAssemblyQueue(db, async function(jobId, update) {
+            await db.collection('ranking_jobs').updateOne(
+                { _id: new ObjectId(jobId) },
+                { $set: Object.assign({}, update, { updatedAt: new Date() }) }
+            );
+        });
+        if (flyResumed > 0) console.log('📋 Resumed ' + flyResumed + ' queued Fly ranking job(s) after restart');
+    } catch (flyDrainErr) {
+        console.warn('Fly queue drain after restart skipped:', flyDrainErr.message);
+    }
+
+    var flyStillRunning = await db.collection('ranking_jobs').countDocuments({
+        status: { $in: ['processing', 'queued'] },
+        worker: 'fly'
+    });
+    if (flyStillRunning > 0) {
+        console.log('📋 Leaving ' + flyStillRunning + ' Fly ranking job(s) running/queued after DO restart');
     }
 
     var totalRecovered = staleTasks.length + staleRankingJobs.length;
     if (totalRecovered > 0) {
-        console.log('📋 Recovered ' + totalRecovered + ' stale tasks/jobs after restart (with credit refunds)');
+        console.log('📋 Recovered ' + totalRecovered + ' stale local tasks/jobs after restart (with credit refunds)');
     }
 }
 

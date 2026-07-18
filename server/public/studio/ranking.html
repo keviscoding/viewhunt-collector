@@ -32,6 +32,11 @@
         .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:1.5rem;margin-bottom:1.25rem}
         .card-title{font-size:1.1rem;font-weight:700;margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem}
         .card-desc{font-size:0.85rem;color:var(--text-muted);line-height:1.5;margin-bottom:1rem}
+        .resume-banner{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0.75rem;margin-bottom:1rem;padding:0.85rem 1rem;border-radius:10px;border:1px solid rgba(52,211,153,0.35);background:rgba(52,211,153,0.08)}
+        .resume-banner.hidden{display:none}
+        .resume-banner-text{font-size:0.85rem;color:var(--text);flex:1;min-width:200px}
+        .resume-banner-actions{display:flex;gap:0.5rem;flex-wrap:wrap}
+        .btn-sm{font-size:0.78rem;padding:0.4rem 0.75rem}
         .steps{display:flex;gap:0.5rem;margin-bottom:1.5rem}
         .step{flex:1;height:4px;border-radius:2px;background:var(--surface-3);transition:background 0.3s}
         .step.active{background:var(--accent)}
@@ -197,6 +202,7 @@
         <div class="step" id="step-3"></div>
         <div class="step" id="step-4"></div>
     </div>
+    <div id="resume-banner" class="resume-banner hidden" aria-live="polite"></div>
 
     <!-- STEP 1: Upload -->
     <div id="screen-upload" class="card">

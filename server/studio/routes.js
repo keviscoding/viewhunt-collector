@@ -1637,8 +1637,195 @@ router.post('/ranking/clip-info', requireAuth, async (req, res) => {
     }
 });
 
+// ==================== RANKING DRAFTS (persist workflow across reloads) ====================
+
+function rankingDraftFromBody(body) {
+    body = body || {};
+    return {
+        clips: Array.isArray(body.clips) ? body.clips.map(function(c) {
+            return {
+                filename: c.filename,
+                originalName: c.originalName || c.filename,
+                url: c.url || ('/studio/ranking-uploads/' + encodeURIComponent(c.filename)),
+                duration: typeof c.duration === 'number' ? c.duration : null,
+                originalDuration: typeof c.originalDuration === 'number' ? c.originalDuration : (c.duration || null),
+                startTime: typeof c.startTime === 'number' ? c.startTime : 0,
+                endTime: c.endTime != null ? c.endTime : null,
+                label: c.label || '',
+                textCleaned: !!c.textCleaned
+            };
+        }).filter(function(c) { return c.filename; }) : [],
+        title: body.title || { text: '', highlightWord: '' },
+        layout: body.layout || {},
+        colorPalette: body.colorPalette || 'yellow',
+        checkeredMode: !!body.checkeredMode,
+        subtitleFont: body.subtitleFont || 'Arial',
+        subtitleY: body.subtitleY != null ? body.subtitleY : 55,
+        subtitleColor: body.subtitleColor || 'yellow',
+        stylePreset: body.stylePreset || 'classic',
+        commentary: !!body.commentary,
+        voiceName: body.voiceName || 'Kore',
+        currentStep: body.currentStep || 1
+    };
+}
+
+// Save / update the user's ranking draft (clips, trims, title, layout)
+router.put('/ranking/draft', requireAuth, express.json({ limit: '2mb' }), async (req, res) => {
+    try {
+        var userId = String(req.user.userId);
+        var draft = rankingDraftFromBody(req.body);
+        var db = await getDb();
+        await db.collection('ranking_drafts').updateOne(
+            { userId: userId },
+            {
+                $set: {
+                    userId: userId,
+                    draft: draft,
+                    updatedAt: new Date()
+                },
+                $setOnInsert: { createdAt: new Date() }
+            },
+            { upsert: true }
+        );
+        res.json({ success: true, clipCount: draft.clips.length, updatedAt: new Date() });
+    } catch (error) {
+        console.error('Ranking draft save error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.get('/ranking/draft', requireAuth, async (req, res) => {
+    try {
+        var userId = String(req.user.userId);
+        var db = await getDb();
+        var doc = await db.collection('ranking_drafts').findOne({ userId: userId });
+        if (!doc || !doc.draft) return res.json({ draft: null });
+        // Drop clips whose files no longer exist on disk
+        var clips = (doc.draft.clips || []).filter(function(c) {
+            return c.filename && fs.existsSync(path.join(rankingUploadDir, c.filename));
+        });
+        res.json({
+            draft: Object.assign({}, doc.draft, { clips: clips }),
+            updatedAt: doc.updatedAt
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.delete('/ranking/draft', requireAuth, async (req, res) => {
+    try {
+        var db = await getDb();
+        await db.collection('ranking_drafts').deleteOne({ userId: String(req.user.userId) });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Active Fly/local job + draft for resume after refresh / DO restart
+router.get('/ranking/session', requireAuth, async (req, res) => {
+    try {
+        var userId = String(req.user.userId);
+        var db = await getDb();
+        var activeJob = await db.collection('ranking_jobs').findOne(
+            {
+                userId: userId,
+                status: { $in: ['queued', 'processing'] }
+            },
+            { sort: { createdAt: -1 } }
+        );
+        var draftDoc = await db.collection('ranking_drafts').findOne({ userId: userId });
+        var draft = null;
+        if (draftDoc && draftDoc.draft) {
+            var clips = (draftDoc.draft.clips || []).filter(function(c) {
+                return c.filename && fs.existsSync(path.join(rankingUploadDir, c.filename));
+            });
+            draft = Object.assign({}, draftDoc.draft, { clips: clips });
+        }
+        // Also offer last completed job payload as regenerate source
+        var lastComplete = null;
+        if (!draft || !draft.clips || !draft.clips.length) {
+            lastComplete = await db.collection('ranking_jobs').findOne(
+                { userId: userId, status: 'complete', 'payload.clips.0': { $exists: true } },
+                { sort: { createdAt: -1 } }
+            );
+        }
+        res.json({
+            activeJob: activeJob ? {
+                jobId: String(activeJob._id),
+                status: activeJob.status,
+                message: activeJob.message || '',
+                worker: activeJob.worker || null,
+                createdAt: activeJob.createdAt
+            } : null,
+            draft: draft,
+            draftUpdatedAt: draftDoc ? draftDoc.updatedAt : null,
+            lastCompleteJobId: lastComplete ? String(lastComplete._id) : null
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Restore editor state from a past job's payload (regenerate without re-upload)
+router.post('/ranking/restore-job/:jobId', requireAuth, async (req, res) => {
+    try {
+        var userId = String(req.user.userId);
+        var job = await getRankingJob(req.params.jobId);
+        if (!job) return res.status(404).json({ error: 'Job not found' });
+        if (job.userId !== userId) return res.status(403).json({ error: 'Not your job' });
+        var payload = job.payload || {};
+        var clips = (payload.clips || []).map(function(c) {
+            return {
+                filename: c.filename,
+                originalName: c.filename,
+                url: '/studio/ranking-uploads/' + encodeURIComponent(c.filename),
+                duration: c.originalDuration || null,
+                originalDuration: c.originalDuration || null,
+                startTime: c.startTime || 0,
+                endTime: c.endTime != null ? c.endTime : null,
+                label: c.label || ''
+            };
+        }).filter(function(c) {
+            return c.filename && fs.existsSync(path.join(rankingUploadDir, c.filename));
+        });
+        if (!clips.length) {
+            return res.status(404).json({ error: 'Clip files from that job are no longer on the server' });
+        }
+        var draft = rankingDraftFromBody({
+            clips: clips,
+            title: payload.title || {},
+            layout: {
+                listX: payload.layout && payload.layout.listXPercent != null ? payload.layout.listXPercent : 5,
+                titleY: payload.layout && payload.layout.titleYPercent != null ? payload.layout.titleYPercent : 6,
+                titleSize: payload.layout && payload.layout.titleFontSize != null ? payload.layout.titleFontSize : 48,
+                lineSpacing: payload.layout && payload.layout.lineSpacing != null ? payload.layout.lineSpacing : 65,
+                numSize: payload.layout && payload.layout.numSize != null ? payload.layout.numSize : 50
+            },
+            colorPalette: payload.colorPalette,
+            checkeredMode: payload.checkeredMode,
+            subtitleFont: payload.subtitleFont,
+            subtitleY: payload.subtitleY,
+            subtitleColor: payload.subtitleColor,
+            commentary: payload.enableCommentary,
+            voiceName: payload.voiceName,
+            currentStep: 3
+        });
+        var db = await getDb();
+        await db.collection('ranking_drafts').updateOne(
+            { userId: userId },
+            { $set: { userId: userId, draft: draft, updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } },
+            { upsert: true }
+        );
+        res.json({ success: true, draft: draft });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Assemble ranking video — BACKGROUND JOB
-// Persisted to MongoDB so jobs survive server restarts
+// Persisted to MongoDB so jobs survive server restarts (Fly workers are not cancelled on DO reboot)
 
 async function createRankingJob(userId, status, message) {
     var db = await getDb();

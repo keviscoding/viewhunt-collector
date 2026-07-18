@@ -70,6 +70,292 @@
         return res;
     }
 
+    var draftSaveTimer = null;
+    var activeJobId = null;
+    var DRAFT_LS_KEY = 'viewhunt_ranking_draft_v1';
+
+    function collectDraft() {
+        var titleEl = document.getElementById('title-text');
+        var hlEl = document.getElementById('title-highlight');
+        var voiceEl = document.getElementById('voice-picker');
+        var fontEl = document.getElementById('subtitle-font');
+        var subYEl = document.getElementById('subtitle-y');
+        var commentaryEl = document.getElementById('commentary-toggle');
+        return {
+            clips: clips.filter(function(c) { return c.filename && !c.uploading; }).map(function(c) {
+                return {
+                    filename: c.filename,
+                    originalName: c.originalName || c.filename,
+                    url: c.url || ('/studio/ranking-uploads/' + encodeURIComponent(c.filename)),
+                    duration: c.duration || c.originalDuration || 0,
+                    originalDuration: c.originalDuration || c.duration || 0,
+                    startTime: c.startTime || 0,
+                    endTime: c.endTime != null ? c.endTime : (c.duration || null),
+                    label: c.label || '',
+                    textCleaned: !!c.textCleaned
+                };
+            }),
+            title: {
+                text: titleEl ? titleEl.value : '',
+                highlightWord: hlEl ? hlEl.value : ''
+            },
+            layout: layout,
+            colorPalette: colorPalette,
+            checkeredMode: checkeredMode,
+            subtitleFont: fontEl ? fontEl.value : 'Arial',
+            subtitleY: subYEl ? (parseInt(subYEl.value, 10) || 55) : 55,
+            subtitleColor: subtitleColor,
+            stylePreset: stylePreset,
+            commentary: commentaryEl ? !!commentaryEl.checked : false,
+            voiceName: voiceEl ? voiceEl.value : 'Kore',
+            currentStep: currentStep
+        };
+    }
+
+    function scheduleDraftSave() {
+        if (draftSaveTimer) clearTimeout(draftSaveTimer);
+        draftSaveTimer = setTimeout(function() { saveDraftNow(); }, 800);
+    }
+
+    async function saveDraftNow() {
+        var draft = collectDraft();
+        try {
+            localStorage.setItem(DRAFT_LS_KEY, JSON.stringify({ draft: draft, savedAt: Date.now() }));
+        } catch (e) {}
+        if (!draft.clips.length && !(draft.title && draft.title.text)) return;
+        try {
+            await apiFetch('/api/studio/ranking/draft', {
+                method: 'PUT',
+                headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+                body: JSON.stringify(draft)
+            });
+        } catch (e) {
+            console.warn('Draft save failed:', e.message);
+        }
+    }
+
+    function applyDraft(draft) {
+        if (!draft) return false;
+        clips = (draft.clips || []).map(function(c) {
+            return {
+                filename: c.filename,
+                originalName: c.originalName || c.filename,
+                url: c.url || ('/studio/ranking-uploads/' + encodeURIComponent(c.filename)),
+                duration: c.duration || c.originalDuration || 0,
+                originalDuration: c.originalDuration || c.duration || 0,
+                startTime: c.startTime || 0,
+                endTime: c.endTime != null ? c.endTime : (c.duration || 0),
+                label: c.label || '',
+                textCleaned: !!c.textCleaned
+            };
+        });
+        if (draft.layout) {
+            layout = {
+                listX: draft.layout.listX != null ? draft.layout.listX : 5,
+                titleY: draft.layout.titleY != null ? draft.layout.titleY : 6,
+                titleSize: draft.layout.titleSize != null ? draft.layout.titleSize : 48,
+                lineSpacing: draft.layout.lineSpacing != null ? draft.layout.lineSpacing : 65,
+                numSize: draft.layout.numSize != null ? draft.layout.numSize : 50
+            };
+        }
+        colorPalette = draft.colorPalette || 'yellow';
+        checkeredMode = !!draft.checkeredMode;
+        subtitleColor = draft.subtitleColor || 'yellow';
+        stylePreset = draft.stylePreset || 'classic';
+        var titleEl = document.getElementById('title-text');
+        var hlEl = document.getElementById('title-highlight');
+        if (titleEl) titleEl.value = (draft.title && draft.title.text) || '';
+        if (hlEl) hlEl.value = (draft.title && draft.title.highlightWord) || '';
+        var commentaryEl = document.getElementById('commentary-toggle');
+        if (commentaryEl) commentaryEl.checked = !!draft.commentary;
+        var voiceEl = document.getElementById('voice-picker');
+        if (voiceEl) {
+            voiceEl.value = draft.voiceName || 'Kore';
+            voiceEl.style.display = draft.commentary ? '' : 'none';
+        }
+        var fontEl = document.getElementById('subtitle-font');
+        if (fontEl) fontEl.value = draft.subtitleFont || 'Arial';
+        var subYEl = document.getElementById('subtitle-y');
+        var subYVal = document.getElementById('subtitle-y-val');
+        if (subYEl) {
+            subYEl.value = draft.subtitleY != null ? draft.subtitleY : 55;
+            if (subYVal) subYVal.textContent = subYEl.value + '%';
+        }
+        var subSettings = document.getElementById('subtitle-settings');
+        if (subSettings) subSettings.style.display = draft.commentary ? '' : 'none';
+        var checkered = document.getElementById('checkered-toggle');
+        if (checkered) checkered.checked = checkeredMode;
+        document.querySelectorAll('.color-swatch').forEach(function(b) {
+            b.classList.toggle('active', b.getAttribute('data-color') === colorPalette);
+        });
+        document.querySelectorAll('.sub-color-swatch').forEach(function(b) {
+            b.classList.toggle('active', b.getAttribute('data-color') === subtitleColor);
+        });
+        renderClipList();
+        updateNextButton();
+        var step = draft.currentStep || (clips.length ? 3 : 1);
+        if (step >= 3 && clips.length) {
+            goToStep(3);
+            renderOrderList();
+            renderPreview('preview-dash');
+        } else if (step === 2 && clips.length) {
+            currentTrimIndex = 0;
+            goToStep(2);
+            showTrimClip(0);
+        } else {
+            goToStep(1);
+        }
+        return clips.length > 0;
+    }
+
+    async function pollJobUntilDone(jobId, pf, pt, btn, enableCommentary) {
+        activeJobId = jobId;
+        try { localStorage.setItem('viewhunt_ranking_active_job', jobId); } catch (e) {}
+        var failCount = 0;
+        var pollInterval = 4000;
+        while (true) {
+            await new Promise(function(r) { setTimeout(r, pollInterval); });
+            try {
+                var controller = new AbortController();
+                var pollTimeout = setTimeout(function() { controller.abort(); }, 15000);
+                var pollRes = await apiFetch('/api/studio/ranking/assemble/status/' + jobId, { signal: controller.signal });
+                clearTimeout(pollTimeout);
+                if (pollRes.status === 404) {
+                    throw new Error('Assembly job was lost. Please try again.');
+                }
+                var pollData = await pollRes.json();
+                if (pollData.status === 'complete' && pollData.result) {
+                    pf.style.width = '100%'; pt.textContent = 'Done!';
+                    activeJobId = null;
+                    try { localStorage.removeItem('viewhunt_ranking_active_job'); } catch (e) {}
+                    setTimeout(function() { showResult(pollData.result); }, 400);
+                    loadCredits();
+                    return;
+                }
+                if (pollData.status === 'failed') {
+                    throw new Error(pollData.error || 'Assembly failed — credits refunded');
+                }
+                var msg = pollData.message || 'Processing...';
+                pt.textContent = msg;
+                var currentPct = parseInt(pf.style.width, 10) || 30;
+                if (currentPct < 90) pf.style.width = Math.min(90, currentPct + 2) + '%';
+                failCount = 0;
+                pollInterval = 4000;
+            } catch (e) {
+                if (e.message && (e.message.includes('Assembly') || e.message.includes('Auth failed') || e.message.includes('credits') || e.message.includes('failed'))) throw e;
+                failCount++;
+                if (failCount > 5) pollInterval = 8000;
+                if (failCount > 10) pt.textContent = 'Server is busy processing your video... still waiting';
+                if (failCount >= 90) throw new Error('Lost connection to server. Your video may still be processing — reopen this page to resume.');
+            }
+        }
+    }
+
+    function showResumeBanner(text, actionsHtml) {
+        var el = document.getElementById('resume-banner');
+        if (!el) return;
+        el.classList.remove('hidden');
+        el.innerHTML = '<div class="resume-banner-text">' + text + '</div><div class="resume-banner-actions">' + (actionsHtml || '') + '</div>';
+    }
+
+    function hideResumeBanner() {
+        var el = document.getElementById('resume-banner');
+        if (!el) return;
+        el.classList.add('hidden');
+        el.innerHTML = '';
+    }
+
+    async function resumeSession() {
+        try {
+            var res = await apiFetch('/api/studio/ranking/session');
+            if (!res.ok) return;
+            var data = await res.json();
+
+            if (data.activeJob && data.activeJob.jobId) {
+                showResumeBanner(
+                    'A ranking video is still assembling' +
+                        (data.activeJob.message ? ' — ' + escapeHtml(data.activeJob.message) : '') + '.',
+                    '<button type="button" class="btn btn-primary btn-sm" id="btn-resume-job">Resume progress</button>'
+                );
+                var resumeBtn = document.getElementById('btn-resume-job');
+                if (resumeBtn) {
+                    resumeBtn.addEventListener('click', function() {
+                        hideResumeBanner();
+                        goToStep(4);
+                        document.getElementById('assembly-progress').classList.remove('hidden');
+                        var pf = document.getElementById('progress-fill');
+                        var pt = document.getElementById('progress-text');
+                        var btn = document.getElementById('btn-assemble');
+                        pf.style.width = '40%';
+                        pt.textContent = data.activeJob.message || 'Resuming…';
+                        btn.disabled = true;
+                        pollJobUntilDone(data.activeJob.jobId, pf, pt, btn, false).catch(function(err) {
+                            pf.style.width = '0%';
+                            pt.textContent = 'Error: ' + err.message;
+                            btn.disabled = false;
+                            btn.textContent = assembleButtonLabel(false);
+                            loadCredits();
+                        });
+                    });
+                }
+            }
+
+            if (data.draft && data.draft.clips && data.draft.clips.length) {
+                if (!data.activeJob) {
+                    showResumeBanner(
+                        'Restored your saved ranking project (' + data.draft.clips.length + ' clips).',
+                        '<button type="button" class="btn btn-secondary btn-sm" id="btn-dismiss-draft">Dismiss</button>'
+                    );
+                    var dismiss = document.getElementById('btn-dismiss-draft');
+                    if (dismiss) dismiss.addEventListener('click', hideResumeBanner);
+                }
+                applyDraft(data.draft);
+                return;
+            }
+
+            // Fallback: localStorage draft
+            try {
+                var raw = localStorage.getItem(DRAFT_LS_KEY);
+                if (raw) {
+                    var parsed = JSON.parse(raw);
+                    if (parsed && parsed.draft && parsed.draft.clips && parsed.draft.clips.length) {
+                        applyDraft(parsed.draft);
+                        showResumeBanner('Restored local draft (' + parsed.draft.clips.length + ' clips).',
+                            '<button type="button" class="btn btn-secondary btn-sm" id="btn-dismiss-draft">Dismiss</button>');
+                        var d2 = document.getElementById('btn-dismiss-draft');
+                        if (d2) d2.addEventListener('click', hideResumeBanner);
+                    }
+                }
+            } catch (e) {}
+
+            if (data.lastCompleteJobId && (!clips || !clips.length)) {
+                showResumeBanner(
+                    'Reload clips & settings from your last completed ranking video?',
+                    '<button type="button" class="btn btn-primary btn-sm" id="btn-restore-last">Reload last project</button>' +
+                    '<button type="button" class="btn btn-secondary btn-sm" id="btn-dismiss-draft">No thanks</button>'
+                );
+                var restoreBtn = document.getElementById('btn-restore-last');
+                if (restoreBtn) {
+                    restoreBtn.addEventListener('click', async function() {
+                        try {
+                            var r = await apiFetch('/api/studio/ranking/restore-job/' + data.lastCompleteJobId, { method: 'POST' });
+                            var rd = await r.json();
+                            if (!r.ok) throw new Error(rd.error || 'Restore failed');
+                            applyDraft(rd.draft);
+                            hideResumeBanner();
+                        } catch (err) {
+                            alert(err.message);
+                        }
+                    });
+                }
+                var d3 = document.getElementById('btn-dismiss-draft');
+                if (d3) d3.addEventListener('click', hideResumeBanner);
+            }
+        } catch (e) {
+            console.warn('Session resume skipped:', e.message);
+        }
+    }
+
     function assembleButtonLabel(enableCommentary) {
         if (trialInfo && trialInfo.active) {
             var left = trialInfo.rankingVideosLeft;
@@ -145,6 +431,7 @@
             s.className = 'step';
             if (i < step) s.classList.add('done'); else if (i === step) s.classList.add('active');
         }
+        if (step < 4) scheduleDraftSave();
     }
 
     // ==================== UPLOAD ====================
@@ -401,6 +688,7 @@
     }
 
     function removeClip(index) {
+        scheduleDraftSave();
         var clip = clips[index];
         if (clip) stopElapsedTicker(clip);
         if (clip && clip.filename) apiFetch('/api/studio/ranking/clip/' + clip.filename, { method: 'DELETE' }).catch(function(){});
@@ -1075,51 +1363,11 @@
 
             var jobId = aData.jobId;
             pf.style.width = '30%';
-            pt.textContent = enableCommentary ? 'Generating AI commentary... you can close this tab' : 'Assembling video... you can close this tab';
-
-            // Step 3: Poll for completion
-            var failCount = 0;
-            var pollInterval = 4000;
-            while (true) {
-                await new Promise(function(r) { setTimeout(r, pollInterval); });
-                try {
-                    var controller = new AbortController();
-                    var pollTimeout = setTimeout(function() { controller.abort(); }, 15000);
-                    var pollRes = await apiFetch('/api/studio/ranking/assemble/status/' + jobId, { signal: controller.signal });
-                    clearTimeout(pollTimeout);
-                    if (pollRes.status === 404) {
-                        // Job not found — server may have restarted during assembly
-                        throw new Error('Assembly job was lost (server restarted). Please try again — credits were refunded.');
-                    }
-                    var pollData = await pollRes.json();
-
-                    if (pollData.status === 'complete' && pollData.result) {
-                        pf.style.width = '100%'; pt.textContent = 'Done!';
-                        setTimeout(function() { showResult(pollData.result); }, 400);
-                        loadCredits();
-                        return;
-                    }
-                    if (pollData.status === 'failed') {
-                        throw new Error(pollData.error || 'Assembly failed — credits refunded');
-                    }
-
-                    // Update progress message
-                    var msg = pollData.message || 'Processing...';
-                    pt.textContent = msg;
-                    // Animate progress bar between 30-90%
-                    var currentPct = parseInt(pf.style.width) || 30;
-                    if (currentPct < 90) pf.style.width = Math.min(90, currentPct + 2) + '%';
-                    failCount = 0;
-                    pollInterval = 4000;
-                } catch (e) {
-                    if (e.message && (e.message.includes('Assembly') || e.message.includes('Auth failed') || e.message.includes('credits'))) throw e;
-                    failCount++;
-                    // Back off: after 5 failures, slow down to 8s polls
-                    if (failCount > 5) pollInterval = 8000;
-                    if (failCount > 10) pt.textContent = 'Server is busy processing your video... still waiting';
-                    if (failCount >= 90) throw new Error('Lost connection to server. Your video may still be processing — check back in a minute.');
-                }
-            }
+            pt.textContent = enableCommentary
+                ? 'Generating AI commentary... you can close this tab — progress is saved'
+                : 'Assembling video... you can close this tab — progress is saved';
+            await saveDraftNow();
+            await pollJobUntilDone(jobId, pf, pt, btn, enableCommentary);
         } catch (err) {
             pf.style.width = '0%'; pt.textContent = 'Error: ' + err.message;
             btn.disabled = false; btn.textContent = assembleButtonLabel(enableCommentary); loadCredits();
@@ -1144,9 +1392,21 @@
         loadCredits(); initUpload(); initUrlImport(); initTimeline(); initPlayControls(); initTrimControls(); initTitleControls(); initPositionControls(); initStylePresets();
         document.getElementById('btn-next-trim').addEventListener('click', startTrimming);
         document.getElementById('btn-assemble').addEventListener('click', assembleVideo);
+        ['title-text', 'title-highlight', 'voice-picker', 'subtitle-font', 'subtitle-y', 'commentary-toggle'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.addEventListener('change', scheduleDraftSave);
+            if (el) el.addEventListener('input', scheduleDraftSave);
+        });
         document.getElementById('btn-new').addEventListener('click', function() {
             clips = []; currentTrimIndex = 0; layout = { listX: 5, titleY: 6, titleSize: 48, lineSpacing: 65, numSize: 50 };
             colorPalette = 'yellow'; checkeredMode = false; subtitleColor = 'yellow';
+            activeJobId = null;
+            hideResumeBanner();
+            try {
+                localStorage.removeItem(DRAFT_LS_KEY);
+                localStorage.removeItem('viewhunt_ranking_active_job');
+            } catch (e) {}
+            apiFetch('/api/studio/ranking/draft', { method: 'DELETE' }).catch(function() {});
             renderClipList(); updateNextButton();
             document.getElementById('title-text').value = ''; document.getElementById('title-highlight').value = '';
             document.getElementById('result-video').classList.add('hidden'); document.getElementById('result-info').classList.add('hidden');
@@ -1177,6 +1437,7 @@
             goToStep(1);
         });
         goToStep(1);
+        resumeSession();
     }
 
     window._rk = {

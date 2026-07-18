@@ -76,10 +76,19 @@ fly deploy -c fly.scraper.toml --build-only --push
 Set `FLY_ASSEMBLY_IMAGE` / `FLY_SCRAPER_IMAGE` to the image refs printed by Fly
 (or `registry.fly.io/viewhunt-assembly:latest`).
 
-**Required for heartbeats:** `WORKER_SECRET` must match on DigitalOcean (workers
-POST progress to `/api/studio/internal/ranking-job-update`). Also set
-`APP_URL=https://viewhunt.app`. If Mongo Atlas has IP allowlisting, either allow
-Fly egress or rely on that HTTP callback (preferred).
+**Required for heartbeats (all of these on DigitalOcean, then redeploy DO):**
+1. `WORKER_SECRET` — random string you generate (`openssl rand -hex 32`)
+2. `APP_URL=https://viewhunt.app`
+3. `FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXTXPBGBK0SACQAB5XR8AWGE`
+4. App code from `main` that includes `/api/studio/internal/ranking-job-update`
+
+`viewhunt-assembly` showing **Suspended / no machines** on Fly is normal when idle —
+workers are created per job and auto-destroy. Stuck on “waiting for worker heartbeat”
+almost always means DO still has the old image tag, missing `WORKER_SECRET`, or DO
+has not redeployed the new callback code yet.
+
+**Drafts / restarts:** Ranking projects autosave to Mongo (`ranking_drafts`). Fly
+jobs are **not** cancelled when DigitalOcean restarts; reopen Studio to resume.
 
 ## Queue / concurrency
 
