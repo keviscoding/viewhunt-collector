@@ -1870,7 +1870,7 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                     upgradeRequired: true,
                     trial: trialStatus,
                     message: (trialStatus && !trialStatus.active)
-                        ? 'Your free trial has ended (3 days or 3 ranking videos). Upgrade to continue.'
+                        ? 'Your free trial has ended (7 days or 3 ranking videos). Upgrade to continue.'
                         : 'Not enough credits for ranking assembly.',
                     ...check
                 });

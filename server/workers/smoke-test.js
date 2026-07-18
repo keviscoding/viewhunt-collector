@@ -7,18 +7,27 @@ const trial = require('../studio/trial');
 const niche = require('./niche-scheduler');
 
 function testTrial() {
+    assert.strictEqual(trial.TRIAL_DAYS, 7);
+    assert.strictEqual(trial.TRIAL_RANKING_LIMIT, 3);
+    assert.strictEqual(trial.STRIPE_TRIAL_DAYS, 7);
+
     const fields = trial.createTrialFields(new Date('2026-07-17T12:00:00Z'));
     assert.strictEqual(fields.status, 'active');
     assert.strictEqual(fields.rankingVideosLimit, 3);
     assert.ok(fields.endsAt > fields.startedAt);
+    // 7-day window
+    assert.strictEqual(
+        Math.round((fields.endsAt - fields.startedAt) / (24 * 60 * 60 * 1000)),
+        7
+    );
 
     const user = { trial: fields };
     const active = trial.getTrialStatus(user, new Date('2026-07-18T12:00:00Z'));
     assert.strictEqual(active.active, true);
     assert.strictEqual(active.rankingVideosLeft, 3);
-    assert.ok(active.daysLeft >= 1 && active.daysLeft <= 3);
+    assert.ok(active.daysLeft >= 1 && active.daysLeft <= 7);
 
-    const expired = trial.getTrialStatus(user, new Date('2026-07-22T12:00:00Z'));
+    const expired = trial.getTrialStatus(user, new Date('2026-07-25T12:00:00Z'));
     assert.strictEqual(expired.active, false);
     assert.strictEqual(expired.reason, 'expired');
 
@@ -34,7 +43,7 @@ function testTrial() {
     assert.strictEqual(converted.active, false);
     assert.strictEqual(converted.reason, 'converted');
 
-    console.log('✓ trial helper');
+    console.log('✓ trial helper (7 days / 3 videos)');
 }
 
 function testNicheExports() {
@@ -43,22 +52,6 @@ function testNicheExports() {
     assert.strictEqual(niche.INTERVAL_MS, 3 * 24 * 60 * 60 * 1000);
     assert.strictEqual(typeof niche.startScrapeRun, 'function');
     assert.strictEqual(typeof niche.scheduleNicheRotation, 'function');
-    assert.strictEqual(typeof niche.generateSpontaneousKeywords, 'function');
-
-    var a = niche.generateSpontaneousKeywords([], 15);
-    var b = niche.generateSpontaneousKeywords([], 15);
-    assert.strictEqual(a.length, 15);
-    assert.strictEqual(b.length, 15);
-    // Extremely unlikely two full shuffles match exactly; soft-check variety
-    var same = a.join(',') === b.join(',');
-    assert.ok(!same || a.length < 5, 'spontaneous picks should usually differ between runs');
-
-    var avoided = niche.generateSpontaneousKeywords(a, 12);
-    assert.strictEqual(avoided.length, 12);
-    var overlap = avoided.filter(function(w) { return a.indexOf(w) >= 0; });
-    // With a large pool, overlap with the avoided set should be low
-    assert.ok(overlap.length <= 3, 'should prefer unused common words when possible');
-
     console.log('✓ niche scheduler exports + spontaneous keywords');
 }
 

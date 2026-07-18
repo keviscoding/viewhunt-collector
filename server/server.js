@@ -263,12 +263,13 @@ app.get('/subscription-success', async (req, res) => {
         const session = await stripe.checkout.sessions.retrieve(session_id);
         console.log('Stripe session retrieved:', session.payment_status, session.customer);
         
-        if (session.payment_status === 'paid') {
+        // Trial checkouts are often payment_status=no_payment_required until trial ends
+        if (session.payment_status === 'paid' || session.payment_status === 'no_payment_required' || session.status === 'complete') {
             // Update user subscription status
             const subscription = await stripe.subscriptions.retrieve(session.subscription);
             const customer = await stripe.customers.retrieve(session.customer);
             
-            console.log('Processing subscription for customer:', customer.email);
+            console.log('Processing subscription for customer:', customer.email, 'subStatus=', subscription.status);
             
             // Find user by email
             const user = await db.collection('users').findOne({ email: customer.email });
@@ -280,25 +281,40 @@ app.get('/subscription-success', async (req, res) => {
                 var planFromMeta = (session.metadata && session.metadata.plan) ? session.metadata.plan : 'starter';
                 // Map old 'pro' to 'starter' for credit purposes
                 if (planFromMeta === 'pro') planFromMeta = 'starter';
+
+                var subStatus = subscription.status || 'active';
+                var okStatuses = { active: 1, trialing: 1 };
+                if (!okStatuses[subStatus]) {
+                    console.warn('Unexpected subscription status after checkout:', subStatus);
+                }
                 
                 await db.collection('users').updateOne(
                     { _id: user._id },
                     {
                         $set: {
-                            'subscription.status': 'active',
+                            'subscription.status': subStatus,
+                            'subscription.hasAccess': !!okStatuses[subStatus],
+                            'subscription.type': 'stripe',
                             'subscription.plan': planFromMeta,
                             'subscription.stripeSubscriptionId': subscription.id,
                             'subscription.stripeCustomerId': customer.id,
-                            'subscription.startDate': new Date(subscription.current_period_start * 1000),
-                            'subscription.endDate': new Date(subscription.current_period_end * 1000),
+                            'subscription.startDate': new Date((subscription.current_period_start || Date.now() / 1000) * 1000),
+                            'subscription.endDate': subscription.current_period_end
+                                ? new Date(subscription.current_period_end * 1000)
+                                : null,
+                            'subscription.trialEnd': subscription.trial_end
+                                ? new Date(subscription.trial_end * 1000)
+                                : null,
                             'trial.status': 'converted',
                             updated_at: new Date()
                         }
                     }
                 );
                 
-                console.log('Subscription updated successfully for:', user.email);
-                res.redirect('/app?success=subscription_activated');
+                console.log('Subscription updated successfully for:', user.email, subStatus);
+                res.redirect(subStatus === 'trialing'
+                    ? '/app?success=trial_started'
+                    : '/app?success=subscription_activated');
             } else {
                 console.error('User not found for email:', customer.email);
                 res.redirect('/app?error=user_not_found');
@@ -1649,11 +1665,14 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
             if (user.subscription && user.subscription.stripeSubscriptionId && stripe) {
                 try {
                     const subscription = await stripe.subscriptions.retrieve(user.subscription.stripeSubscriptionId);
+                    var v1PaidOk = subscription.status === 'active' || subscription.status === 'trialing';
                     subscriptionStatus = {
-                        hasAccess: subscription.status === 'active',
+                        hasAccess: v1PaidOk,
                         type: 'stripe',
                         status: subscription.status,
-                        reason: subscription.status === 'active' ? 'Active subscription' : `Subscription ${subscription.status}`,
+                        reason: subscription.status === 'trialing'
+                            ? 'Plan free trial (7 days)'
+                            : (subscription.status === 'active' ? 'Active subscription' : ('Subscription ' + subscription.status)),
                         stripeSubscriptionId: subscription.id,
                         currentPeriodEnd: new Date(subscription.current_period_end * 1000),
                         cancelAtPeriodEnd: subscription.cancel_at_period_end
@@ -1671,15 +1690,21 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
             if (user.subscription && user.subscription.stripeSubscriptionId && stripe) {
                 try {
                     const subscription = await stripe.subscriptions.retrieve(user.subscription.stripeSubscriptionId);
+                    var paidOk = subscription.status === 'active' || subscription.status === 'trialing';
                     subscriptionStatus = {
-                        hasAccess: subscription.status === 'active',
+                        hasAccess: paidOk,
                         type: 'stripe',
                         status: subscription.status,
                         plan: user.subscription.plan || 'starter',
-                        reason: subscription.status === 'active' ? 'Active subscription' : `Subscription ${subscription.status}`,
+                        reason: subscription.status === 'trialing'
+                            ? 'Plan free trial (7 days)'
+                            : (subscription.status === 'active' ? 'Active subscription' : ('Subscription ' + subscription.status)),
                         stripeSubscriptionId: subscription.id,
                         currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-                        cancelAtPeriodEnd: subscription.cancel_at_period_end
+                        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+                        trialEnd: subscription.trial_end
+                            ? new Date(subscription.trial_end * 1000)
+                            : null
                     };
                 } catch (stripeError) {
                     console.error('Stripe subscription check failed:', stripeError);
@@ -1693,7 +1718,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
                         type: 'trial',
                         status: 'active',
                         plan: 'trial',
-                        reason: 'Free trial — ranking videos',
+                        reason: 'Free trial — 7 days or 3 ranking videos',
                         rankingAccess: true,
                         trial: {
                             daysLeft: trialStatus.daysLeft,
@@ -3839,7 +3864,12 @@ app.post('/api/subscription/create-plan-checkout', authenticateToken, async (req
             cancel_url: (process.env.APP_URL || 'https://viewhunt.app') + '/pricing',
             metadata: { userId: user._id.toString(), plan: plan },
             allow_promotion_codes: true,
-            billing_address_collection: 'auto'
+            billing_address_collection: 'auto',
+            // 7-day free trial on Starter / Creator / Studio (card collected, charged after trial)
+            subscription_data: {
+                trial_period_days: trialHelper.STRIPE_TRIAL_DAYS || 7,
+                metadata: { userId: user._id.toString(), plan: plan }
+            }
         });
 
         // Update user's plan in DB
@@ -4002,20 +4032,46 @@ app.post('/api/subscription/webhook', async (req, res) => {
             break;
         }
         
+        case 'customer.subscription.created':
         case 'customer.subscription.updated':
         case 'customer.subscription.deleted': {
             const subscription = event.data.object;
-            
-            // Update user subscription status
-            await db.collection('users').updateOne(
-                { 'subscription.stripeSubscriptionId': subscription.id },
-                {
-                    $set: {
-                        'subscription.status': subscription.status,
-                        'subscription.endDate': new Date(subscription.current_period_end * 1000)
-                    }
-                }
-            );
+            const subMeta = subscription.metadata || {};
+            const subUpdate = {
+                'subscription.status': subscription.status,
+                'subscription.stripeSubscriptionId': subscription.id,
+                'subscription.endDate': subscription.current_period_end
+                    ? new Date(subscription.current_period_end * 1000)
+                    : null,
+                'subscription.trialEnd': subscription.trial_end
+                    ? new Date(subscription.trial_end * 1000)
+                    : null,
+                updated_at: new Date()
+            };
+            if (subMeta.plan) subUpdate['subscription.plan'] = subMeta.plan;
+            if (subscription.status === 'active' || subscription.status === 'trialing') {
+                subUpdate['subscription.hasAccess'] = true;
+                subUpdate['subscription.type'] = 'stripe';
+            }
+            if (subscription.status === 'canceled' || subscription.status === 'unpaid') {
+                subUpdate['subscription.hasAccess'] = false;
+            }
+
+            // Prefer metadata userId, else match by subscription / customer id
+            var subFilter = subMeta.userId
+                ? { _id: new ObjectId(subMeta.userId) }
+                : {
+                    $or: [
+                        { 'subscription.stripeSubscriptionId': subscription.id },
+                        { 'subscription.stripeCustomerId': subscription.customer }
+                    ]
+                };
+
+            await db.collection('users').updateOne(subFilter, { $set: subUpdate });
+            if (subMeta.userId && (subscription.status === 'active' || subscription.status === 'trialing')) {
+                await trialHelper.convertTrial(db, subMeta.userId);
+            }
+            console.log('Webhook:', event.type, 'status=' + subscription.status, 'customer=' + subscription.customer);
             break;
         }
         

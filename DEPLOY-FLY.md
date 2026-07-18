@@ -125,10 +125,11 @@ progress messages per clip, 8GB assembly machines.
 
 ## Trial behavior
 
-New free users get `trial`: 3 days **or** 3 completed ranking videos (whichever first).
+New free users get `trial`: 7 days **or** 3 completed ranking videos (whichever first).
 Ranking assemble during trial skips the ranking_assembly credit charge.
 Other Studio formats still use the credit wallet.
-Stripe checkout converts `trial.status` → `converted`.
+Starter / Creator / Studio Stripe checkout uses a 7-day `trial_period_days`.
+Stripe checkout / `customer.subscription.created` converts app `trial.status` → `converted`.
 
 ## Admin triggers
 

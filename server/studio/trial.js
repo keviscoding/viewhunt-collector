@@ -1,11 +1,13 @@
 /**
- * Free trial: 3 days OR 3 completed ranking videos, whichever comes first.
+ * Free trial: 7 days OR 3 completed ranking videos, whichever comes first.
  * Other Studio formats continue to use the credit wallet.
+ * Paid plan checkouts (Starter/Creator/Studio) also use a 7-day Stripe trial.
  */
 const { ObjectId } = require('mongodb');
 
-const TRIAL_DAYS = 3;
+const TRIAL_DAYS = 7;
 const TRIAL_RANKING_LIMIT = 3;
+const STRIPE_TRIAL_DAYS = 7;
 
 function createTrialFields(now) {
     const startedAt = now || new Date();
@@ -119,6 +121,7 @@ function canUseRankingTrial(user, now) {
 module.exports = {
     TRIAL_DAYS,
     TRIAL_RANKING_LIMIT,
+    STRIPE_TRIAL_DAYS,
     createTrialFields,
     getTrialStatus,
     isTrialActive,

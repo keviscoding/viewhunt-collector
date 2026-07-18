@@ -115,6 +115,7 @@ function getAuthToken(){
     // === PLANS ===
     var plans=[
         {id:'starter',name:'Starter',price:'$29',credits:'300',pop:false,content:'~54 scene clips/month',features:[
+            '7-day free trial, then $29/mo',
             'ViewHunt Niche Database (unlimited)',
             '300 video credits per month',
             '~54 scene clips per month',
@@ -123,6 +124,7 @@ function getAuthToken(){
             'Word-by-word captions'
         ]},
         {id:'creator',name:'Creator',price:'$59',credits:'600',pop:true,content:'~109 scene clips/month',features:[
+            '7-day free trial, then $59/mo',
             'ViewHunt Niche Database (unlimited)',
             '600 video credits per month',
             '~109 scene clips per month',
@@ -132,6 +134,7 @@ function getAuthToken(){
             'Priority generation queue'
         ]},
         {id:'studio',name:'Studio',price:'$119',credits:'1,200',pop:false,content:'~218 scene clips/month',features:[
+            '7-day free trial, then $119/mo',
             'ViewHunt Niche Database (unlimited)',
             '1,200 video credits per month',
             '~218 scene clips per month',
@@ -154,7 +157,7 @@ function getAuthToken(){
         h+='<ul class="plan-features">';
         p.features.forEach(function(f){h+='<li>'+f+'</li>'});
         h+='</ul>';
-        h+='<button class="plan-btn '+(p.pop?'plan-btn-primary':'plan-btn-secondary')+'" onclick="subscribe(\''+p.id+'\')">Get '+p.name+'</button>';
+        h+='<button class="plan-btn '+(p.pop?'plan-btn-primary':'plan-btn-secondary')+'" onclick="subscribe(\''+p.id+'\')">Start Free Trial</button>';
         h+='</div>';
     });
     h+='</div>';

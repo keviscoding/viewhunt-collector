@@ -127,4 +127,4 @@ This project is for educational and research purposes.
 See [DEPLOY-FLY.md](DEPLOY-FLY.md) for:
 - Moving ranking FFmpeg assembly to Fly Machines
 - Autonomous niche scraping every 3 days (Puppeteer worker)
-- Free trial: 3 days or 3 ranking videos
+- Free trial: 7 days or 3 ranking videos (whichever first); paid plans include a 7-day Stripe trial
