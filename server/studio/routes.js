@@ -2134,6 +2134,16 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                 flyQueued = true;
                 console.log('Fly assembly at capacity (' + activeFly + '/' + flyMax + ') — queueing job', jobId);
             } else {
+                // Set waiting message BEFORE starting machine. startAssemblyMachine waits
+                // until the VM is up — the worker often heartbeats during that wait.
+                // Never clobber a real "Fly: worker online…" message after return.
+                await updateRankingJob(jobId, {
+                    status: 'processing',
+                    message: 'Fly machine starting — waiting for worker heartbeat…',
+                    worker: 'fly',
+                    flyQueued: false,
+                    flyStartedAt: new Date()
+                });
                 var flyResult = await startAssemblyMachine(jobId, rankingPayload);
                 if (flyResult && typeof flyResult === 'object') {
                     flyStarted = !!flyResult.started;
@@ -2196,15 +2206,25 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                     queuePosition: queuedAhead
                 });
             } else {
-                await updateRankingJob(jobId, {
-                    status: 'processing',
-                    message: 'Fly machine started — waiting for worker heartbeat…',
+                // Patch machine id only — do NOT reset message (worker may already be online)
+                var afterFly = await getRankingJob(jobId);
+                var alreadyLive = afterFly && (
+                    afterFly.flyHeartbeatAt ||
+                    (afterFly.message && /^Fly: worker online/i.test(afterFly.message)) ||
+                    (afterFly.message && /^Fly: /i.test(afterFly.message) && !/waiting for worker heartbeat/i.test(afterFly.message))
+                );
+                var flyPatch = {
                     worker: 'fly',
                     flyQueued: false,
                     flyMachineId: flyMachineId,
-                    flyStartedAt: new Date()
-                });
-                // CRITICAL: if Fly dies silently (current bug), assemble on DO after 30s
+                    flyStartedAt: (afterFly && afterFly.flyStartedAt) || new Date()
+                };
+                if (!alreadyLive) {
+                    flyPatch.status = 'processing';
+                    flyPatch.message = 'Fly machine started — waiting for worker heartbeat…';
+                }
+                await updateRankingJob(jobId, flyPatch);
+                // If Fly dies silently, assemble on DO after 30s
                 var localOpts = {
                     jobId: jobId,
                     userId: userId,

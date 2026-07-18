@@ -240,7 +240,8 @@
                 var currentPct = parseInt(pf.style.width, 10) || 30;
                 if (currentPct < 90) pf.style.width = Math.min(90, currentPct + 2) + '%';
                 failCount = 0;
-                pollInterval = 4000;
+                // Poll faster while waiting on Fly heartbeat / early progress
+                pollInterval = /waiting for worker heartbeat|Fly machine start/i.test(msg) ? 2000 : 4000;
             } catch (e) {
                 if (e.message && (e.message.includes('Assembly') || e.message.includes('Auth failed') || e.message.includes('credits') || e.message.includes('failed'))) throw e;
                 failCount++;

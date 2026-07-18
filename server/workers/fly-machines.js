@@ -312,14 +312,22 @@ async function drainFlyAssemblyQueue(db, updateJobFn) {
         try {
             const flyResult = await startAssemblyMachine(jobId, next.payload || null);
             if (flyResult && flyResult.started) {
-                await updateJobFn(jobId, {
-                    status: 'processing',
-                    message: 'Fly machine started — waiting for worker heartbeat…',
+                var existing = await db.collection('ranking_jobs').findOne({ _id: next._id });
+                var live = existing && (
+                    existing.flyHeartbeatAt ||
+                    (existing.message && /^Fly: /i.test(existing.message) && !/waiting for worker heartbeat/i.test(existing.message))
+                );
+                var patch = {
                     worker: 'fly',
                     flyQueued: false,
                     flyMachineId: flyResult.machineId || null,
                     flyStartedAt: new Date()
-                });
+                };
+                if (!live) {
+                    patch.status = 'processing';
+                    patch.message = 'Fly machine started — waiting for worker heartbeat…';
+                }
+                await updateJobFn(jobId, patch);
                 started += 1;
             } else {
                 await updateJobFn(jobId, {
