@@ -1,7 +1,10 @@
 FROM node:18-bookworm-slim
 
+# System ffmpeg as fallback; static binaries from npm also used by assembler
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    ffmpeg \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

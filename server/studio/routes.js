@@ -1897,30 +1897,31 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
 
         // Create job in MongoDB and return immediately
         var jobId = await createRankingJob(userId, 'queued', enableCommentary ? 'Queued for assembly...' : 'Queued for assembly...');
+        var rankingPayload = {
+            clips: clipList.map(function(c) {
+                return {
+                    filename: c.filename,
+                    number: c.number,
+                    label: c.label,
+                    startTime: c.startTime,
+                    endTime: c.endTime,
+                    originalDuration: c.originalDuration
+                };
+            }),
+            title: title || {},
+            layout: layout || {},
+            enableCommentary: !!enableCommentary,
+            voiceName: voiceName || 'Kore',
+            colorPalette: colorPalette || 'yellow',
+            checkeredMode: !!checkeredMode,
+            subtitleFont: subtitleFont || 'Arial',
+            subtitleY: subtitleY != null ? subtitleY : 55,
+            subtitleColor: subtitleColor || 'yellow'
+        };
         await updateRankingJob(jobId, {
             creditsCharged: rankingCreditsCharged,
             usingTrial: usingTrial,
-            payload: {
-                clips: clipList.map(function(c) {
-                    return {
-                        filename: c.filename,
-                        number: c.number,
-                        label: c.label,
-                        startTime: c.startTime,
-                        endTime: c.endTime,
-                        originalDuration: c.originalDuration
-                    };
-                }),
-                title: title || {},
-                layout: layout || {},
-                enableCommentary: !!enableCommentary,
-                voiceName: voiceName || 'Kore',
-                colorPalette: colorPalette || 'yellow',
-                checkeredMode: !!checkeredMode,
-                subtitleFont: subtitleFont || 'Arial',
-                subtitleY: subtitleY != null ? subtitleY : 55,
-                subtitleColor: subtitleColor || 'yellow'
-            }
+            payload: rankingPayload
         });
 
         res.json({
@@ -1942,7 +1943,7 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                 flyQueued = true;
                 console.log('Fly assembly at capacity (' + activeFly + '/' + flyMax + ') — queueing job', jobId);
             } else {
-                var flyResult = await startAssemblyMachine(jobId);
+                var flyResult = await startAssemblyMachine(jobId, rankingPayload);
                 if (flyResult && typeof flyResult === 'object') {
                     flyStarted = !!flyResult.started;
                     flyMachineId = flyResult.machineId || null;
@@ -2211,8 +2212,9 @@ router.get('/ranking/assemble/status/:jobId', requireAuth, async (req, res) => {
 // Internal: Fly worker progress / heartbeat (works even if Fly cannot reach Mongo)
 router.post('/internal/ranking-job-update', express.json({ limit: '2mb' }), async (req, res) => {
     try {
-        var secret = req.headers['x-worker-secret'];
-        if (!process.env.WORKER_SECRET || secret !== process.env.WORKER_SECRET) {
+        var secret = String(req.headers['x-worker-secret'] || '').trim();
+        var expected = String(process.env.WORKER_SECRET || '').trim();
+        if (!expected || secret !== expected) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
         var jobId = req.body.jobId;

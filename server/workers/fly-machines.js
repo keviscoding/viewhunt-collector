@@ -55,7 +55,7 @@ async function flyRequest(method, path, body) {
  * Start an assembly machine for a ranking job.
  * Returns { started: true, machineId } or { started: false, reason }.
  */
-async function startAssemblyMachine(jobId) {
+async function startAssemblyMachine(jobId, payload) {
     const app = process.env.FLY_ASSEMBLY_APP;
     if (!process.env.FLY_API_TOKEN || !app) {
         console.log('Fly assembly not configured — skipping machine start');
@@ -69,12 +69,7 @@ async function startAssemblyMachine(jobId) {
     }
 
     const mongoUri = resolveMongoUri();
-    if (!mongoUri) {
-        // Without Mongo the worker cannot update job status — DO would look "stuck" forever
-        console.error('Fly assembly aborted: no Mongo URI in DO env (V2_MONGO_URI / MONGODB_URI / MONGO_URI)');
-        return { started: false, reason: 'Mongo URI missing on DigitalOcean — cannot hand off to Fly' };
-    }
-
+    // Mongo preferred but not required when JOB_PAYLOAD_JSON is provided
     const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
     if (!appUrl) {
         console.error('Fly assembly aborted: APP_URL missing');
@@ -85,14 +80,34 @@ async function startAssemblyMachine(jobId) {
     const appInternal = (process.env.APP_INTERNAL_URL || process.env.DIGITALOCEAN_APP_URL || '')
         .replace(/\/$/, '');
 
+    let payloadJson = '';
+    if (payload && typeof payload === 'object') {
+        try {
+            payloadJson = JSON.stringify(payload);
+            // Fly env practical limit — keep under ~80KB
+            if (payloadJson.length > 80000) {
+                console.warn('JOB_PAYLOAD_JSON too large (' + payloadJson.length + ') — worker will rely on Mongo');
+                payloadJson = '';
+            }
+        } catch (e) {
+            payloadJson = '';
+        }
+    }
+
+    if (!mongoUri && !payloadJson) {
+        console.error('Fly assembly aborted: need Mongo URI or job payload');
+        return { started: false, reason: 'Mongo URI missing and no job payload to embed' };
+    }
+
     const env = {
         JOB_ID: String(jobId),
         JOB_TYPE: 'ranking_assemble',
         WORKER_SECRET: (process.env.WORKER_SECRET || '').trim(),
         APP_URL: appUrl,
         APP_INTERNAL_URL: appInternal,
-        MONGODB_URI: mongoUri,
-        V2_MONGO_URI: mongoUri,
+        MONGODB_URI: mongoUri || '',
+        V2_MONGO_URI: mongoUri || '',
+        JOB_PAYLOAD_JSON: payloadJson,
         AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || process.env.SPACES_KEY || '',
         AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || process.env.SPACES_SECRET || '',
         AWS_S3_BUCKET_NAME: process.env.AWS_S3_BUCKET_NAME || process.env.SPACES_BUCKET || '',
@@ -117,8 +132,9 @@ async function startAssemblyMachine(jobId) {
         hasOpenAI: !!env.OPENAI_API_KEY,
         hasSpaces: !!(env.AWS_ACCESS_KEY_ID && env.AWS_S3_BUCKET_NAME),
         hasWorkerSecret: true,
+        hasPayload: !!payloadJson,
         appInternal: appInternal || '(none — set APP_INTERNAL_URL to *.ondigitalocean.app)',
-        mongoHost: (mongoUri.match(/@([^/]+)/) || [])[1] || '(local)'
+        mongoHost: mongoUri ? ((mongoUri.match(/@([^/]+)/) || [])[1] || '(local)') : '(none)'
     });
 
     const machine = await flyRequest('POST', '/apps/' + app + '/machines', {
@@ -258,7 +274,7 @@ async function drainFlyAssemblyQueue(db, updateJobFn) {
 
         const jobId = String(next._id);
         try {
-            const flyResult = await startAssemblyMachine(jobId);
+            const flyResult = await startAssemblyMachine(jobId, next.payload || null);
             if (flyResult && flyResult.started) {
                 await updateJobFn(jobId, {
                     status: 'processing',
