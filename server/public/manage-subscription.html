@@ -5,398 +5,341 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Subscription - ViewHunt</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0b0d12;
+            --card: #141820;
+            --border: #2a3140;
+            --text: #f3f4f6;
+            --muted: #9ca3af;
+            --accent: #22d3ee;
+            --danger: #ef4444;
+            --ok: #34d399;
+            --warn: #fbbf24;
+        }
+        * { box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            font-family: Inter, system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
             min-height: 100vh;
-            color: white;
-            line-height: 1.6;
+            padding: 1.5rem;
         }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 2rem 1rem;
-        }
-        header {
-            text-align: center;
-            margin-bottom: 3rem;
-        }
-        header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
-        }
-        header p {
-            opacity: 0.9;
-            font-size: 1.1rem;
-        }
-        .subscription-card {
-            background: rgba(255, 255, 255, 0.95);
-            color: #333;
-            border-radius: 16px;
-            padding: 2rem;
-            margin-bottom: 2rem;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
-        .status-badge {
-            display: inline-block;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-        }
-        .status-active {
-            background: #10b981;
-            color: white;
-        }
-        .status-canceled {
-            background: #ef4444;
-            color: white;
-        }
-        .status-warning {
-            background: #f59e0b;
-            color: white;
-        }
-        .subscription-details {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-        .detail-item h3 {
-            font-size: 0.9rem;
-            color: #666;
-            margin-bottom: 0.5rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .detail-item p {
-            font-size: 1.1rem;
-            font-weight: 600;
-        }
-        .actions {
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-        }
-        .btn {
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            font-weight: 500;
-            text-decoration: none;
-            transition: all 0.2s ease;
-            border: none;
-            cursor: pointer;
-            font-size: 0.9rem;
-        }
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-        }
-        .btn-secondary {
-            background: #f3f4f6;
-            color: #374151;
-            border: 1px solid #d1d5db;
-        }
-        .btn-danger {
-            background: #ef4444;
-            color: white;
-        }
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-        .loading {
-            text-align: center;
-            padding: 2rem;
-        }
-        .error {
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            color: #dc2626;
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 1rem;
-        }
-        .success {
-            background: rgba(16, 185, 129, 0.1);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            color: #059669;
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 1rem;
-        }
+        .container { max-width: 560px; margin: 0 auto; }
         .back-link {
-            display: inline-block;
-            color: white;
+            color: var(--muted);
             text-decoration: none;
-            margin-bottom: 2rem;
-            opacity: 0.8;
+            font-size: 0.9rem;
+            display: inline-block;
+            margin-bottom: 1.25rem;
         }
-        .back-link:hover {
-            opacity: 1;
+        .back-link:hover { color: var(--text); }
+        header h1 { margin: 0 0 0.35rem; font-size: 1.6rem; }
+        header p { margin: 0 0 1.5rem; color: var(--muted); }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 1.25rem;
         }
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.65rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+        .badge-ok { background: rgba(52,211,153,0.15); color: var(--ok); }
+        .badge-warn { background: rgba(251,191,36,0.15); color: var(--warn); }
+        .badge-bad { background: rgba(239,68,68,0.15); color: var(--danger); }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.85rem;
+            margin-bottom: 1.25rem;
+        }
+        .detail h3 {
+            margin: 0 0 0.2rem;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--muted);
+            font-weight: 600;
+        }
+        .detail p { margin: 0; font-size: 1rem; font-weight: 600; }
+        .actions { display: flex; flex-direction: column; gap: 0.6rem; }
+        .btn {
+            border: none;
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            font-weight: 650;
+            font-size: 0.95rem;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+        .btn-primary { background: var(--accent); color: #042f2e; }
+        .btn-secondary { background: #1f2937; color: var(--text); border: 1px solid var(--border); }
+        .btn-danger { background: transparent; color: var(--danger); border: 1px solid rgba(239,68,68,0.45); }
+        .msg {
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+        .msg-error { background: rgba(239,68,68,0.12); color: #fecaca; }
+        .msg-ok { background: rgba(52,211,153,0.12); color: #a7f3d0; }
+        .loading { color: var(--muted); }
+        .hint { color: var(--muted); font-size: 0.85rem; margin-top: 0.75rem; line-height: 1.4; }
     </style>
 </head>
 <body>
     <div class="container">
         <a href="/app" class="back-link">← Back to App</a>
-        
         <header>
             <h1>Manage Subscription</h1>
-            <p>View and manage your ViewHunt Pro subscription</p>
+            <p>Update billing, change plans, or cancel</p>
         </header>
 
-        <div id="loading" class="loading">
-            <p>Loading subscription details...</p>
-        </div>
+        <div id="loading" class="loading"><p>Loading subscription…</p></div>
+        <div id="error" class="msg msg-error" style="display:none;"></div>
+        <div id="success" class="msg msg-ok" style="display:none;"></div>
 
-        <div id="error" class="error" style="display: none;"></div>
-        <div id="success" class="success" style="display: none;"></div>
-
-        <div id="subscription-content" style="display: none;">
-            <div class="subscription-card">
-                <div class="status-badge" id="status-badge">Active</div>
-                
-                <div class="subscription-details">
-                    <div class="detail-item">
+        <div id="subscription-content" style="display:none;">
+            <div class="card">
+                <div class="badge badge-ok" id="status-badge">—</div>
+                <div class="grid">
+                    <div class="detail">
                         <h3>Plan</h3>
-                        <p id="plan-name">ViewHunt Pro</p>
+                        <p id="plan-name">—</p>
                     </div>
-                    <div class="detail-item">
+                    <div class="detail">
                         <h3>Price</h3>
-                        <p id="plan-price">$25/month</p>
+                        <p id="plan-price">—</p>
                     </div>
-                    <div class="detail-item">
-                        <h3>Next Billing</h3>
-                        <p id="next-billing">Loading...</p>
+                    <div class="detail">
+                        <h3>Next billing</h3>
+                        <p id="next-billing">—</p>
                     </div>
-                    <div class="detail-item">
+                    <div class="detail">
                         <h3>Status</h3>
-                        <p id="subscription-status">Active</p>
+                        <p id="subscription-status">—</p>
                     </div>
                 </div>
-
                 <div class="actions">
-                    <button class="btn btn-secondary" onclick="updateBilling()">Update Billing</button>
-                    <button class="btn btn-danger" id="cancel-btn" onclick="cancelSubscription()">Cancel Subscription</button>
-                    <button class="btn btn-primary" id="reactivate-btn" onclick="reactivateSubscription()" style="display: none;">Reactivate</button>
+                    <button class="btn btn-primary" id="btn-portal" onclick="openBillingPortal()">Manage billing in Stripe</button>
+                    <button class="btn btn-secondary" id="btn-upgrade" onclick="goPricing()" style="display:none;">Choose a plan</button>
+                    <button class="btn btn-danger" id="cancel-btn" onclick="cancelSubscription()">Cancel at period end</button>
+                    <button class="btn btn-primary" id="reactivate-btn" onclick="reactivateSubscription()" style="display:none;">Keep my subscription</button>
                 </div>
+                <p class="hint" id="hint">Opens Stripe’s secure portal to update your card, download invoices, or cancel.</p>
             </div>
         </div>
     </div>
 
     <script>
-        let subscriptionData = null;
+        var subscriptionData = null;
+        var PLAN_META = {
+            starter: { name: 'Starter', price: '$29/mo' },
+            creator: { name: 'Creator', price: '$59/mo' },
+            studio: { name: 'Studio', price: '$119/mo' },
+            pro: { name: 'Starter', price: '$29/mo' },
+            trial: { name: 'Free challenge', price: '$0' },
+            free: { name: 'Free', price: '$0' }
+        };
+
+        function authHeaders() {
+            var token = localStorage.getItem('viewhunt_token') || localStorage.getItem('token');
+            return token ? { Authorization: 'Bearer ' + token } : {};
+        }
+
+        function showError(message) {
+            var el = document.getElementById('error');
+            el.textContent = message;
+            el.style.display = 'block';
+            document.getElementById('success').style.display = 'none';
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        function showSuccess(message) {
+            var el = document.getElementById('success');
+            el.textContent = message;
+            el.style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+        }
 
         async function loadSubscription() {
-            const token = localStorage.getItem('viewhunt_token');
-            if (!token) {
-                window.location.href = '/app';
+            if (!authHeaders().Authorization) {
+                window.location.href = '/app?signup=1&next=' + encodeURIComponent('/manage-subscription');
                 return;
             }
-
             try {
-                const response = await fetch('/api/auth/me', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to load user data');
-                }
-
-                const user = await response.json();
-                subscriptionData = user.subscription;
-
-                if (!subscriptionData || !subscriptionData.hasAccess) {
-                    showError('No active subscription found');
+                var response = await fetch('/api/auth/me', { headers: authHeaders() });
+                if (response.status === 401 || response.status === 403) {
+                    window.location.href = '/app';
                     return;
                 }
-
+                if (!response.ok) throw new Error('Failed to load account');
+                var user = await response.json();
+                subscriptionData = user.subscription || {};
                 displaySubscription(subscriptionData);
-
             } catch (error) {
-                console.error('Error loading subscription:', error);
+                console.error(error);
                 showError('Failed to load subscription details');
             }
         }
 
-        function displaySubscription(subscription) {
+        function displaySubscription(sub) {
             document.getElementById('loading').style.display = 'none';
             document.getElementById('subscription-content').style.display = 'block';
 
-            console.log('Subscription data:', subscription); // Debug log
+            var badge = document.getElementById('status-badge');
+            var statusText = document.getElementById('subscription-status');
+            var cancelBtn = document.getElementById('cancel-btn');
+            var reactivateBtn = document.getElementById('reactivate-btn');
+            var portalBtn = document.getElementById('btn-portal');
+            var upgradeBtn = document.getElementById('btn-upgrade');
+            var hint = document.getElementById('hint');
 
-            // Update status badge and text
-            const statusBadge = document.getElementById('status-badge');
-            const statusText = document.getElementById('subscription-status');
-            
-            // Handle different subscription states
-            if (subscription.type === 'admin') {
-                statusBadge.textContent = 'Admin';
-                statusBadge.className = 'status-badge status-active';
-                statusText.textContent = 'Admin Access';
-                document.getElementById('cancel-btn').style.display = 'none';
-                document.getElementById('reactivate-btn').style.display = 'none';
-            } else if (subscription.type === 'beta') {
-                statusBadge.textContent = 'Beta';
-                statusBadge.className = 'status-badge status-active';
-                statusText.textContent = 'Beta Access';
-                document.getElementById('cancel-btn').style.display = 'none';
-                document.getElementById('reactivate-btn').style.display = 'none';
-            } else if (subscription.type === 'stripe') {
-                // Handle Stripe subscription states
-                if (subscription.status === 'active') {
-                    if (subscription.cancelAtPeriodEnd) {
-                        statusBadge.textContent = 'Ending Soon';
-                        statusBadge.className = 'status-badge status-warning';
-                        statusText.textContent = 'Canceled (Active until billing period ends)';
-                        document.getElementById('cancel-btn').style.display = 'none';
-                        document.getElementById('reactivate-btn').style.display = 'inline-block';
-                    } else {
-                        statusBadge.textContent = 'Active';
-                        statusBadge.className = 'status-badge status-active';
-                        statusText.textContent = 'Active';
-                        document.getElementById('cancel-btn').style.display = 'inline-block';
-                        document.getElementById('reactivate-btn').style.display = 'none';
-                    }
-                } else {
-                    statusBadge.textContent = 'Inactive';
-                    statusBadge.className = 'status-badge status-canceled';
-                    statusText.textContent = subscription.status || 'Inactive';
-                    document.getElementById('cancel-btn').style.display = 'none';
-                    document.getElementById('reactivate-btn').style.display = 'inline-block';
-                }
+            cancelBtn.style.display = 'none';
+            reactivateBtn.style.display = 'none';
+            portalBtn.style.display = 'none';
+            upgradeBtn.style.display = 'none';
+
+            var planKey = (sub.plan || 'free').toLowerCase();
+            var meta = PLAN_META[planKey] || { name: planKey, price: '—' };
+            document.getElementById('plan-name').textContent = meta.name;
+            document.getElementById('plan-price').textContent = meta.price;
+
+            var nextEl = document.getElementById('next-billing');
+            if (sub.trialEnd) {
+                nextEl.textContent = 'Trial ends ' + new Date(sub.trialEnd).toLocaleDateString();
+            } else if (sub.currentPeriodEnd) {
+                nextEl.textContent = new Date(sub.currentPeriodEnd).toLocaleDateString();
+            } else if (sub.type === 'admin' || sub.type === 'beta' || sub.type === 'invite') {
+                nextEl.textContent = 'N/A';
             } else {
-                // No subscription
-                statusBadge.textContent = 'No Subscription';
-                statusBadge.className = 'status-badge status-canceled';
-                statusText.textContent = 'No Active Subscription';
-                document.getElementById('cancel-btn').style.display = 'none';
-                document.getElementById('reactivate-btn').style.display = 'none';
+                nextEl.textContent = '—';
             }
 
-            // Update billing date
-            const nextBillingElement = document.getElementById('next-billing');
-            if (subscription.currentPeriodEnd) {
-                const date = new Date(subscription.currentPeriodEnd);
-                nextBillingElement.textContent = date.toLocaleDateString();
-            } else if (subscription.type === 'admin' || subscription.type === 'beta') {
-                nextBillingElement.textContent = 'N/A (Free Access)';
-            } else {
-                nextBillingElement.textContent = 'Not Available';
-            }
-
-            // Update plan info based on subscription type
-            const planNameElement = document.getElementById('plan-name');
-            const planPriceElement = document.getElementById('plan-price');
-            
-            if (subscription.type === 'admin') {
-                planNameElement.textContent = 'Admin Access';
-                planPriceElement.textContent = 'Free';
-            } else if (subscription.type === 'beta') {
-                planNameElement.textContent = 'Beta Access';
-                planPriceElement.textContent = 'Free';
-            } else if (subscription.type === 'stripe') {
-                planNameElement.textContent = 'ViewHunt Pro';
-                planPriceElement.textContent = '$25/month';
-            } else {
-                planNameElement.textContent = 'No Plan';
-                planPriceElement.textContent = 'N/A';
-            }
-        }
-
-        async function cancelSubscription() {
-            if (!confirm('Are you sure you want to cancel your subscription? You will lose access at the end of your current billing period.')) {
+            if (sub.type === 'admin' || sub.type === 'beta' || sub.type === 'invite') {
+                badge.textContent = sub.type === 'admin' ? 'Admin' : (sub.type === 'beta' ? 'Beta' : 'Invite');
+                badge.className = 'badge badge-ok';
+                statusText.textContent = sub.reason || 'Complimentary access';
+                document.getElementById('plan-price').textContent = 'Free';
+                hint.textContent = 'Your access is not billed through Stripe.';
                 return;
             }
 
-            const token = localStorage.getItem('viewhunt_token');
-            const button = document.getElementById('cancel-btn');
-            button.textContent = 'Canceling...';
-            button.disabled = true;
-
-            try {
-                const response = await fetch('/api/subscription/cancel', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    showSuccess('Subscription canceled successfully. You will retain access until the end of your billing period.');
-                    loadSubscription(); // Reload to update UI
+            if (sub.type === 'stripe' && (sub.status === 'active' || sub.status === 'trialing')) {
+                portalBtn.style.display = '';
+                if (sub.status === 'trialing') {
+                    badge.textContent = 'Trial';
+                    badge.className = 'badge badge-warn';
+                    statusText.textContent = sub.reason || '7-day free trial';
+                } else if (sub.cancelAtPeriodEnd) {
+                    badge.textContent = 'Ending soon';
+                    badge.className = 'badge badge-warn';
+                    statusText.textContent = 'Cancels at period end';
+                    reactivateBtn.style.display = '';
                 } else {
-                    throw new Error(data.error || 'Failed to cancel subscription');
+                    badge.textContent = 'Active';
+                    badge.className = 'badge badge-ok';
+                    statusText.textContent = 'Active';
+                    cancelBtn.style.display = '';
                 }
+                hint.textContent = 'Use Stripe to update your card, see invoices, switch plans, or cancel.';
+                return;
+            }
 
+            // Free / soft trial / expired
+            badge.textContent = sub.type === 'trial' ? 'Challenge' : 'No paid plan';
+            badge.className = 'badge badge-warn';
+            statusText.textContent = sub.reason || 'No Stripe subscription';
+            upgradeBtn.style.display = '';
+            hint.textContent = 'Start a plan to unlock cooking videos and manage billing here.';
+            if (sub.type === 'trial' && sub.trial) {
+                document.getElementById('plan-name').textContent = 'Free challenge';
+                nextEl.textContent = (sub.trial.daysLeft != null ? sub.trial.daysLeft + ' days left' : '—')
+                    + (sub.trial.rankingVideosLeft != null ? ' · ' + sub.trial.rankingVideosLeft + ' videos left' : '');
+            }
+        }
+
+        async function openBillingPortal() {
+            var btn = document.getElementById('btn-portal');
+            btn.disabled = true;
+            btn.textContent = 'Opening Stripe…';
+            try {
+                var res = await fetch('/api/subscription/billing-portal', {
+                    method: 'POST',
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+                    body: '{}'
+                });
+                var data = await res.json();
+                if (data.url) {
+                    window.location.href = data.url;
+                    return;
+                }
+                if (data.needsCheckout) {
+                    goPricing();
+                    return;
+                }
+                throw new Error(data.error || 'Could not open billing portal');
+            } catch (e) {
+                showError(e.message);
+                btn.disabled = false;
+                btn.textContent = 'Manage billing in Stripe';
+            }
+        }
+
+        function goPricing() {
+            window.location.href = '/pricing';
+        }
+
+        async function cancelSubscription() {
+            if (!confirm('Cancel at the end of your current billing period? You keep access until then.')) return;
+            var button = document.getElementById('cancel-btn');
+            button.disabled = true;
+            button.textContent = 'Canceling…';
+            try {
+                var response = await fetch('/api/subscription/cancel', {
+                    method: 'POST',
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+                    body: '{}'
+                });
+                var data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Failed to cancel');
+                showSuccess(data.message || 'Canceled at period end.');
+                loadSubscription();
             } catch (error) {
-                console.error('Error canceling subscription:', error);
-                showError('Failed to cancel subscription: ' + error.message);
-                button.textContent = 'Cancel Subscription';
+                showError(error.message);
                 button.disabled = false;
+                button.textContent = 'Cancel at period end';
             }
         }
 
         async function reactivateSubscription() {
-            const token = localStorage.getItem('viewhunt_token');
-            const button = document.getElementById('reactivate-btn');
-            button.textContent = 'Reactivating...';
+            var button = document.getElementById('reactivate-btn');
             button.disabled = true;
-
+            button.textContent = 'Reactivating…';
             try {
-                const response = await fetch('/api/subscription/reactivate', {
+                var response = await fetch('/api/subscription/reactivate', {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+                    body: '{}'
                 });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    showSuccess('Subscription reactivated successfully!');
-                    loadSubscription(); // Reload to update UI
-                } else {
-                    throw new Error(data.error || 'Failed to reactivate subscription');
-                }
-
+                var data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Failed to reactivate');
+                showSuccess(data.message || 'Subscription reactivated.');
+                loadSubscription();
             } catch (error) {
-                console.error('Error reactivating subscription:', error);
-                showError('Failed to reactivate subscription: ' + error.message);
-                button.textContent = 'Reactivate';
+                showError(error.message);
                 button.disabled = false;
+                button.textContent = 'Keep my subscription';
             }
         }
 
-        function updateBilling() {
-            // This would typically redirect to Stripe customer portal
-            alert('Billing management coming soon! Please contact support for billing changes.');
-        }
-
-        function showError(message) {
-            const errorDiv = document.getElementById('error');
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-            document.getElementById('success').style.display = 'none';
-        }
-
-        function showSuccess(message) {
-            const successDiv = document.getElementById('success');
-            successDiv.textContent = message;
-            successDiv.style.display = 'block';
-            document.getElementById('error').style.display = 'none';
-        }
-
-        // Load subscription on page load
         loadSubscription();
     </script>
 </body>

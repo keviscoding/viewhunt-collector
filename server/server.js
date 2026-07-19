@@ -3772,6 +3772,57 @@ app.post('/api/subscription/create-checkout-session', authenticateToken, async (
 });
 
 // Cancel subscription
+// Stripe Customer Portal — update card, invoices, cancel/reactivate
+app.post('/api/subscription/billing-portal', authenticateToken, async (req, res) => {
+    try {
+        if (!stripe) {
+            return res.status(500).json({ error: 'Payment system not configured' });
+        }
+
+        const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        var customerId = user.subscription && user.subscription.stripeCustomerId;
+        // Fallback: look up by subscription id
+        if (!customerId && user.subscription && user.subscription.stripeSubscriptionId) {
+            try {
+                var sub = await stripe.subscriptions.retrieve(user.subscription.stripeSubscriptionId);
+                customerId = typeof sub.customer === 'string' ? sub.customer : (sub.customer && sub.customer.id);
+                if (customerId) {
+                    await db.collection('users').updateOne(
+                        { _id: user._id },
+                        { $set: { 'subscription.stripeCustomerId': customerId, updated_at: new Date() } }
+                    );
+                }
+            } catch (e) {
+                console.warn('billing-portal: could not resolve customer from sub:', e.message);
+            }
+        }
+
+        if (!customerId) {
+            return res.status(400).json({
+                error: 'No billing account yet. Start a plan first, then you can manage it here.',
+                needsCheckout: true
+            });
+        }
+
+        var appBase = process.env.APP_URL || 'https://viewhunt.app';
+        var portalSession = await stripe.billingPortal.sessions.create({
+            customer: customerId,
+            return_url: appBase + '/manage-subscription'
+        });
+
+        res.json({ success: true, url: portalSession.url });
+    } catch (error) {
+        console.error('Billing portal error:', error);
+        var msg = error && error.message ? error.message : 'Failed to open billing portal';
+        if (/No configuration provided|customer portal/i.test(msg)) {
+            msg = 'Stripe Customer Portal is not enabled yet. In Stripe Dashboard → Settings → Billing → Customer portal, turn it on, then try again.';
+        }
+        res.status(500).json({ error: msg });
+    }
+});
+
 app.post('/api/subscription/cancel', authenticateToken, async (req, res) => {
     try {
         // Check if Stripe is configured

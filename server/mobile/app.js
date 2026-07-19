@@ -2188,8 +2188,7 @@ class ViewHuntApp {
     }
 
     manageSubscription() {
-        // Open subscription management page
-        window.open('/manage-subscription', '_blank');
+        window.location.href = '/manage-subscription';
     }
 
     handleOAuthCallback() {
