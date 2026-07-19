@@ -2112,11 +2112,11 @@ class ViewHuntApp {
             btn.textContent = 'Starting…';
         }
         try {
-            // Small test run by default so feedback is fast
+            // Full spontaneous run (12–18 ultra-common keywords)
             const response = await this.fetchWithAuth(`${this.apiBase}/channels/niche-scrape`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ limit: 4 })
+                body: JSON.stringify({})
             });
             const data = await response.json();
             if (!response.ok) {
@@ -2138,8 +2138,9 @@ class ViewHuntApp {
         }
     }
 
-    async viewScrapeRun(runId) {
+    async viewScrapeRun(runId, page) {
         this._selectedScrapeRunId = runId;
+        this._scrapeDetailPage = page || 1;
         const detail = document.getElementById('scrape-run-detail');
         const title = document.getElementById('scrape-detail-title');
         const meta = document.getElementById('scrape-detail-meta');
@@ -2148,8 +2149,10 @@ class ViewHuntApp {
 
         detail.style.display = 'block';
         title.textContent = 'Channels from this run';
-        meta.textContent = 'Loading…';
-        list.innerHTML = '';
+        if (this._scrapeDetailPage === 1) {
+            meta.textContent = 'Loading…';
+            list.innerHTML = '';
+        }
 
         // Highlight selected row
         document.querySelectorAll('.scrape-run-row').forEach((el) => {
@@ -2157,7 +2160,9 @@ class ViewHuntApp {
         });
 
         try {
-            const response = await this.fetchWithAuth(`${this.apiBase}/channels/niche-scrape/runs/${runId}`);
+            const response = await this.fetchWithAuth(
+                `${this.apiBase}/channels/niche-scrape/runs/${runId}?page=${this._scrapeDetailPage}&limit=40`
+            );
             const data = await response.json();
             if (!response.ok) {
                 meta.textContent = data.error || 'Failed to load run';
@@ -2176,23 +2181,22 @@ class ViewHuntApp {
             `;
 
             const channels = data.channels || [];
-            if (!channels.length) {
+            if (!channels.length && this._scrapeDetailPage === 1) {
                 list.innerHTML = run.status === 'processing' || run.status === 'queued'
                     ? '<p style="color:#ca8a04;font-size:13px;">Still scraping… refresh in a bit.</p>'
                     : '<p style="color:#888;font-size:13px;">No channels recorded for this run yet.</p>';
                 return;
             }
 
-            list.innerHTML = channels.map((ch) => {
+            // Text-only rows (no YouTube thumbnails) — keeps Admin Panel from cooking the CPU
+            const rows = channels.map((ch) => {
                 const name = ch.channel_name || 'Unknown';
                 const url = ch.channel_url || '#';
-                const thumb = ch.thumbnail_url || ch.avatar_url || '';
                 const kw = ch.niche_keyword || '';
                 const views = this.formatViews(ch.view_count);
                 const titleText = ch.video_title || '';
                 return `
-                    <div class="scrape-channel-row">
-                        ${thumb ? `<img src="${this.escapeHtml(thumb)}" alt="" loading="lazy">` : '<div style="width:44px;height:44px;border-radius:8px;background:#e2e8f0;"></div>'}
+                    <div class="scrape-channel-row scrape-channel-row-text">
                         <div style="min-width:0;">
                             <a href="${this.escapeHtml(url)}" target="_blank" rel="noopener" style="font-weight:600;color:#0f172a;text-decoration:none;">${this.escapeHtml(name)}</a>
                             <div style="font-size:11px;color:#64748b;">${this.escapeHtml(kw)} · ${views} views</div>
@@ -2201,6 +2205,23 @@ class ViewHuntApp {
                     </div>
                 `;
             }).join('');
+
+            if (this._scrapeDetailPage === 1) {
+                list.innerHTML = rows;
+            } else {
+                const moreBtn = list.querySelector('.scrape-load-more');
+                if (moreBtn) moreBtn.remove();
+                list.insertAdjacentHTML('beforeend', rows);
+            }
+
+            if (data.hasMore) {
+                list.insertAdjacentHTML('beforeend', `
+                    <button type="button" class="scrape-load-more auth-btn" style="margin-top:10px;background:#e2e8f0;color:#0f172a;width:100%;"
+                        onclick="window.app.viewScrapeRun('${runId}', ${(this._scrapeDetailPage || 1) + 1})">
+                        Load more channels
+                    </button>
+                `);
+            }
         } catch (err) {
             console.error('viewScrapeRun', err);
             meta.textContent = 'Error loading channels';

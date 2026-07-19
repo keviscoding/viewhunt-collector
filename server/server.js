@@ -1959,34 +1959,50 @@ app.get('/api/channels/niche-scrape/runs/:runId', authenticateToken, async (req,
         }
         if (!run) return res.status(404).json({ error: 'Run not found' });
 
+        var page = Math.max(1, parseInt(req.query.page, 10) || 1);
+        var pageSize = Math.min(50, Math.max(10, parseInt(req.query.limit, 10) || 40));
+        var skip = (page - 1) * pageSize;
+
+        var channelQuery = {
+            $or: [
+                { scrape_run_id: runId },
+                { scrape_run_id: run._id },
+                { scrapeRunId: runId }
+            ]
+        };
+        var totalFromDb = await db.collection('channels').countDocuments(channelQuery);
         var channels = await db.collection('channels')
-            .find({
-                $or: [
-                    { scrape_run_id: runId },
-                    { scrape_run_id: run._id },
-                    { scrapeRunId: runId }
-                ]
-            })
+            .find(channelQuery)
             .project({
                 channel_name: 1,
                 channel_url: 1,
                 niche_keyword: 1,
                 view_count: 1,
                 video_title: 1,
-                thumbnail_url: 1,
-                avatar_url: 1,
                 status: 1,
                 source: 1,
                 created_at: 1,
                 subscriber_count: 1
+                // intentionally omit thumbnail_url / avatar_url — admin UI stays light
             })
             .sort({ view_count: -1 })
-            .limit(300)
+            .skip(skip)
+            .limit(pageSize)
             .toArray();
 
         // Fallback to samples stored on the run (in case bulk path didn't tag scrape_run_id)
-        if (!channels.length && Array.isArray(run.channelSamples)) {
-            channels = run.channelSamples;
+        var total = totalFromDb;
+        if (!totalFromDb && Array.isArray(run.channelSamples)) {
+            total = run.channelSamples.length;
+            channels = run.channelSamples.slice(skip, skip + pageSize).map(function(ch) {
+                return {
+                    channel_name: ch.channel_name,
+                    channel_url: ch.channel_url,
+                    niche_keyword: ch.niche_keyword,
+                    view_count: ch.view_count,
+                    video_title: ch.video_title || ''
+                };
+            });
         }
 
         res.json({
@@ -2005,7 +2021,10 @@ app.get('/api/channels/niche-scrape/runs/:runId', authenticateToken, async (req,
                 error: run.error || null
             },
             channels: channels,
-            channelCount: channels.length
+            channelCount: total,
+            page: page,
+            pageSize: pageSize,
+            hasMore: skip + channels.length < total
         });
     } catch (err) {
         console.error('Niche scrape run detail error:', err);

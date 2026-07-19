@@ -1175,6 +1175,14 @@ body {
     flex-shrink: 0;
 }
 
+.scrape-channel-row-text {
+    padding: 6px 0;
+}
+
+.scrape-channel-row-text:last-child {
+    border-bottom: none;
+}
+
 @keyframes modalSlideIn {
     from {
         opacity: 0;

@@ -263,8 +263,12 @@ async function startScraperMachine(runId) {
         // Match DO server.js db name — URI path alone is often wrong/empty
         MONGODB_DB: process.env.MONGODB_DB || process.env.MONGO_DB_NAME || 'viewhuntv2',
         YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY || '',
-        SCRAPE_SCROLL_COUNT: process.env.SCRAPE_SCROLL_COUNT || '25',
-        SCRAPE_MAX_CHANNELS: process.env.SCRAPE_MAX_CHANNELS || '40'
+        // Match Chrome extension: scroll until bottom; no hard channel cap
+        SCRAPE_SCROLL_COUNT: process.env.SCRAPE_SCROLL_COUNT || '200',
+        // Always unlimited unless SCRAPE_ALLOW_CHANNEL_CAP=1 (old default of 40 was too aggressive)
+        SCRAPE_MAX_CHANNELS: process.env.SCRAPE_ALLOW_CHANNEL_CAP === '1'
+            ? (process.env.SCRAPE_MAX_CHANNELS || '0')
+            : '0'
     };
 
     const machine = await flyRequest('POST', '/apps/' + app + '/machines', {

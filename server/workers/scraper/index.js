@@ -15,8 +15,13 @@ const MONGODB_URI = process.env.MONGODB_URI || process.env.V2_MONGO_URI || proce
 // Must match DO server.js: v2Client.db('viewhuntv2')
 const MONGODB_DB = process.env.MONGODB_DB || process.env.MONGO_DB_NAME || 'viewhuntv2';
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY || '';
-const SCROLL_COUNT = parseInt(process.env.SCRAPE_SCROLL_COUNT || '25', 10);
-const MAX_CHANNELS_PER_KEYWORD = parseInt(process.env.SCRAPE_MAX_CHANNELS || '40', 10);
+// Scroll until results dry up (3 stale scrolls) or hit this safety ceiling
+const SCROLL_COUNT = parseInt(process.env.SCRAPE_SCROLL_COUNT || '200', 10);
+// 0 / unset = no per-keyword channel cap (extension-style: take everything scrolled)
+const _maxChRaw = process.env.SCRAPE_MAX_CHANNELS;
+const MAX_CHANNELS_PER_KEYWORD = (_maxChRaw === undefined || _maxChRaw === '' || _maxChRaw === '0')
+    ? 0
+    : parseInt(_maxChRaw, 10);
 
 function delay(ms) {
     return new Promise(function(resolve) { setTimeout(resolve, ms); });
@@ -138,7 +143,7 @@ async function scrapeKeyword(page, keyword) {
         var items = document.querySelectorAll('ytd-video-renderer, ytd-reel-item-renderer');
 
         for (var i = 0; i < items.length; i++) {
-            if (out.length >= channelLimit) break;
+            if (channelLimit > 0 && out.length >= channelLimit) break;
             var video = items[i];
             try {
                 var titleEl = video.querySelector('a#video-title') ||
@@ -232,7 +237,7 @@ function summarizeChannels(channels) {
         var ch = channels[i];
         var kw = ch.niche_keyword || 'unknown';
         byKeyword[kw] = (byKeyword[kw] || 0) + 1;
-        if (samples.length < 250) {
+        if (samples.length < 500) {
             samples.push({
                 channel_name: ch.channel_name,
                 channel_url: ch.channel_url,

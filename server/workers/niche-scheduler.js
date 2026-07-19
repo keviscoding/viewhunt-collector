@@ -1,57 +1,66 @@
 /**
  * Niche keyword rotation + scrape run scheduler (every 3 days).
- * Each run picks a spontaneous random set of very common everyday keywords.
+ * Each run picks a spontaneous random set of ultra-common title words
+ * (prepositions, auxiliaries, pronouns — the ChatGPT "batch" style).
  * Fly Puppeteer only — never YouTube Data API (quality is too poor).
  */
 const { ObjectId } = require('mongodb');
 const { startScraperMachine } = require('./fly-machines');
 
 /**
- * Large pool of short, everyday words that show up constantly in Shorts titles.
- * Selection is fully shuffled each run — not a fixed rotation order.
+ * Ultra-common Shorts-title building blocks.
+ * Spontaneous shuffle each run — NOT niche nouns (fashion/fitness/etc).
+ * Inspired by the manual "Batch 70/71" common-word lists.
  */
 const COMMON_WORD_POOL = [
-    // Tiny connectors / function words (huge Shorts coverage)
-    'a', 'the', 'in', 'on', 'at', 'by', 'for', 'with', 'from', 'of', 'to', 'into',
-    'onto', 'over', 'under', 'about', 'after', 'before', 'between', 'without',
-    'my', 'your', 'his', 'her', 'our', 'their', 'this', 'that', 'these', 'those',
-    // Pronouns / people
-    'i', 'you', 'he', 'she', 'we', 'they', 'me', 'him', 'us', 'them', 'who', 'what',
-    'guy', 'girl', 'boy', 'man', 'woman', 'kid', 'baby', 'mom', 'dad', 'bro', 'sis',
-    // Everyday verbs
-    'go', 'do', 'did', 'does', 'make', 'get', 'got', 'can', 'will', 'try', 'use',
-    'put', 'run', 'see', 'let', 'say', 'ask', 'give', 'take', 'find', 'want', 'need',
-    'know', 'think', 'look', 'come', 'keep', 'help', 'show', 'start', 'stop', 'watch',
-    'eat', 'drink', 'sleep', 'walk', 'drive', 'buy', 'sell', 'play', 'work', 'learn',
-    'teach', 'build', 'break', 'fix', 'clean', 'cook', 'bake', 'open', 'close',
-    // Question / hook words
-    'how', 'why', 'when', 'where', 'which', 'if', 'vs', 'or', 'and', 'but', 'not',
-    // Common descriptors
-    'new', 'old', 'best', 'worst', 'top', 'easy', 'hard', 'quick', 'simple', 'big',
-    'small', 'fast', 'slow', 'real', 'fake', 'free', 'full', 'long', 'short', 'hot',
-    'cold', 'cool', 'dark', 'wild', 'crazy', 'insane', 'epic', 'funny', 'weird',
-    'true', 'wrong', 'right', 'good', 'bad', 'next', 'last', 'first', 'only', 'just',
-    'most', 'every', 'never', 'always', 'still', 'again', 'more', 'less', 'same',
-    // Everyday nouns / life
-    'life', 'day', 'night', 'time', 'way', 'home', 'house', 'room', 'door', 'car',
-    'food', 'water', 'money', 'job', 'school', 'work', 'world', 'city', 'street',
-    'friend', 'love', 'hate', 'story', 'secret', 'trick', 'hack', 'tip', 'facts',
-    'body', 'face', 'hair', 'skin', 'hand', 'eye', 'mouth', 'teeth', 'phone',
-    'game', 'video', 'movie', 'song', 'music', 'book', 'test', 'exam', 'class',
-    'dog', 'cat', 'pet', 'animal', 'fish', 'bird', 'plant', 'tree', 'sun', 'rain',
-    // Places / things people search constantly
-    'store', 'mall', 'park', 'beach', 'gym', 'kitchen', 'bathroom', 'bed', 'office',
-    'hotel', 'plane', 'train', 'bus', 'bike', 'road', 'bridge', 'building', 'farm',
-    // Soft niches that still feel common
-    'food', 'recipe', 'snack', 'cake', 'coffee', 'tea', 'pizza', 'burger', 'fruit',
-    'fitness', 'workout', 'run', 'walk', 'sleep', 'morning', 'evening', 'weekend',
-    'travel', 'trip', 'vacation', 'airport', 'ticket', 'map', 'camera', 'photo',
-    'style', 'fashion', 'outfit', 'shoes', 'shirt', 'dress', 'makeup', 'nails',
-    'tech', 'app', 'ai', 'laptop', 'wifi', 'battery', 'charge', 'update', 'hack',
-    'sport', 'ball', 'team', 'win', 'lose', 'score', 'race', 'fight', 'match',
-    // Ranking / list bait (common Shorts formats)
-    'ranking', 'ranked', 'list', 'top', 'vs', 'versus', 'tier', 'number', 'part',
-    'side', 'end', 'back', 'front', 'middle', 'inside', 'outside'
+    // Articles / determiners
+    'a', 'an', 'the', 'this', 'that', 'these', 'those', 'some', 'any', 'every',
+    'all', 'each', 'both', 'either', 'neither', 'other', 'another', 'such', 'own',
+    // Prepositions / particles (Batch 71 style)
+    'in', 'on', 'at', 'by', 'for', 'with', 'from', 'of', 'to', 'into', 'onto',
+    'over', 'under', 'above', 'below', 'across', 'through', 'about', 'after',
+    'before', 'between', 'without', 'against', 'during', 'until', 'since',
+    'among', 'around', 'behind', 'beside', 'beyond', 'toward', 'upon', 'within',
+    'along', 'near', 'off', 'out', 'up', 'down', 'away', 'back', 'inside', 'outside',
+    // Pronouns
+    'i', 'you', 'he', 'she', 'we', 'they', 'me', 'him', 'her', 'us', 'them',
+    'my', 'your', 'his', 'our', 'their', 'mine', 'yours', 'hers', 'ours', 'theirs',
+    'who', 'what', 'which', 'whose', 'whom', 'someone', 'anyone', 'everyone',
+    'nobody', 'somebody', 'everybody', 'something', 'anything', 'everything', 'nothing',
+    // Auxiliaries / modals (Batch 70 style)
+    'be', 'am', 'is', 'are', 'was', 'were', 'been', 'being',
+    'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing', 'done',
+    'can', 'could', 'will', 'would', 'shall', 'should', 'may', 'might', 'must',
+    // Ultra-common verbs / -ing forms in sentence titles
+    'go', 'going', 'went', 'gone', 'get', 'getting', 'got', 'make', 'making', 'made',
+    'see', 'seeing', 'saw', 'seen', 'look', 'looking', 'keep', 'keeping', 'kept',
+    'start', 'starting', 'started', 'stop', 'stopped', 'try', 'trying', 'tried',
+    'say', 'saying', 'said', 'tell', 'telling', 'told', 'ask', 'asking', 'asked',
+    'know', 'knowing', 'knew', 'think', 'thinking', 'thought', 'want', 'wanted',
+    'need', 'needed', 'find', 'finding', 'found', 'take', 'taking', 'took', 'taken',
+    'give', 'giving', 'gave', 'given', 'let', 'put', 'putting', 'come', 'coming', 'came',
+    'leave', 'leaving', 'left', 'call', 'called', 'feel', 'feeling', 'felt',
+    'seem', 'become', 'became', 'wait', 'waiting', 'cry', 'crying', 'run', 'running',
+    'walk', 'walking', 'talk', 'talking', 'show', 'showing', 'showed', 'use', 'used',
+    'help', 'helping', 'work', 'working', 'play', 'playing', 'watch', 'watching',
+    'hear', 'heard', 'listen', 'turn', 'turned', 'open', 'opened', 'close', 'closed',
+    'break', 'broke', 'broken', 'fix', 'fixed', 'happen', 'happened', 'happen',
+    'realize', 'realized', 'decide', 'decided', 'choose', 'chose', 'chosen',
+    'forget', 'forgot', 'remember', 'change', 'changed', 'move', 'moved',
+    // Connectors / fillers that dominate titles
+    'and', 'but', 'or', 'so', 'if', 'when', 'while', 'because', 'then', 'than',
+    'as', 'like', 'just', 'only', 'even', 'still', 'also', 'too', 'not', 'no',
+    'yes', 'never', 'always', 'really', 'very', 'already', 'almost', 'enough',
+    'again', 'once', 'twice', 'more', 'most', 'much', 'many', 'little', 'few',
+    'same', 'next', 'last', 'first', 'one', 'two', 'three', 'now', 'here', 'there',
+    'why', 'how', 'where', 'why', 'how', 'where', 'yet', 'though', 'although',
+    'unless', 'whether', 'until', 'since', 'after', 'before',
+    // Bare ultra-common nouns that still appear in nearly every sentence title
+    'way', 'day', 'time', 'life', 'thing', 'things', 'one', 'man', 'woman', 'guy',
+    'girl', 'boy', 'kid', 'baby', 'mom', 'dad', 'friend', 'home', 'house', 'room',
+    'door', 'car', 'phone', 'school', 'work', 'job', 'money', 'world', 'place',
+    'night', 'morning', 'end', 'start', 'part', 'side', 'right', 'wrong', 'true',
+    'real', 'fake', 'good', 'bad', 'best', 'worst', 'new', 'old', 'big', 'small'
 ];
 
 // Alias for smoke tests / older imports
