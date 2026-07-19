@@ -364,48 +364,79 @@ class RankingAssembler {
                 : ((offsets && offsets[c.clipIndex] != null) ? offsets[c.clipIndex] : 0);
             var startMs = Math.round(startSec * 1000);
             inputs.push('-i', c.audioPath);
-            filterParts.push('[' + (i + 1) + ':a]aresample=44100,adelay=' + startMs + '|' + startMs + ',apad=whole_dur=' + totalDuration.toFixed(2) + '[c' + i + ']');
+            // Boost VO hard — clip bed often buries TTS
+            filterParts.push(
+                '[' + (i + 1) + ':a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,' +
+                'volume=2.6,alimiter=limit=0.97:level=false,' +
+                'adelay=' + startMs + '|' + startMs + ',apad=whole_dur=' + totalDuration.toFixed(2) + '[c' + i + ']'
+            );
             commentaryLabels.push('[c' + i + ']');
         }
 
-        // Mix all commentary tracks into one
         var commentaryMix;
         if (commentaryLabels.length === 1) {
-            commentaryMix = commentaryLabels[0].replace('[', '').replace(']', '');
             filterParts[filterParts.length - 1] = filterParts[filterParts.length - 1].replace('[c0]', '[cmix]');
             commentaryMix = 'cmix';
         } else {
-            filterParts.push(commentaryLabels.join('') + 'amix=inputs=' + commentaryLabels.length + ':duration=longest[cmix]');
+            filterParts.push(
+                commentaryLabels.join('') +
+                'amix=inputs=' + commentaryLabels.length + ':duration=longest:normalize=0[cmix]'
+            );
             commentaryMix = 'cmix';
         }
 
-        // Smooth ducking: use sidechaincompress so original audio ducks when commentary plays
-        // This gives a smooth fade-down/fade-up instead of a hard volume cut
-        filterParts.push('[0:a][' + commentaryMix + ']sidechaincompress=threshold=0.01:ratio=6:attack=80:release=400:level_sc=1[ducked]');
-        filterParts.push('[ducked][' + commentaryMix + ']amix=inputs=2:duration=first:dropout_transition=0[aout]');
+        // Aggressive duck of clip audio when VO speaks + keep VO loud (no amix normalize)
+        filterParts.push(
+            '[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo,volume=0.85[bed]'
+        );
+        filterParts.push(
+            '[bed][' + commentaryMix + ']sidechaincompress=threshold=0.012:ratio=18:attack=12:release=220:makeup=1:knee=2:link=average[ducked]'
+        );
+        filterParts.push(
+            '[ducked]volume=0.7[ducked2]'
+        );
+        filterParts.push(
+            '[ducked2][' + commentaryMix + ']amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]'
+        );
 
         var filterComplex = filterParts.join(';');
 
         var args = inputs.concat([
             '-filter_complex', filterComplex,
             '-map', '0:v', '-map', '[aout]',
-            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
             '-shortest', '-y', outputPath
         ]);
 
         try {
             await this.ffmpeg(args);
         } catch (err) {
-            // Fallback: if sidechaincompress not available, use simple volume ducking
-            console.warn('sidechaincompress failed, falling back to volume ducking:', err.message);
-            filterParts.pop(); filterParts.pop();
-            filterParts.push('[0:a]volume=0.55[orig]');
-            filterParts.push('[orig][' + commentaryMix + ']amix=inputs=2:duration=first:dropout_transition=0[aout]');
-            var fallbackFilter = filterParts.join(';');
+            console.warn('sidechaincompress failed, falling back to hard duck:', err.message);
+            // Rebuild a simple loud-VO mix without sidechain
+            var simpleParts = [];
+            for (var j = 0; j < commentary.length; j++) {
+                var cj = commentary[j];
+                var ss = Array.isArray(offsets)
+                    ? (offsets[cj.clipIndex] || 0)
+                    : ((offsets && offsets[cj.clipIndex] != null) ? offsets[cj.clipIndex] : 0);
+                var ms = Math.round(ss * 1000);
+                simpleParts.push(
+                    '[' + (j + 1) + ':a]aresample=44100,volume=2.8,adelay=' + ms + '|' + ms +
+                    ',apad=whole_dur=' + totalDuration.toFixed(2) + '[c' + j + ']'
+                );
+            }
+            var labels = commentary.map(function(_, idx) { return '[c' + idx + ']'; });
+            if (labels.length === 1) {
+                simpleParts[0] = simpleParts[0].replace('[c0]', '[cmix]');
+            } else {
+                simpleParts.push(labels.join('') + 'amix=inputs=' + labels.length + ':duration=longest:normalize=0[cmix]');
+            }
+            simpleParts.push('[0:a]volume=0.22[orig]');
+            simpleParts.push('[orig][cmix]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]');
             var fallbackArgs = inputs.concat([
-                '-filter_complex', fallbackFilter,
+                '-filter_complex', simpleParts.join(';'),
                 '-map', '0:v', '-map', '[aout]',
-                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
                 '-shortest', '-y', outputPath
             ]);
             await this.ffmpeg(fallbackArgs);
@@ -698,9 +729,10 @@ class RankingAssembler {
         var onWhite = !!opts.onWhite;
         var styleMain = onWhite ? 'ComSubWhite' : 'ComSub';
         var styleAlt = onWhite ? 'ComSubWhiteAlt' : 'ComSub';
+        // Instant appear — fade-in made captions feel late vs VO
         var pop = onWhite
-            ? '{\\an5\\pos(540,1040)\\fad(40,60)\\t(0,90,\\fscx118\\fscy118)\\t(90,160,\\fscx100\\fscy100)}'
-            : '{\\an5\\pos(540,1040)\\fad(50,50)}';
+            ? '{\\an5\\pos(540,1040)\\t(0,70,\\fscx114\\fscy114)\\t(70,120,\\fscx100\\fscy100)}'
+            : '{\\an5\\pos(540,1040)}';
 
         if (wordTimings && wordTimings.length) {
             for (var i = 0; i < wordTimings.length; i++) {

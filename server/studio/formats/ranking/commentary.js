@@ -92,14 +92,15 @@ class RankingCommentary {
     async _makeVisionSample(clipPath) {
         var out = path.join(this.audioDir, 'vision-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + '.mp4');
         try {
+            // Start slightly in — more of the action than a black/loading first frame
             await execFileAsync(ffmpegPath, [
-                '-y', '-ss', '0', '-i', clipPath,
-                '-t', '2.5',
-                '-vf', 'scale=360:-2',
+                '-y', '-ss', '0.35', '-i', clipPath,
+                '-t', '3.8',
+                '-vf', 'scale=480:-2',
                 '-an',
-                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '32',
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '30',
                 out
-            ], { timeout: 30000 });
+            ], { timeout: 45000 });
             if (fs.existsSync(out) && fs.statSync(out).size > 500) return out;
         } catch (err) {
             console.warn('Vision sample failed, using original:', err.message);
@@ -183,27 +184,52 @@ class RankingCommentary {
         var label = (clip && clip.label) ? String(clip.label).trim() : '';
         if (role === 'hook') {
             return {
-                line: 'Watch this — you need to see what happens.',
+                line: label
+                    ? ('Watch this — ' + label.toLowerCase() + ' hits different.')
+                    : 'Watch closely — this is about to get messy.',
                 label: (label || 'WATCH THIS').toUpperCase().slice(0, 22)
             };
         }
         if (role === 'cta') {
             return {
-                line: 'Subscribe before this ends if you\'re fast.',
+                line: label
+                    ? ('Subscribe before ' + label.toLowerCase() + ' if you\'re fast.')
+                    : 'Subscribe before the last second if you\'re fast.',
                 label: (label || 'NUMBER ONE').toUpperCase().slice(0, 22)
             };
         }
-        var reactions = [
-            { line: 'bro what', label: 'BRO WHAT' },
-            { line: 'that was wild', label: 'WILD' },
-            { line: 'poor homie', label: 'PAIN' },
-            { line: 'no way', label: 'NO WAY' },
-            { line: 'he folded', label: 'FOLDED' },
-            { line: 'absolute cinema', label: 'CINEMA' }
+        if (label) {
+            return {
+                line: 'Hold on — look at ' + label.toLowerCase() + '.',
+                label: label.toUpperCase().slice(0, 22)
+            };
+        }
+        return {
+            line: 'Pause. Did you catch what just happened?',
+            label: ('RANK ' + clipNumber).toUpperCase().slice(0, 22)
+        };
+    }
+
+    /** Ban vague filler that could fit any clip. */
+    _isGenericLine(line) {
+        var s = String(line || '').toLowerCase().replace(/[^a-z0-9\s']/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!s) return true;
+        var banned = [
+            'that was wild', 'so wild', 'bro what', 'no way', 'absolute cinema',
+            'I felt that', 'she cooked', 'he folded', 'poor homie', 'that was crazy',
+            'that was close', 'insane', 'crazy bro', 'what the heck', 'oh my god',
+            'subscribe if you', 'subscribe for more', 'like and subscribe',
+            'subscribe before this ends', 'subscribe if you\'re fast',
+            'hit subscribe', 'follow for more', 'watch this', 'you need to see this',
+            'this is crazy', 'unbelievable', 'no shot', 'I can\'t', 'bro cooked'
         ];
-        var pick = reactions[(Math.max(1, clipNumber) - 1) % reactions.length];
-        if (/fail|fall|crash/i.test(label)) return { line: 'that hurt to watch', label: (label || 'OUCH').toUpperCase() };
-        return { line: pick.line, label: (label || pick.label).toUpperCase().slice(0, 22) };
+        for (var i = 0; i < banned.length; i++) {
+            if (s === banned[i] || s.indexOf(banned[i]) !== -1) return true;
+        }
+        var words = s.split(' ').filter(Boolean);
+        // Very short reactions are almost always generic filler
+        if (words.length < 5) return true;
+        return false;
     }
 
     _parseLineAndLabel(raw, fallbackLine, fallbackLabel) {
@@ -252,60 +278,53 @@ class RankingCommentary {
         return words.join(' ').slice(0, 24);
     }
 
-    _rolePrompt(role, rankingTitle, clipNumber, totalClips) {
-        var shared = `You are a viral YouTube Shorts ranking narrator (think high-retention countdown compilations).
-Ranking title (context only — do NOT read it aloud): "${rankingTitle}"
-This clip's rank number on screen: #${clipNumber} of ${totalClips} (countdown; #1 is last).
+    _rolePrompt(role, rankingTitle, clipNumber, totalClips, stricter) {
+        var shared = `You are a sharp YouTube Shorts ranking narrator. You WATCH the clip and comment on SPECIFIC details only.
+Ranking title (context only — never read it aloud): "${rankingTitle}"
+On-screen rank: #${clipNumber} of ${totalClips} (countdown; #1 plays last).
 
-Return ONLY valid JSON, no markdown:
-{"line":"<spoken voiceover>","label":"<1-4 word ALL CAPS rank tag>"}
+Return ONLY valid JSON:
+{"line":"<spoken voiceover>","label":"<1-4 word ALL CAPS tag>"}
 
-label examples: NEVER AGAIN, DOUBLE CHECK, GOT LUCKY, BY A THREAD, AARRRGGGGHHHH
-Keep labels punchy — not full sentences.`;
+HARD RULES for "line":
+- Must mention at least one CONCRETE detail from THIS footage (object, body part, action, clothing, animal, face, fail, etc.)
+- Sound like a comment that would spark replies / ragebait / debate — specific, not filler
+- BANNED (never use): "that was wild", "bro what", "no way", "absolute cinema", "that was crazy", "insane", "subscribe if you're fast", "hit subscribe", "watch this", "you need to see this", "I felt that", "she cooked", "he folded"
+- No hashtags, no emojis, no reading the ranking title
+- label = punchy ALL CAPS tag for THIS moment only`;
+
+        if (stricter) {
+            shared += `
+
+STRICT RETRY: your previous line was too generic. Name the exact thing you see (e.g. shoes flying, chair tipping, rope, scream, kid, dog).`;
+        }
 
         if (role === 'hook') {
             return shared + `
 
-ROLE: COLD-OPEN HOOK on the FIRST clip shown (highest number).
-Write "line" as a comment on WHAT IS HAPPENING in this clip — intrigue / reaction, not a title read.
-Good vibes (vary each time — invent a fresh line for THIS footage):
-- "He'll never do this again."
-- "Watch this guy try to explain himself."
-- "Bro is about to regret everything."
-Rules:
-- 4–12 words, casual, spoken aloud
-- Do NOT say "ranking", "these are", or repeat the title
-- Do NOT use hashtags or emojis
-- label = short tag for this moment`;
+ROLE: COLD-OPEN on the FIRST clip.
+4–12 words. Comment on the specific moment like:
+- "He'll never trust that harness again."
+- "Watch his face the second the chair tips."
+Do NOT say ranking / these are / the title.`;
         }
 
         if (role === 'cta') {
             return shared + `
 
-ROLE: FINAL CLIP (#1) — subscribe CTA tied to the ON-SCREEN action.
-"line" must urge subscribe/follow using whatever is about to happen in THIS clip as the joke/threat/payoff.
-Good vibes (ALWAYS invent a new one for THIS footage — never reuse a stock phrase):
-- "Subscribe before he cuts the rope if you're fast."
-- "Hit subscribe before she drops it."
-- "Subscribe before this goes wrong."
-Rules:
-- 6–14 words, casual, urgent, funny
-- Must mention subscribe/follow AND reference something visible in the clip
-- Do NOT use hashtags or emojis
-- label = short tag for the #1 moment`;
+ROLE: FINAL #1 clip — subscribe CTA locked to THIS action.
+6–14 words. Must say subscribe/follow AND name a visible detail from the clip as the timer/joke.
+Good shape: "Subscribe before [specific thing in frame] if you're fast."
+BAD (too generic — never): "Subscribe if you're fast enough", "Subscribe before this ends", "Subscribe for more".
+The CTA must only make sense for THIS exact video.`;
         }
 
         return shared + `
 
 ROLE: MID-RANK reaction for #${clipNumber}.
-"line" = one punchy live reaction (3–10 words).
-Style: "bro folded", "where did her shoes go?", "why did he try to grab her?", "that was close"
-Rules:
-- React — don't narrate literally beat-by-beat
-- Match the clip energy
-- Do NOT use hashtags or emojis
-- Do NOT say subscribe (save that for #1)
-- label = short tag for this moment`;
+4–12 words. Ask a spicy question OR call out a specific detail people will argue about.
+Good shape: "Where did her shoes even go?" / "Why did he grab the rope like that?"
+Do NOT say subscribe. Do NOT use vague hype with no detail.`;
     }
 
     async _analyzeClipAndComment(clipPath, rankingTitle, clipNumber, totalClips, clip, role) {
@@ -325,27 +344,20 @@ Rules:
             }
             const base64Video = videoBuffer.toString('base64');
             const mimeType = 'video/mp4';
-            const prompt = this._rolePrompt(role, rankingTitle, clipNumber, totalClips);
 
-            const response = await Promise.race([
-                this.ai.models.generateContent({
-                    model: 'gemini-2.5-flash',
-                    contents: [{
-                        parts: [
-                            { inlineData: { mimeType, data: base64Video } },
-                            { text: prompt }
-                        ]
-                    }]
-                }),
-                new Promise(function(_, reject) {
-                    setTimeout(function() { reject(new Error('Gemini vision timeout (45s)')); }, 45000);
-                })
-            ]);
-
-            const text = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-            if (!text) throw new Error('No commentary generated');
-            var parsed = this._parseLineAndLabel(text, fallback.line, fallback.label);
-            // Prefer existing user label if they typed one
+            var parsed = await this._visionCommentOnce(
+                base64Video, mimeType, role, rankingTitle, clipNumber, totalClips, false, fallback
+            );
+            if (this._isGenericLine(parsed.line)) {
+                console.warn('  Generic line rejected, retrying:', parsed.line);
+                parsed = await this._visionCommentOnce(
+                    base64Video, mimeType, role, rankingTitle, clipNumber, totalClips, true, fallback
+                );
+            }
+            if (this._isGenericLine(parsed.line)) {
+                // Last resort: force a detail-shaped line from label / title words
+                parsed.line = fallback.line;
+            }
             if (clip && clip.label && String(clip.label).trim()) {
                 parsed.label = this._normalizeRankLabel(clip.label);
             }
@@ -357,17 +369,70 @@ Rules:
         }
     }
 
+    async _visionCommentOnce(base64Video, mimeType, role, rankingTitle, clipNumber, totalClips, stricter, fallback) {
+        const prompt = this._rolePrompt(role, rankingTitle, clipNumber, totalClips, stricter);
+        const response = await Promise.race([
+            this.ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [{
+                    parts: [
+                        { inlineData: { mimeType, data: base64Video } },
+                        { text: prompt }
+                    ]
+                }]
+            }),
+            new Promise(function(_, reject) {
+                setTimeout(function() { reject(new Error('Gemini vision timeout (45s)')); }, 45000);
+            })
+        ]);
+        const text = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (!text) throw new Error('No commentary generated');
+        return this._parseLineAndLabel(text, fallback.line, fallback.label);
+    }
+
     async _ttsLineWithTimings(line, label) {
         const audioPath = await this._ttsLine(line, label);
         let wordTimings = await this._alignWords(audioPath, line);
         if (!wordTimings || !wordTimings.length) {
-            var dur = this._wavDurationSeconds(audioPath);
-            if (!dur && this.openai && /\.mp3$/i.test(audioPath)) {
-                dur = Math.min(4, Math.max(1.2, String(line || '').split(/\s+/).length * 0.28));
+            var dur = await this._probeAudioDuration(audioPath);
+            if (!dur) dur = this._wavDurationSeconds(audioPath);
+            if (!dur) {
+                dur = Math.min(4, Math.max(1.0, String(line || '').split(/\s+/).length * 0.26));
             }
-            wordTimings = this._charWeightedTimings(line, dur || 2.0);
+            wordTimings = this._charWeightedTimings(line, dur);
         }
+        // Lead captions slightly so on-screen words never feel late vs speech
+        wordTimings = this._nudgeTimingsEarly(wordTimings, 0.08);
         return { audioPath, wordTimings };
+    }
+
+    _nudgeTimingsEarly(timings, leadSeconds) {
+        var lead = Math.max(0, leadSeconds || 0);
+        if (!timings || !timings.length || !lead) return timings || [];
+        return timings.map(function(t, i) {
+            var start = Math.max(0, (t.start || 0) - lead);
+            // Keep order: don't overlap previous word's start
+            if (i > 0) {
+                var prev = timings[i - 1];
+                var prevStart = Math.max(0, (prev.start || 0) - lead);
+                if (start < prevStart) start = prevStart;
+            }
+            var end = Math.max(start + 0.05, (t.end || 0) - lead * 0.25);
+            return { word: t.word, start: start, end: end };
+        });
+    }
+
+    async _probeAudioDuration(audioPath) {
+        if (!audioPath || !fs.existsSync(audioPath)) return 0;
+        try {
+            var ffprobePath = process.env.FFPROBE_PATH || require('ffprobe-static').path;
+            var r = await execFileAsync(ffprobePath, [
+                '-v', 'quiet', '-show_entries', 'format=duration', '-of', 'csv=p=0', audioPath
+            ], { timeout: 10000 });
+            return parseFloat(String(r.stdout || '').trim()) || 0;
+        } catch (e) {
+            return 0;
+        }
     }
 
     async _ttsLine(line, label) {
@@ -481,13 +546,34 @@ Rules:
             const words = transcription.words || [];
             if (!words.length) return null;
 
-            const timings = words.map(function(w) {
+            var timings = words.map(function(w) {
                 return {
                     word: String(w.word || '').trim(),
                     start: typeof w.start === 'number' ? w.start : 0,
                     end: typeof w.end === 'number' ? w.end : 0
                 };
             }).filter(function(w) { return w.word; });
+
+            // Prefer script word tokens when Whisper splits oddly; keep Whisper times
+            var scriptWords = String(line || '').replace(/\n/g, ' ').trim().split(/\s+/).filter(Boolean);
+            if (timings.length && scriptWords.length && Math.abs(timings.length - scriptWords.length) <= 2) {
+                var n = Math.min(timings.length, scriptWords.length);
+                for (var si = 0; si < n; si++) {
+                    timings[si].word = scriptWords[si];
+                }
+                timings = timings.slice(0, scriptWords.length);
+                // If Whisper missed trailing words, estimate from last end
+                if (timings.length < scriptWords.length && timings.length) {
+                    var last = timings[timings.length - 1];
+                    var remain = scriptWords.length - timings.length;
+                    var slice = Math.max(0.12, ((last.end || last.start) + 0.4 - (last.end || last.start)) / remain);
+                    var tCursor = last.end || last.start || 0;
+                    for (var ri = timings.length; ri < scriptWords.length; ri++) {
+                        timings.push({ word: scriptWords[ri], start: tCursor, end: tCursor + slice });
+                        tCursor += slice;
+                    }
+                }
+            }
 
             if (timings.length) {
                 console.log('  ✓ Whisper word timings: ' + timings.length + ' words');
