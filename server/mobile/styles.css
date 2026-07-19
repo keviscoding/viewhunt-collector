@@ -1125,6 +1125,56 @@ body {
     backdrop-filter: blur(20px);
 }
 
+.auth-modal.admin-modal-wide {
+    max-width: 560px;
+}
+
+.scrape-run-row {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin: 6px 0;
+    background: #f8fafc;
+    cursor: pointer;
+    text-align: left;
+}
+
+.scrape-run-row:hover,
+.scrape-run-row.active {
+    border-color: #94a3b8;
+    background: #f1f5f9;
+}
+
+.scrape-run-row .scrape-status {
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.scrape-run-row .scrape-status.complete { color: #16a34a; }
+.scrape-run-row .scrape-status.processing,
+.scrape-run-row .scrape-status.queued { color: #ca8a04; }
+.scrape-run-row .scrape-status.failed { color: #dc2626; }
+
+.scrape-channel-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 8px 0;
+    font-size: 13px;
+}
+
+.scrape-channel-row img {
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: 8px;
+    background: #e2e8f0;
+    flex-shrink: 0;
+}
+
 @keyframes modalSlideIn {
     from {
         opacity: 0;

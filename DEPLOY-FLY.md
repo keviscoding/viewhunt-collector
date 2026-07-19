@@ -110,13 +110,14 @@ serves clip uploads. The Studio UI only picks in/out points; it does not trim on
 ## Niche keyword scraper (on Fly)
 
 Every **3 days** (checked every 6h on DO boot), ViewHunt picks **12–18 spontaneous
-common keywords**, then:
+common keywords**, then starts a `viewhunt-scraper` Fly Machine (Puppeteer YouTube
+Shorts search). **YouTube Data API fallback is disabled** — if Fly is not configured
+the run fails instead of collecting low-quality API results.
 
-1. Starts a `viewhunt-scraper` Fly Machine (Puppeteer YouTube Shorts search), or
-2. Falls back to YouTube Data API on DO if Fly env is missing
-
-Also: `POST /api/channels/niche-scrape` (admin JWT) to run now;  
-`GET /api/channels/niche-scrape/status` for recent runs.
+Also (admin JWT / Admin Panel in the app):
+- `POST /api/channels/niche-scrape` — run now
+- `GET /api/channels/niche-scrape/status` — recent runs
+- `GET /api/channels/niche-scrape/runs/:id` — channels found for a run
 
 **DO env for Fly scraper path:**
 ```

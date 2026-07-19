@@ -1,7 +1,7 @@
 /**
  * Niche keyword rotation + scrape run scheduler (every 3 days).
  * Each run picks a spontaneous random set of very common everyday keywords.
- * Starts a Fly scraper Machine when configured; otherwise runs API fallback.
+ * Fly Puppeteer only — never YouTube Data API (quality is too poor).
  */
 const { ObjectId } = require('mongodb');
 const { startScraperMachine } = require('./fly-machines');
@@ -239,7 +239,7 @@ async function markKeywordsUsed(db, keywordIds) {
 }
 
 /**
- * Start a scrape run: prefer Fly Puppeteer Machine, else YouTube API auto-collector for those keywords.
+ * Start a scrape run on Fly Puppeteer. Fails the run if Fly is not configured / cannot start.
  */
 async function startScrapeRun(db, options) {
     options = options || {};
@@ -262,9 +262,11 @@ async function startScrapeRun(db, options) {
     const run = await createScrapeRun(db, keywords, options.trigger || 'schedule');
 
     let flyStarted = false;
+    let flyError = null;
     try {
         flyStarted = await startScraperMachine(String(run._id));
     } catch (err) {
+        flyError = err.message;
         console.warn('Fly scraper start failed:', err.message);
     }
 
@@ -277,61 +279,20 @@ async function startScrapeRun(db, options) {
         return { runId: String(run._id), worker: 'fly', keywords: run.keywords };
     }
 
-    // Fallback: YouTube Data API path (auto-collector style) for the selected keywords
+    const errMsg = flyError
+        || 'Fly scraper unavailable (set FLY_API_TOKEN, FLY_SCRAPER_APP, FLY_SCRAPER_IMAGE). YouTube API fallback is disabled.';
     await db.collection('scrape_runs').updateOne(
         { _id: run._id },
-        { $set: { status: 'processing', worker: 'api-fallback', startedAt: new Date() } }
-    );
-    await markKeywordsUsed(db, keywords.map(function(k) { return k._id; }).filter(Boolean));
-
-    const auto = require('../auto-collector');
-    setImmediate(async function() {
-        try {
-            const apiKey = process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY;
-            let upserted = 0;
-            let found = 0;
-            for (let i = 0; i < run.keywords.length; i++) {
-                const kw = run.keywords[i];
-                const results = await auto.searchAndCollect(kw, apiKey, 50);
-                found += results.length;
-                const qualified = results.filter(auto.isQualifiedChannel);
-                for (let c = 0; c < qualified.length; c++) {
-                    const ch = qualified[c];
-                    ch.source = 'scrape-scheduler';
-                    ch.niche_keyword = kw;
-                    const existing = await db.collection('channels').findOne({ channel_url: ch.channel_url });
-                    if (!existing) {
-                        await db.collection('channels').insertOne(ch);
-                        upserted++;
-                    }
-                }
-                await new Promise(function(r) { setTimeout(r, 1000); });
+        {
+            $set: {
+                status: 'failed',
+                worker: null,
+                error: errMsg,
+                finishedAt: new Date()
             }
-
-            await upsertNewNichesFeed(db, run.keywords);
-
-            await db.collection('scrape_runs').updateOne(
-                { _id: run._id },
-                {
-                    $set: {
-                        status: 'complete',
-                        finishedAt: new Date(),
-                        channelsFound: found,
-                        channelsUpserted: upserted
-                    }
-                }
-            );
-            console.log('🌱 Scrape run (API fallback) complete:', String(run._id), upserted, 'new channels');
-        } catch (err) {
-            console.error('Scrape run fallback failed:', err.message);
-            await db.collection('scrape_runs').updateOne(
-                { _id: run._id },
-                { $set: { status: 'failed', error: err.message, finishedAt: new Date() } }
-            );
         }
-    });
-
-    return { runId: String(run._id), worker: 'api-fallback', keywords: run.keywords };
+    );
+    throw new Error(errMsg);
 }
 
 async function upsertNewNichesFeed(db, keywords) {

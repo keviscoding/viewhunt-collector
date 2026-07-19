@@ -1504,11 +1504,7 @@ class ViewHuntApp {
             subscriptionType: this.subscriptionStatus?.type
         });
         
-        if (this.user && (
-            this.user.email === 'kevis@keviscoding.com' || 
-            this.user.email?.toLowerCase() === 'kevis@keviscoding.com' ||
-            this.subscriptionStatus?.type === 'admin'
-        )) {
+        if (this.isAppAdmin()) {
             const adminBtn = document.getElementById('admin-panel-btn');
             if (adminBtn) {
                 adminBtn.style.display = 'block';
@@ -1517,6 +1513,14 @@ class ViewHuntApp {
                 console.log('Admin panel button not found in DOM');
             }
         }
+    }
+
+    isAppAdmin() {
+        const email = (this.user && this.user.email || '').toLowerCase();
+        return email === 'nwalikelv@gmail.com' ||
+            email === 'kevis@viewhunt.com' ||
+            email === 'kevis@keviscoding.com' ||
+            this.subscriptionStatus?.type === 'admin';
     }
 
     // Helper function to check if user has access (admin, beta, invite, free, or paid users)
@@ -1637,9 +1641,7 @@ class ViewHuntApp {
             adminEmail: 'kevis@keviscoding.com'
         });
         
-        if (this.user.email === 'kevis@keviscoding.com' || 
-            this.user.email?.toLowerCase() === 'kevis@keviscoding.com' ||
-            this.subscriptionStatus?.type === 'admin') {
+        if (this.isAppAdmin()) {
             const adminBtn = document.getElementById('admin-panel-btn');
             if (adminBtn) {
                 adminBtn.style.display = 'block';
@@ -2008,16 +2010,201 @@ class ViewHuntApp {
     showAdminPanel() {
         document.getElementById('admin-overlay').style.display = 'flex';
         this.loadInviteCodes();
+        this.loadScrapeRuns();
         
-        // Set up form handler
-        document.getElementById('invite-code-form').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.generateInviteCode();
-        });
+        // Set up form handler once
+        const inviteForm = document.getElementById('invite-code-form');
+        if (inviteForm && !inviteForm.dataset.bound) {
+            inviteForm.dataset.bound = '1';
+            inviteForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.generateInviteCode();
+            });
+        }
     }
 
     closeAdminPanel() {
         document.getElementById('admin-overlay').style.display = 'none';
+        if (this._scrapePollTimer) {
+            clearInterval(this._scrapePollTimer);
+            this._scrapePollTimer = null;
+        }
+    }
+
+    escapeHtml(str) {
+        return String(str == null ? '' : str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    formatViews(n) {
+        const v = Number(n) || 0;
+        if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
+        if (v >= 1000) return (v / 1000).toFixed(1) + 'K';
+        return String(v);
+    }
+
+    async loadScrapeRuns() {
+        const list = document.getElementById('scrape-runs-list');
+        const flyEl = document.getElementById('scrape-fly-status');
+        if (!list) return;
+
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/channels/niche-scrape/status`);
+            const data = await response.json();
+            if (!response.ok) {
+                list.innerHTML = `<p style="color:#dc2626;">${this.escapeHtml(data.error || 'Failed to load runs')}</p>`;
+                return;
+            }
+
+            if (flyEl) {
+                flyEl.innerHTML = data.flyConfigured
+                    ? '<span style="color:#16a34a;">Fly scraper configured</span>'
+                    : '<span style="color:#dc2626;">Fly scraper NOT configured — set FLY_SCRAPER_IMAGE on DO</span>';
+            }
+
+            const runs = data.runs || [];
+            if (!runs.length) {
+                list.innerHTML = '<p style="color:#888;font-size:13px;">No scrape runs yet.</p>';
+                return;
+            }
+
+            list.innerHTML = runs.map((run) => {
+                const id = String(run._id);
+                const status = run.status || 'unknown';
+                const when = run.createdAt ? new Date(run.createdAt).toLocaleString() : '';
+                const kws = (run.keywords || []).slice(0, 8).join(', ');
+                const more = (run.keywords || []).length > 8 ? '…' : '';
+                const counts = `${run.channelsFound || 0} found · ${run.channelsUpserted || 0} upserted`;
+                const active = this._selectedScrapeRunId === id ? ' active' : '';
+                return `
+                    <div class="scrape-run-row${active}" onclick="window.app.viewScrapeRun('${id}')">
+                        <div style="display:flex;justify-content:space-between;gap:8px;">
+                            <span class="scrape-status ${this.escapeHtml(status)}">${this.escapeHtml(status)}</span>
+                            <span style="font-size:11px;color:#94a3b8;">${this.escapeHtml(when)}</span>
+                        </div>
+                        <div style="font-size:12px;margin-top:4px;color:#334155;">${this.escapeHtml(counts)} · ${this.escapeHtml(run.worker || '—')}</div>
+                        <div style="font-size:11px;color:#64748b;margin-top:2px;">${this.escapeHtml(kws + more)}</div>
+                        ${run.error ? `<div style="font-size:11px;color:#dc2626;margin-top:4px;">${this.escapeHtml(run.error)}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+
+            const active = runs.some((r) => r.status === 'processing' || r.status === 'queued');
+            if (active && !this._scrapePollTimer) {
+                this._scrapePollTimer = setInterval(() => this.loadScrapeRuns(), 8000);
+            } else if (!active && this._scrapePollTimer) {
+                clearInterval(this._scrapePollTimer);
+                this._scrapePollTimer = null;
+            }
+        } catch (err) {
+            console.error('loadScrapeRuns', err);
+            list.innerHTML = '<p style="color:#dc2626;">Error loading scrape runs</p>';
+        }
+    }
+
+    async startNicheScrape() {
+        const btn = document.getElementById('scrape-run-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Starting…';
+        }
+        try {
+            // Small test run by default so feedback is fast
+            const response = await this.fetchWithAuth(`${this.apiBase}/channels/niche-scrape`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ limit: 4 })
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                this.showToast(data.error || 'Failed to start scrape ❌');
+            } else {
+                this.showToast(`Scrape started (${(data.keywords || []).join(', ')})`);
+                this._selectedScrapeRunId = data.runId;
+                await this.loadScrapeRuns();
+                if (data.runId) this.viewScrapeRun(data.runId);
+            }
+        } catch (err) {
+            console.error('startNicheScrape', err);
+            this.showToast('Error starting scrape ❌');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Run scrape now';
+            }
+        }
+    }
+
+    async viewScrapeRun(runId) {
+        this._selectedScrapeRunId = runId;
+        const detail = document.getElementById('scrape-run-detail');
+        const title = document.getElementById('scrape-detail-title');
+        const meta = document.getElementById('scrape-detail-meta');
+        const list = document.getElementById('scrape-channels-list');
+        if (!detail || !list) return;
+
+        detail.style.display = 'block';
+        title.textContent = 'Channels from this run';
+        meta.textContent = 'Loading…';
+        list.innerHTML = '';
+
+        // Highlight selected row
+        document.querySelectorAll('.scrape-run-row').forEach((el) => {
+            el.classList.toggle('active', el.getAttribute('onclick')?.includes(runId));
+        });
+
+        try {
+            const response = await this.fetchWithAuth(`${this.apiBase}/channels/niche-scrape/runs/${runId}`);
+            const data = await response.json();
+            if (!response.ok) {
+                meta.textContent = data.error || 'Failed to load run';
+                return;
+            }
+
+            const run = data.run || {};
+            const byKw = run.byKeyword
+                ? Object.keys(run.byKeyword).map((k) => `${k}: ${run.byKeyword[k]}`).join(' · ')
+                : '';
+            meta.innerHTML = `
+                <div><strong>${this.escapeHtml(run.status)}</strong> · ${this.escapeHtml(run.worker || '—')} · ${data.channelCount || 0} channels</div>
+                <div style="margin-top:4px;">Keywords: ${this.escapeHtml((run.keywords || []).join(', '))}</div>
+                ${byKw ? `<div style="margin-top:4px;">Per keyword: ${this.escapeHtml(byKw)}</div>` : ''}
+                ${run.error ? `<div style="margin-top:4px;color:#dc2626;">${this.escapeHtml(run.error)}</div>` : ''}
+            `;
+
+            const channels = data.channels || [];
+            if (!channels.length) {
+                list.innerHTML = run.status === 'processing' || run.status === 'queued'
+                    ? '<p style="color:#ca8a04;font-size:13px;">Still scraping… refresh in a bit.</p>'
+                    : '<p style="color:#888;font-size:13px;">No channels recorded for this run yet.</p>';
+                return;
+            }
+
+            list.innerHTML = channels.map((ch) => {
+                const name = ch.channel_name || 'Unknown';
+                const url = ch.channel_url || '#';
+                const thumb = ch.thumbnail_url || ch.avatar_url || '';
+                const kw = ch.niche_keyword || '';
+                const views = this.formatViews(ch.view_count);
+                const titleText = ch.video_title || '';
+                return `
+                    <div class="scrape-channel-row">
+                        ${thumb ? `<img src="${this.escapeHtml(thumb)}" alt="" loading="lazy">` : '<div style="width:44px;height:44px;border-radius:8px;background:#e2e8f0;"></div>'}
+                        <div style="min-width:0;">
+                            <a href="${this.escapeHtml(url)}" target="_blank" rel="noopener" style="font-weight:600;color:#0f172a;text-decoration:none;">${this.escapeHtml(name)}</a>
+                            <div style="font-size:11px;color:#64748b;">${this.escapeHtml(kw)} · ${views} views</div>
+                            ${titleText ? `<div style="font-size:11px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${this.escapeHtml(titleText)}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } catch (err) {
+            console.error('viewScrapeRun', err);
+            meta.textContent = 'Error loading channels';
+        }
     }
 
     async generateInviteCode() {

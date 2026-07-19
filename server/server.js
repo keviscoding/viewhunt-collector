@@ -1870,9 +1870,18 @@ app.get('/api/user/subscription-status', authenticateToken, async (req, res) => 
 
 // Old pending endpoint removed - using user-specific endpoint below
 
+function isAdminUser(user) {
+    if (!user || !user.email || !process.env.ADMIN_EMAIL) return false;
+    var email = String(user.email).toLowerCase();
+    var admin = String(process.env.ADMIN_EMAIL).toLowerCase();
+    return email === admin ||
+        email === 'nwalikelv@gmail.com' ||
+        email === 'kevis@viewhunt.com';
+}
+
 // Manually trigger auto-collector (admin only)
 app.post('/api/channels/auto-collect', authenticateToken, async (req, res) => {
-    if (req.user.email !== process.env.ADMIN_EMAIL) {
+    if (!isAdminUser(req.user)) {
         return res.status(403).json({ error: 'Admin only' });
     }
     res.json({ message: 'Auto-collector started. Check server logs for progress.' });
@@ -1884,9 +1893,9 @@ app.post('/api/channels/auto-collect', authenticateToken, async (req, res) => {
     });
 });
 
-// Manually trigger 3-day niche scrape rotation (admin only)
+// Manually trigger 3-day niche scrape rotation (admin only) — Fly Puppeteer only
 app.post('/api/channels/niche-scrape', authenticateToken, async (req, res) => {
-    if (req.user.email !== process.env.ADMIN_EMAIL) {
+    if (!isAdminUser(req.user)) {
         return res.status(403).json({ error: 'Admin only' });
     }
     try {
@@ -1904,12 +1913,87 @@ app.post('/api/channels/niche-scrape', authenticateToken, async (req, res) => {
 
 // List niche keywords / recent scrape runs (admin)
 app.get('/api/channels/niche-scrape/status', authenticateToken, async (req, res) => {
-    if (req.user.email !== process.env.ADMIN_EMAIL) {
+    if (!isAdminUser(req.user)) {
         return res.status(403).json({ error: 'Admin only' });
     }
-    const runs = await db.collection('scrape_runs').find({}).sort({ createdAt: -1 }).limit(10).toArray();
+    const runs = await db.collection('scrape_runs')
+        .find({})
+        .project({ channelSamples: 0 })
+        .sort({ createdAt: -1 })
+        .limit(20)
+        .toArray();
     const keywordCount = await db.collection('niche_keywords').countDocuments({ active: true });
-    res.json({ keywordCount, runs });
+    const flyConfigured = !!(process.env.FLY_API_TOKEN && process.env.FLY_SCRAPER_APP && process.env.FLY_SCRAPER_IMAGE);
+    res.json({ keywordCount, flyConfigured, runs });
+});
+
+// Full scrape run detail + channels found (admin feedback)
+app.get('/api/channels/niche-scrape/runs/:runId', authenticateToken, async (req, res) => {
+    if (!isAdminUser(req.user)) {
+        return res.status(403).json({ error: 'Admin only' });
+    }
+    try {
+        var runId = req.params.runId;
+        var run = null;
+        try {
+            run = await db.collection('scrape_runs').findOne({ _id: new ObjectId(runId) });
+        } catch (e) {
+            return res.status(400).json({ error: 'Invalid run id' });
+        }
+        if (!run) return res.status(404).json({ error: 'Run not found' });
+
+        var channels = await db.collection('channels')
+            .find({
+                $or: [
+                    { scrape_run_id: runId },
+                    { scrape_run_id: run._id },
+                    { scrapeRunId: runId }
+                ]
+            })
+            .project({
+                channel_name: 1,
+                channel_url: 1,
+                niche_keyword: 1,
+                view_count: 1,
+                video_title: 1,
+                thumbnail_url: 1,
+                avatar_url: 1,
+                status: 1,
+                source: 1,
+                created_at: 1,
+                subscriber_count: 1
+            })
+            .sort({ view_count: -1 })
+            .limit(300)
+            .toArray();
+
+        // Fallback to samples stored on the run (in case bulk path didn't tag scrape_run_id)
+        if (!channels.length && Array.isArray(run.channelSamples)) {
+            channels = run.channelSamples;
+        }
+
+        res.json({
+            run: {
+                _id: run._id,
+                status: run.status,
+                worker: run.worker,
+                trigger: run.trigger,
+                keywords: run.keywords,
+                createdAt: run.createdAt,
+                startedAt: run.startedAt,
+                finishedAt: run.finishedAt,
+                channelsFound: run.channelsFound,
+                channelsUpserted: run.channelsUpserted,
+                byKeyword: run.byKeyword || null,
+                error: run.error || null
+            },
+            channels: channels,
+            channelCount: channels.length
+        });
+    } catch (err) {
+        console.error('Niche scrape run detail error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Add new channels from scraper (Chrome extension + Fly Puppeteer worker)
@@ -1962,6 +2046,7 @@ app.post('/api/channels/bulk', async (req, res) => {
                     recent_shorts: channel.recentShorts || channel.recent_shorts || null,
                     last_enhanced_update: channel.lastUpdated || channel.last_enhanced_update || null,
                     niche_keyword: channel.niche_keyword || channel.nicheKeyword || null,
+                    scrape_run_id: channel.scrape_run_id || channel.scrapeRunId || null,
                     source: channel.source || 'bulk',
                     status: channel.status || 'pending',
                     created_at: channel.created_at ? new Date(channel.created_at) : new Date(),

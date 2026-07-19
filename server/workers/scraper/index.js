@@ -127,7 +127,7 @@ async function scrapeKeyword(page, keyword) {
     return results;
 }
 
-async function enrichWithApi(channels) {
+async function enrichWithApi(channels, scrapeRunId) {
     // Keep scraped fields; bulk API accepts snake_case + camelCase
     return channels.map(function(ch) {
         return {
@@ -153,11 +153,34 @@ async function enrichWithApi(channels) {
             enhanced: false,
             status: 'pending',
             niche_keyword: ch.niche_keyword || null,
+            scrape_run_id: scrapeRunId || null,
+            scrapeRunId: scrapeRunId || null,
             created_at: new Date(),
             updated_at: new Date(),
             source: 'fly-scraper'
         };
     });
+}
+
+function summarizeChannels(channels) {
+    var byKeyword = {};
+    var samples = [];
+    for (var i = 0; i < channels.length; i++) {
+        var ch = channels[i];
+        var kw = ch.niche_keyword || 'unknown';
+        byKeyword[kw] = (byKeyword[kw] || 0) + 1;
+        if (samples.length < 250) {
+            samples.push({
+                channel_name: ch.channel_name,
+                channel_url: ch.channel_url,
+                niche_keyword: kw,
+                view_count: ch.view_count || 0,
+                video_title: ch.video_title || '',
+                thumbnail_url: ch.thumbnail_url || null
+            });
+        }
+    }
+    return { byKeyword: byKeyword, samples: samples };
 }
 
 function appBases() {
@@ -284,7 +307,8 @@ async function main() {
         unique.push(all[i]);
     }
 
-    const enriched = await enrichWithApi(unique);
+    const enriched = await enrichWithApi(unique, String(run._id));
+    const summary = summarizeChannels(unique);
 
     // Prefer bulk API; also upsert directly as backup
     let upserted = 0;
@@ -299,6 +323,19 @@ async function main() {
             if (!existing) {
                 await db.collection('channels').insertOne(ch);
                 upserted++;
+            } else {
+                await db.collection('channels').updateOne(
+                    { _id: existing._id },
+                    {
+                        $set: {
+                            scrape_run_id: String(run._id),
+                            niche_keyword: ch.niche_keyword || existing.niche_keyword,
+                            source: 'fly-scraper',
+                            updated_at: new Date()
+                        }
+                    }
+                );
+                upserted++;
             }
         }
     }
@@ -308,7 +345,8 @@ async function main() {
         scrapeRunId: run._id,
         createdAt: new Date(),
         channelsFound: unique.length,
-        channelsUpserted: upserted
+        channelsUpserted: upserted,
+        byKeyword: summary.byKeyword
     });
 
     try {
@@ -324,7 +362,9 @@ async function main() {
                 status: 'complete',
                 finishedAt: new Date(),
                 channelsFound: unique.length,
-                channelsUpserted: upserted
+                channelsUpserted: upserted,
+                byKeyword: summary.byKeyword,
+                channelSamples: summary.samples
             }
         }
     );
