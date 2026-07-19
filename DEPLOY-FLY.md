@@ -107,6 +107,31 @@ Full ranking jobs — trim, Gemini hook/commentary, TTS, Whisper captions, FFmpe
 run on **Fly Machines** (`viewhunt-assembly`). DigitalOcean enqueues the job and
 serves clip uploads. The Studio UI only picks in/out points; it does not trim on DO.
 
+## Niche keyword scraper (on Fly)
+
+Every **3 days** (checked every 6h on DO boot), ViewHunt picks **12–18 spontaneous
+common keywords**, then:
+
+1. Starts a `viewhunt-scraper` Fly Machine (Puppeteer YouTube Shorts search), or
+2. Falls back to YouTube Data API on DO if Fly env is missing
+
+Also: `POST /api/channels/niche-scrape` (admin JWT) to run now;  
+`GET /api/channels/niche-scrape/status` for recent runs.
+
+**DO env for Fly scraper path:**
+```
+FLY_SCRAPER_APP=viewhunt-scraper
+FLY_SCRAPER_IMAGE=registry.fly.io/viewhunt-scraper:<deployment-tag>
+FLY_API_TOKEN=...
+WORKER_SECRET=...
+APP_URL=https://viewhunt.app
+APP_INTERNAL_URL=https://YOUR-APP.ondigitalocean.app
+YOUTUBE_API_KEY=...   # used for API fallback + optional enrich
+```
+
+Build/push: `fly deploy -c fly.scraper.toml --build-only --push` then paste the
+printed `registry.fly.io/viewhunt-scraper:deployment-…` into `FLY_SCRAPER_IMAGE`.
+
 ## Burned-in text removal
 
 POV captions, handles, and other hard-coded overlays can be removed via Replicate

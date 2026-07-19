@@ -245,14 +245,24 @@ async function startScraperMachine(runId) {
     }
 
     const mongoUri = resolveMongoUri();
+    if (!mongoUri) {
+        console.warn('Fly scraper aborted: Mongo URI missing');
+        return false;
+    }
+    const appUrl = (process.env.APP_URL || '').replace(/\/$/, '');
+    const appInternal = (process.env.APP_INTERNAL_URL || process.env.DIGITALOCEAN_APP_URL || '')
+        .replace(/\/$/, '');
     const env = {
         RUN_ID: String(runId),
         JOB_TYPE: 'scrape',
-        WORKER_SECRET: process.env.WORKER_SECRET || '',
-        APP_URL: process.env.APP_URL || '',
+        WORKER_SECRET: (process.env.WORKER_SECRET || '').trim(),
+        APP_URL: appUrl,
+        APP_INTERNAL_URL: appInternal,
         MONGODB_URI: mongoUri,
         V2_MONGO_URI: mongoUri,
-        YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY || ''
+        YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY || '',
+        SCRAPE_SCROLL_COUNT: process.env.SCRAPE_SCROLL_COUNT || '25',
+        SCRAPE_MAX_CHANNELS: process.env.SCRAPE_MAX_CHANNELS || '40'
     };
 
     const machine = await flyRequest('POST', '/apps/' + app + '/machines', {
@@ -271,7 +281,7 @@ async function startScraperMachine(runId) {
     });
 
     console.log('Fly scraper machine started:', machine && machine.id, 'for run', runId);
-    return true;
+    return !!(machine && machine.id);
 }
 
 /**

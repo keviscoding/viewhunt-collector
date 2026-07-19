@@ -1912,8 +1912,15 @@ app.get('/api/channels/niche-scrape/status', authenticateToken, async (req, res)
     res.json({ keywordCount, runs });
 });
 
-// Add new channels from scraper
+// Add new channels from scraper (Chrome extension + Fly Puppeteer worker)
 app.post('/api/channels/bulk', async (req, res) => {
+    // Optional worker auth (Fly scraper sends X-Worker-Secret)
+    var workerSecret = process.env.WORKER_SECRET;
+    var incomingSecret = req.headers['x-worker-secret'];
+    if (workerSecret && incomingSecret && incomingSecret !== workerSecret) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const channels = req.body.channels;
     
     if (!Array.isArray(channels)) {
@@ -1926,38 +1933,43 @@ app.post('/api/channels/bulk', async (req, res) => {
     try {
         for (const channel of channels) {
             try {
-                console.log(`Processing channel: ${channel.channelName}, enhanced: ${channel.enhanced}, recentAverage: ${channel.recentAverage}`);
+                // Accept camelCase (extension) or snake_case (Fly scraper)
+                var channelName = channel.channelName || channel.channel_name;
+                var channelUrl = channel.channelUrl || channel.channel_url;
+                if (!channelUrl) {
+                    errorCount++;
+                    continue;
+                }
+
+                console.log('Processing channel:', channelName, 'enhanced:', !!(channel.enhanced));
                 
                 const channelDoc = {
-                    channel_name: channel.channelName,
-                    channel_url: channel.channelUrl,
-                    video_title: channel.videoTitle,
-                    view_count: channel.viewCount,
-                    subscriber_count: channel.subscriberCount || 0,
-                    view_to_sub_ratio: channel.viewToSubRatio || 0,
-                    avatar_url: channel.avatarUrl || null,
-                    // Video and thumbnail data
-                    video_url: channel.videoUrl || null,
-                    thumbnail_url: channel.thumbnailUrl || null,
-                    // Channel-level statistics
-                    total_views: channel.totalViews || 0,
-                    video_count: channel.videoCount || 0,
-                    average_views: channel.averageViews || 0,
-                    // Enhanced analysis data
+                    channel_name: channelName,
+                    channel_url: channelUrl,
+                    video_title: channel.videoTitle || channel.video_title || '',
+                    view_count: channel.viewCount != null ? channel.viewCount : (channel.view_count || 0),
+                    subscriber_count: channel.subscriberCount || channel.subscriber_count || 0,
+                    view_to_sub_ratio: channel.viewToSubRatio || channel.view_to_sub_ratio || 0,
+                    avatar_url: channel.avatarUrl || channel.avatar_url || null,
+                    video_url: channel.videoUrl || channel.video_url || null,
+                    thumbnail_url: channel.thumbnailUrl || channel.thumbnail_url || null,
+                    total_views: channel.totalViews || channel.total_views || 0,
+                    video_count: channel.videoCount || channel.video_count || 0,
+                    average_views: channel.averageViews || channel.average_views || 0,
                     enhanced: channel.enhanced || false,
-                    recent_average: channel.recentAverage || null,
-                    videos_analyzed: channel.videosAnalyzed || null,
-                    // 🔥 NEW: Recent shorts with clickable links
-                    recent_shorts: channel.recentShorts || null,
-                    last_enhanced_update: channel.lastUpdated || null,
-                    status: 'pending',
-                    created_at: new Date(),
+                    recent_average: channel.recentAverage || channel.recent_average || null,
+                    videos_analyzed: channel.videosAnalyzed || channel.videos_analyzed || null,
+                    recent_shorts: channel.recentShorts || channel.recent_shorts || null,
+                    last_enhanced_update: channel.lastUpdated || channel.last_enhanced_update || null,
+                    niche_keyword: channel.niche_keyword || channel.nicheKeyword || null,
+                    source: channel.source || 'bulk',
+                    status: channel.status || 'pending',
+                    created_at: channel.created_at ? new Date(channel.created_at) : new Date(),
                     updated_at: new Date()
                 };
 
-                // Use upsert to replace existing channels
                 await db.collection('channels').replaceOne(
-                    { channel_url: channel.channelUrl },
+                    { channel_url: channelUrl },
                     channelDoc,
                     { upsert: true }
                 );

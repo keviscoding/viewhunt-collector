@@ -10,6 +10,7 @@ const puppeteer = require('puppeteer');
 
 const RUN_ID = process.env.RUN_ID;
 const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
+const APP_INTERNAL_URL = (process.env.APP_INTERNAL_URL || '').replace(/\/$/, '');
 const MONGODB_URI = process.env.MONGODB_URI || process.env.V2_MONGO_URI || process.env.MONGO_URI;
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY || '';
 const SCROLL_COUNT = parseInt(process.env.SCRAPE_SCROLL_COUNT || '25', 10);
@@ -127,23 +128,31 @@ async function scrapeKeyword(page, keyword) {
 }
 
 async function enrichWithApi(channels) {
-    if (!YOUTUBE_API_KEY || !channels.length) return channels;
-
-    // Resolve handles → channel IDs via search is expensive; keep scraped data and mark pending
+    // Keep scraped fields; bulk API accepts snake_case + camelCase
     return channels.map(function(ch) {
         return {
             channel_name: ch.channel_name,
             channel_url: ch.channel_url,
+            channelName: ch.channel_name,
+            channelUrl: ch.channel_url,
             video_title: ch.video_title,
+            videoTitle: ch.video_title,
             view_count: ch.view_count || 0,
+            viewCount: ch.view_count || 0,
             subscriber_count: 0,
             view_to_sub_ratio: 0,
             avatar_url: ch.thumbnail_url || null,
+            avatarUrl: ch.thumbnail_url || null,
+            thumbnail_url: ch.thumbnail_url || null,
+            thumbnailUrl: ch.thumbnail_url || null,
+            video_url: ch.video_url || null,
+            videoUrl: ch.video_url || null,
             total_views: 0,
             video_count: 0,
             average_views: ch.view_count || 0,
             enhanced: false,
             status: 'pending',
+            niche_keyword: ch.niche_keyword || null,
             created_at: new Date(),
             updated_at: new Date(),
             source: 'fly-scraper'
@@ -151,21 +160,62 @@ async function enrichWithApi(channels) {
     });
 }
 
+function appBases() {
+    var bases = [];
+    if (APP_INTERNAL_URL) bases.push(APP_INTERNAL_URL);
+    if (APP_URL && APP_URL !== APP_INTERNAL_URL) bases.push(APP_URL);
+    return bases;
+}
+
 async function postBulk(channels) {
-    if (!APP_URL || !channels.length) return { inserted: 0 };
-    const res = await fetch(APP_URL + '/api/channels/bulk', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-Worker-Secret': process.env.WORKER_SECRET || ''
-        },
-        body: JSON.stringify({ channels: channels })
-    });
-    if (!res.ok) {
-        const text = await res.text();
-        throw new Error('bulk upload failed: ' + res.status + ' ' + text);
+    var bases = appBases();
+    if (!bases.length || !channels.length) return { inserted: 0 };
+    var lastErr = null;
+    for (var b = 0; b < bases.length; b++) {
+        try {
+            const res = await fetch(bases[b] + '/api/channels/bulk', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Worker-Secret': process.env.WORKER_SECRET || ''
+                },
+                body: JSON.stringify({ channels: channels })
+            });
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error('bulk upload failed: ' + res.status + ' ' + text);
+            }
+            return res.json();
+        } catch (e) {
+            lastErr = e;
+            console.warn('Bulk via', bases[b], 'failed:', e.message);
+        }
     }
-    return res.json();
+    throw lastErr || new Error('bulk upload failed');
+}
+
+async function upsertNewNichesFeed(db, keywords) {
+    var collection = await db.collection('collections').findOne({ name: 'New Niches', system: true });
+    if (!collection) {
+        var inserted = await db.collection('collections').insertOne({
+            name: 'New Niches',
+            description: 'Auto-rotated niches from the 3-day scraper',
+            system: true,
+            created_at: new Date(),
+            updated_at: new Date()
+        });
+        collection = { _id: inserted.insertedId };
+    }
+    await db.collection('collections').updateOne(
+        { _id: collection._id },
+        {
+            $set: {
+                updated_at: new Date(),
+                last_keywords: keywords,
+                last_rotation_at: new Date()
+            }
+        }
+    );
 }
 
 async function main() {
@@ -260,6 +310,12 @@ async function main() {
         channelsFound: unique.length,
         channelsUpserted: upserted
     });
+
+    try {
+        await upsertNewNichesFeed(db, keywords);
+    } catch (feedErr) {
+        console.warn('New Niches feed update failed:', feedErr.message);
+    }
 
     await db.collection('scrape_runs').updateOne(
         { _id: run._id },
