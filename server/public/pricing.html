@@ -43,7 +43,7 @@
     </nav>
     <div class="hero">
         <h1>30-Day Shorts <em>Challenge</em></h1>
-        <p>Try 3 ranking videos free with no card. Plans start with a 7-day Stripe trial (card saved at checkout) so you can post every day — cancel anytime before you're charged.</p>
+        <p>Import and edit free. When you cook a video, start a free challenge — card saved, not charged today. 7-day trial, then billed. Cancel anytime.</p>
     </div>
     <div id="plans"></div>
     <div id="features"></div>
@@ -114,26 +114,19 @@ function getAuthToken(){
 (function(){
     // === PLANS ===
     var plans=[
-        {id:'starter',name:'Starter',price:'$29',tagline:'Post almost daily',content:'Build the habit before the wave',features:[
-            '7-day Stripe trial (card saved), then $29/mo',
-            '~1 ranking Short per day cadence',
+        {id:'starter',name:'Starter',price:'$29',tagline:'Post every day',content:'30 ranking videos / month',features:[
+            'Start free — card for trial, not charged today',
+            '30 ranking Shorts / month (1 per day)',
             'Drop clips → edit + voiceover for you',
             'Unlimited niche database',
             'Word-by-word captions'
         ]},
-        {id:'creator',name:'Creator',price:'$59',tagline:'Post every day (or 2×)',content:'~60 ranking videos / month',pop:true,features:[
-            '7-day Stripe trial (card saved), then $59/mo',
-            'Daily Shorts challenge — monetize faster',
-            'Run the challenge on 2 channels',
+        {id:'creator',name:'Creator',price:'$59',tagline:'Post 2× a day or on 2 channels',content:'~60 ranking videos / month',pop:true,features:[
+            'Start free — card for trial, not charged today',
+            'Post twice a day or run 2 channels',
             'Priority generation queue',
-            'Captions, niches, ranking formats'
-        ]},
-        {id:'studio',name:'Studio',price:'$119',tagline:'Run it like a studio',content:'Max volume · multi-channel',features:[
-            '7-day Stripe trial (card saved), then $119/mo',
-            'Highest daily output for operators',
-            'Multi-channel ranking pipeline',
-            'Priority generation queue',
-            'Best top-up rates when you need more'
+            'Captions, niches, ranking formats',
+            'Best for getting monetized faster'
         ]}
     ];
 
@@ -148,7 +141,7 @@ function getAuthToken(){
         h+='<ul class="plan-features">';
         p.features.forEach(function(f){h+='<li>'+f+'</li>'});
         h+='</ul>';
-        h+='<button class="plan-btn '+(p.pop?'plan-btn-primary':'plan-btn-secondary')+'" onclick="subscribe(\''+p.id+'\')">Start Challenge</button>';
+        h+='<button class="plan-btn '+(p.pop?'plan-btn-primary':'plan-btn-secondary')+'" onclick="subscribe(\''+p.id+'\')">Start free challenge</button>';
         h+='</div>';
     });
     h+='</div>';

@@ -4,8 +4,8 @@
  * TTS: OpenAI first when available (fast/reliable), else Gemini TTS.
  * Word timings: OpenAI Whisper (short timeout) or character-weighted.
  *
- * NOTE: @google/genai is lazy-loaded — requiring it at top-level crashes the
- * Fly assembly image (verified exit_code=14). Keep OpenAI path working without it.
+ * NOTE: @google/genai is ESM-only — must use dynamic import(), never require().
+ * require() fails on Fly with "ES Module ... not supported" and leaves this.ai null.
  */
 const fs = require('fs');
 const path = require('path');
@@ -16,16 +16,28 @@ const ffmpegPath = process.env.FFMPEG_PATH || require('ffmpeg-static');
 
 let GoogleGenAI = null;
 let googleGenAiLoadError = null;
-function loadGoogleGenAI() {
-    if (GoogleGenAI || googleGenAiLoadError) return GoogleGenAI;
-    try {
-        GoogleGenAI = require('@google/genai').GoogleGenAI;
-    } catch (err) {
-        googleGenAiLoadError = err;
-        console.warn('@google/genai unavailable:', err.message);
-        GoogleGenAI = null;
-    }
-    return GoogleGenAI;
+let googleGenAiPromise = null;
+
+async function loadGoogleGenAI() {
+    if (GoogleGenAI) return GoogleGenAI;
+    if (googleGenAiLoadError) return null;
+    if (googleGenAiPromise) return googleGenAiPromise;
+    googleGenAiPromise = import('@google/genai')
+        .then(function(mod) {
+            GoogleGenAI = mod.GoogleGenAI || (mod.default && mod.default.GoogleGenAI) || null;
+            if (!GoogleGenAI) {
+                googleGenAiLoadError = new Error('@google/genai loaded but GoogleGenAI export missing');
+                return null;
+            }
+            console.log('@google/genai loaded via dynamic import');
+            return GoogleGenAI;
+        })
+        .catch(function(err) {
+            googleGenAiLoadError = err;
+            console.warn('@google/genai unavailable:', err.message);
+            return null;
+        });
+    return googleGenAiPromise;
 }
 
 function loadOpenAI() {
@@ -39,13 +51,8 @@ function loadOpenAI() {
 
 class RankingCommentary {
     constructor() {
-        var GenAI = loadGoogleGenAI();
-        this.ai = (process.env.GEMINI_API_KEY && GenAI)
-            ? new GenAI({ apiKey: process.env.GEMINI_API_KEY })
-            : null;
-        if (process.env.GEMINI_API_KEY && !this.ai && googleGenAiLoadError) {
-            console.warn('GEMINI_API_KEY set but SDK failed to load — using OpenAI-only commentary path');
-        }
+        this.ai = null;
+        this._aiInit = null;
         this.audioDir = (process.env.JOB_ID || process.env.JOB_TYPE === 'ranking_assemble')
             ? path.join('/tmp', 'ranking-audio')
             : path.join(__dirname, '../../../public/studio/generated/audio');
@@ -56,7 +63,23 @@ class RankingCommentary {
             : null;
         this.lastTtsProvider = null;
         this.lastTtsError = null;
-        this.onProgress = null; // optional async (message) => {}
+        this.onProgress = null;
+    }
+
+    async _ensureAi() {
+        if (this.ai) return this.ai;
+        if (!process.env.GEMINI_API_KEY) return null;
+        if (!this._aiInit) {
+            this._aiInit = loadGoogleGenAI().then(function(GenAI) {
+                if (!GenAI) return null;
+                return new GenAI({ apiKey: process.env.GEMINI_API_KEY });
+            }.bind(this));
+        }
+        this.ai = await this._aiInit;
+        if (!this.ai && googleGenAiLoadError) {
+            console.warn('GEMINI_API_KEY set but SDK failed to load — OpenAI/fallback path only');
+        }
+        return this.ai;
     }
 
     async _progress(msg) {
@@ -66,9 +89,6 @@ class RankingCommentary {
         }
     }
 
-    /**
-     * Tiny sample for Gemini vision — full clips are slow/expensive to upload.
-     */
     async _makeVisionSample(clipPath) {
         var out = path.join(this.audioDir, 'vision-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + '.mp4');
         try {
@@ -87,13 +107,10 @@ class RankingCommentary {
         return clipPath;
     }
 
-    /**
-     * Generate commentary lines for all clips.
-     * @returns {Array} Array of { clipIndex, line, audioPath, wordTimings }
-     */
     async generateCommentary(clips, rankingTitle, voiceName) {
         console.log(`🎙️ Ranking commentary: generating for ${clips.length} clips, title: "${rankingTitle}", voice: ${voiceName || 'Kore'}`);
         this.voiceName = voiceName || 'Kore';
+        await this._ensureAi();
 
         await this._progress('Writing intro line…');
         const introLine = await this._generateIntroLine(rankingTitle);
@@ -104,12 +121,14 @@ class RankingCommentary {
             const clip = clips[i];
             try {
                 await this._progress('Watching clip ' + (i + 1) + ' of ' + clips.length + ' for commentary…');
-                const line = await this._analyzeClipAndComment(clip.path, rankingTitle, i + 1, clips.length);
+                const line = await this._analyzeClipAndComment(clip.path, rankingTitle, i + 1, clips.length, clip);
                 commentaryLines.push({ clipIndex: i, line });
                 console.log(`  Clip ${i + 1}: "${line}"`);
             } catch (err) {
                 console.warn(`  Clip ${i + 1}: commentary failed — ${err.message}`);
-                commentaryLines.push({ clipIndex: i, line: null });
+                var fallback = this._fallbackReaction(clip, i + 1, clips.length);
+                commentaryLines.push({ clipIndex: i, line: fallback });
+                console.log(`  Clip ${i + 1} fallback: "${fallback}"`);
             }
         }
 
@@ -167,11 +186,29 @@ class RankingCommentary {
         return results;
     }
 
+    _fallbackReaction(clip, clipNumber, totalClips) {
+        var label = (clip && (clip.label || clip.filename)) ? String(clip.label || clip.filename) : '';
+        var reactions = [
+            'bro what',
+            'she cooked',
+            'that was wild',
+            'poor homie',
+            'no way',
+            'he folded',
+            'absolute cinema',
+            'I felt that'
+        ];
+        if (clipNumber === totalClips) return 'number one for a reason';
+        if (/fail|fall|crash/i.test(label)) return 'that hurt to watch';
+        return reactions[(clipNumber - 1) % reactions.length];
+    }
+
     async _generateIntroLine(rankingTitle) {
-        if (!this.ai) {
-            var t = String(rankingTitle || 'the best moments').trim();
-            return t.toLowerCase().startsWith('these are') ? t : ('These are ' + t);
-        }
+        await this._ensureAi();
+        var t = String(rankingTitle || 'the best moments').trim();
+        var fallback = t.toLowerCase().startsWith('these are') ? t : ('These are ' + t);
+
+        if (!this.ai) return fallback;
 
         const prompt = `You are a fast-paced, upbeat YouTube Shorts narrator for ranking/compilation videos.
 
@@ -187,24 +224,30 @@ Ranking title: "${rankingTitle}"
 
 Reply with ONLY the intro line, nothing else. No quotes, no explanation.`;
 
-        const response = await this.ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: [{ parts: [{ text: prompt }] }]
-        });
-
-        const text = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        if (!text) throw new Error('No intro line generated');
-        return text.replace(/^["']|["']$/g, '').trim();
+        try {
+            const response = await this.ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [{ parts: [{ text: prompt }] }]
+            });
+            const text = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (!text) return fallback;
+            return text.replace(/^["']|["']$/g, '').trim();
+        } catch (err) {
+            console.warn('Intro Gemini failed, using fallback:', err.message);
+            return fallback;
+        }
     }
 
-    async _analyzeClipAndComment(clipPath, rankingTitle, clipNumber, totalClips) {
-        if (!this.ai) throw new Error('GEMINI_API_KEY required for clip commentary');
+    async _analyzeClipAndComment(clipPath, rankingTitle, clipNumber, totalClips, clip) {
+        await this._ensureAi();
+        if (!this.ai) {
+            throw new Error('Gemini SDK unavailable for clip commentary');
+        }
 
         var samplePath = await this._makeVisionSample(clipPath);
         var cleanupSample = samplePath !== clipPath;
         try {
             const videoBuffer = fs.readFileSync(samplePath);
-            // Cap payload — Gemini stalls on huge base64 bodies
             if (videoBuffer.length > 4 * 1024 * 1024) {
                 throw new Error('Vision sample still too large');
             }
@@ -265,7 +308,7 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
     }
 
     async _ttsLine(line, label) {
-        // Prefer OpenAI TTS when available — Gemini preview TTS is slow/flaky
+        await this._ensureAi();
         var preferOpenAI = !!this.openai && process.env.RANKING_TTS_PROVIDER !== 'gemini';
 
         if (preferOpenAI) {
@@ -302,7 +345,7 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
         }
 
         throw new Error('TTS failed: ' + (this.lastTtsError || 'no provider') +
-            ' — set OPENAI_API_KEY for reliable voiceover');
+            ' — set OPENAI_API_KEY or fix Gemini TTS billing');
     }
 
     async _ttsGemini(line, label) {
@@ -331,7 +374,6 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
         return filepath;
     }
 
-    /** Map Gemini voice picker names to OpenAI TTS voices. */
     _openaiVoice() {
         var map = {
             Kore: 'nova', Puck: 'onyx', Charon: 'echo', Fenrir: 'fable',
@@ -355,9 +397,6 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
         return filepath;
     }
 
-    /**
-     * Align spoken words to the TTS WAV via OpenAI Whisper word timestamps.
-     */
     async _alignWords(audioPath, line) {
         if (!this.openai || !audioPath || !fs.existsSync(audioPath)) return null;
         if (process.env.RANKING_SKIP_WHISPER === '1' || process.env.RANKING_SKIP_WHISPER === 'true') {
@@ -397,9 +436,6 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
         }
     }
 
-    /**
-     * Character-weighted word timings across [0, duration].
-     */
     _charWeightedTimings(line, durationSeconds) {
         const words = String(line || '').replace(/\n/g, ' ').trim().split(/\s+/).filter(Boolean);
         if (!words.length) return [];

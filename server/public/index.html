@@ -180,7 +180,7 @@ img{max-width:100%;display:block}
 </style>
 <style>
 /* ── PRICING ── */
-.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem}
+.pricing-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1.25rem;max-width:720px;margin:0 auto}
 .price-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:2rem;position:relative;transition:all 0.25s}
 .price-card:hover{border-color:var(--accent);transform:translateY(-4px);box-shadow:0 12px 40px rgba(124,92,252,0.08)}
 .price-card.pop{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
@@ -527,54 +527,40 @@ img{max-width:100%;display:block}
         <div class="section-header center fade-up">
             <div class="section-tag">30-Day Shorts Challenge</div>
             <h2 class="section-title">Start the challenge. Post before the wave.</h2>
-            <p class="section-sub">Try 3 ranking videos free — no card. When you're ready to post every day, start a plan with a 7-day Stripe trial (card saved, cancel anytime).</p>
+            <p class="section-sub">Import and edit clips free. When you cook your first video, start a free challenge (card saved — you are not charged today). Cancel anytime during the 7-day trial.</p>
         </div>
         <div class="pricing-grid">
             <div class="price-card fade-up">
                 <div class="price-name">Starter</div>
                 <div class="price-amount">$29 <span>/mo</span></div>
-                <div class="price-credits">Post almost daily</div>
-                <div class="price-videos">Build the habit before GTA 6</div>
+                <div class="price-credits">Post every day</div>
+                <div class="price-videos">30 ranking videos / month</div>
                 <ul class="price-features">
-                    <li>7-day plan trial, then $29/mo</li>
-                    <li>~1 ranking Short per day cadence</li>
-                    <li>Drop clips → ViewHunt edits + voiceover</li>
+                    <li>Start free — card for trial, not charged today</li>
+                    <li>30 ranking Shorts / month (1 per day)</li>
+                    <li>Drop clips → edit + voiceover</li>
                     <li>Unlimited niche database</li>
                     <li>Word-by-word captions</li>
                 </ul>
-                <a href="/app?signup=1&plan=starter" class="btn-price btn-price-secondary" data-plan="starter">Start Challenge</a>
+                <a href="/app?signup=1&plan=starter" class="btn-price btn-price-secondary" data-plan="starter">Start free challenge</a>
             </div>
             <div class="price-card pop fade-up">
                 <div class="price-pop-badge">Most Popular</div>
                 <div class="price-name">Creator</div>
                 <div class="price-amount">$59 <span>/mo</span></div>
-                <div class="price-credits">Post every day (or 2×)</div>
-                <div class="price-videos">~60 ranking videos / month volume</div>
+                <div class="price-credits">Post 2× a day or on 2 channels</div>
+                <div class="price-videos">~60 ranking videos / month</div>
                 <ul class="price-features">
-                    <li>7-day plan trial, then $59/mo</li>
-                    <li>Daily posting challenge — monetize faster</li>
-                    <li>Run the challenge on 2 channels</li>
+                    <li>Start free — card for trial, not charged today</li>
+                    <li>Post twice a day or run 2 channels</li>
                     <li>Priority generation queue</li>
                     <li>Captions, niches, ranking formats</li>
+                    <li>Best for getting monetized faster</li>
                 </ul>
-                <a href="/app?signup=1&plan=creator" class="btn-price btn-price-primary" data-plan="creator">Start Creator Challenge</a>
-            </div>
-            <div class="price-card fade-up">
-                <div class="price-name">Studio</div>
-                <div class="price-amount">$119 <span>/mo</span></div>
-                <div class="price-credits">Run it like a studio</div>
-                <div class="price-videos">Max volume · multi-channel</div>
-                <ul class="price-features">
-                    <li>7-day plan trial, then $119/mo</li>
-                    <li>Highest daily output for operators</li>
-                    <li>Multi-channel ranking pipeline</li>
-                    <li>Priority generation queue</li>
-                    <li>Best for serious volume</li>
-                </ul>
-                <a href="/app?signup=1&plan=studio" class="btn-price btn-price-secondary" data-plan="studio">Start Studio Challenge</a>
+                <a href="/app?signup=1&plan=creator" class="btn-price btn-price-primary" data-plan="creator">Start free challenge</a>
             </div>
         </div>
-        <p style="text-align:center;margin-top:1.5rem;font-size:0.82rem;color:var(--text3)">Free path: 3 ranking videos or 7 days, no card. Paid plans: card at checkout, 7-day Stripe trial, then billed. <a href="/pricing" style="color:var(--accent2)">Full details &amp; top-ups</a></p>
+        <p style="text-align:center;margin-top:1.5rem;font-size:0.82rem;color:var(--text3)">Edit free. Cooking a video starts your free challenge (card saved, 7-day trial, then billed). <a href="/pricing" style="color:var(--accent2)">Full details</a></p>
     </div>
 </section>
 <script>

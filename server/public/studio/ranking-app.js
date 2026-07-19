@@ -391,15 +391,16 @@
                     ? trialInfo.rankingVideosUsed
                     : Math.max(0, 3 - (trialInfo.rankingVideosLeft || 0));
                 upgradeBtn.style.display = used >= 1 ? '' : 'none';
-                upgradeBtn.textContent = used >= 3 ? 'Start Creator' : 'Upgrade early';
+                upgradeBtn.style.display = '';
+                upgradeBtn.textContent = 'Start free challenge';
             }
         } else if (trialInfo && trialInfo.reason && trialInfo.reason !== 'converted') {
             badge.style.display = '';
             badge.style.color = '#f87171';
-            el.textContent = 'Trial ended — upgrade';
+            el.textContent = 'Start free challenge';
             if (upgradeBtn) {
                 upgradeBtn.style.display = '';
-                upgradeBtn.textContent = 'Start Creator';
+                upgradeBtn.textContent = 'Start free challenge';
             }
         } else {
             badge.style.display = 'none';
@@ -1477,9 +1478,11 @@
             });
             var aData = await aRes.json();
             if (aRes.status === 402 || !aData.success) {
-                if (aRes.status === 402 && (aData.upgradeRequired || (aData.trial && !aData.trial.active))) {
+                if (aRes.status === 402 && (aData.needsCard || aData.upgradeRequired || (aData.trial && !aData.trial.active))) {
                     showUpgradeModal({
-                        message: aData.message || 'Your free trial has ended (7 days or 3 ranking videos). Upgrade to continue.'
+                        message: aData.message || (aData.needsCard
+                            ? 'Add a card to start your free challenge and cook this video. You will not be charged today.'
+                            : 'Your free trial has ended. Upgrade to continue.')
                     });
                 }
                 throw new Error(aData.message || aData.error || 'Assembly failed');

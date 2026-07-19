@@ -3897,7 +3897,7 @@ app.post('/api/subscription/create-plan-checkout', authenticateToken, async (req
             line_items: [{ price: priceId, quantity: 1 }],
             mode: 'subscription',
             success_url: (process.env.APP_URL || 'https://viewhunt.app') + '/subscription-success?session_id={CHECKOUT_SESSION_ID}',
-            cancel_url: (process.env.APP_URL || 'https://viewhunt.app') + '/pricing',
+            cancel_url: (process.env.APP_URL || 'https://viewhunt.app') + '/studio/ranking',
             metadata: { userId: user._id.toString(), plan: plan },
             allow_promotion_codes: true,
             billing_address_collection: 'auto',

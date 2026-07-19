@@ -2045,6 +2045,37 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
         var userId = String(req.user.userId);
         var db = await getDb();
         var user = await db.collection('users').findOne({ _id: new ObjectId(userId) });
+
+        // Card gate: import/edit free; cooking requires Stripe trial/active (card on file)
+        var hasCardTrial = false;
+        var subStatus = user && user.subscription && user.subscription.status;
+        var subId = user && user.subscription && user.subscription.stripeSubscriptionId;
+        if (subId && (subStatus === 'trialing' || subStatus === 'active')) {
+            hasCardTrial = true;
+        } else if (subId && process.env.STRIPE_SECRET_KEY) {
+            try {
+                var stripeLive = require('stripe')(process.env.STRIPE_SECRET_KEY);
+                var liveSub = await stripeLive.subscriptions.retrieve(subId);
+                hasCardTrial = liveSub.status === 'trialing' || liveSub.status === 'active';
+                if (hasCardTrial) {
+                    await db.collection('users').updateOne(
+                        { _id: user._id },
+                        { $set: { 'subscription.status': liveSub.status, updated_at: new Date() } }
+                    );
+                }
+            } catch (stripeErr) {
+                console.warn('Stripe sub check for assemble:', stripeErr.message);
+            }
+        }
+        if (!hasCardTrial) {
+            return res.status(402).json({
+                error: 'Card required to cook video',
+                needsCard: true,
+                upgradeRequired: true,
+                message: 'Add a card to start your free challenge and cook this video. You will not be charged today — 7-day trial.'
+            });
+        }
+
         var trialActive = trialHelper.canUseRankingTrial(user);
         var usingTrial = false;
         var rankingCreditsCharged = 0;
