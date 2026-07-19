@@ -380,21 +380,132 @@
     function updateTrialBadge() {
         var badge = document.getElementById('trial-badge');
         var el = document.getElementById('trial-remaining');
+        var upgradeBtn = document.getElementById('btn-upgrade-trial');
         if (!badge || !el) return;
         if (trialInfo && trialInfo.active) {
             badge.style.display = '';
+            badge.style.color = '';
             el.textContent = trialInfo.rankingVideosLeft + ' ranking left · ' + trialInfo.daysLeft + 'd';
+            if (upgradeBtn) {
+                var used = trialInfo.rankingVideosUsed != null
+                    ? trialInfo.rankingVideosUsed
+                    : Math.max(0, 3 - (trialInfo.rankingVideosLeft || 0));
+                upgradeBtn.style.display = used >= 1 ? '' : 'none';
+                upgradeBtn.textContent = used >= 3 ? 'Start Creator' : 'Upgrade early';
+            }
         } else if (trialInfo && trialInfo.reason && trialInfo.reason !== 'converted') {
             badge.style.display = '';
             badge.style.color = '#f87171';
             el.textContent = 'Trial ended — upgrade';
+            if (upgradeBtn) {
+                upgradeBtn.style.display = '';
+                upgradeBtn.textContent = 'Start Creator';
+            }
         } else {
             badge.style.display = 'none';
+            if (upgradeBtn) upgradeBtn.style.display = 'none';
         }
         var btn = document.getElementById('btn-assemble');
         if (btn && !btn.disabled) {
             var enableCommentary = document.getElementById('commentary-toggle') && document.getElementById('commentary-toggle').checked;
             btn.textContent = assembleButtonLabel(enableCommentary);
+        }
+    }
+
+    function showUpgradeModal(opts) {
+        opts = opts || {};
+        var modal = document.getElementById('upgrade-modal');
+        if (!modal) return;
+        var sub = document.getElementById('upgrade-modal-sub');
+        if (sub && opts.message) sub.textContent = opts.message;
+        var endBtn = document.getElementById('btn-end-stripe-trial');
+        if (endBtn) {
+            var showEnd = opts.showEndStripeTrial != null ? opts.showEndStripeTrial : !!window._stripeTrialing;
+            endBtn.style.display = showEnd ? '' : 'none';
+        }
+        modal.classList.remove('hidden');
+    }
+
+    function hideUpgradeModal() {
+        var modal = document.getElementById('upgrade-modal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    async function startPlanCheckout(plan) {
+        try {
+            var res = await apiFetch('/api/subscription/create-plan-checkout', {
+                method: 'POST',
+                headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+                body: JSON.stringify({ plan: plan })
+            });
+            var data = await res.json();
+            if (data.url) {
+                window.location.href = data.url;
+                return;
+            }
+            alert(data.error || 'Could not start checkout');
+        } catch (e) {
+            alert('Checkout error: ' + e.message);
+        }
+    }
+
+    async function endStripeTrialEarly() {
+        try {
+            var res = await apiFetch('/api/subscription/end-trial-early', {
+                method: 'POST',
+                headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+                body: '{}'
+            });
+            var data = await res.json();
+            if (data.needsCheckout) {
+                showUpgradeModal({ message: 'Start a plan first — we will save your card for the 7-day trial.' });
+                return;
+            }
+            if (!res.ok) {
+                alert(data.error || 'Could not end trial');
+                return;
+            }
+            alert(data.message || 'Trial ended — billing started.');
+            hideUpgradeModal();
+            loadCredits();
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+    }
+
+    function wireUpgradeModal() {
+        var close = document.getElementById('upgrade-modal-close');
+        if (close) close.addEventListener('click', hideUpgradeModal);
+        var modal = document.getElementById('upgrade-modal');
+        if (modal) {
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) hideUpgradeModal();
+            });
+        }
+        document.querySelectorAll('.upgrade-plan-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                startPlanCheckout(btn.getAttribute('data-plan'));
+            });
+        });
+        var endBtn = document.getElementById('btn-end-stripe-trial');
+        if (endBtn) endBtn.addEventListener('click', endStripeTrialEarly);
+        var badge = document.getElementById('trial-badge');
+        if (badge) {
+            badge.addEventListener('click', function() {
+                showUpgradeModal({
+                    message: (trialInfo && trialInfo.active)
+                        ? 'You still have trial videos left — or start Creator now with a 7-day Stripe trial (card saved).'
+                        : 'Your free trial has ended. Pick a plan to keep posting ranking Shorts.'
+                });
+            });
+        }
+        var upgradeBtn = document.getElementById('btn-upgrade-trial');
+        if (upgradeBtn) {
+            upgradeBtn.addEventListener('click', function() {
+                showUpgradeModal({
+                    message: 'Start Creator to post every day. Card collected at checkout — 7-day plan trial, then billed.'
+                });
+            });
         }
     }
 
@@ -420,11 +531,16 @@
                         rankingVideosLeft: (me.trialRemaining && me.trialRemaining.rankingVideosLeft != null)
                             ? me.trialRemaining.rankingVideosLeft
                             : (t.rankingVideosLeft != null ? t.rankingVideosLeft : 0),
+                        rankingVideosUsed: t.rankingVideosUsed != null ? t.rankingVideosUsed : 0,
                         reason: t.reason
                     };
                     if (me.subscription && me.subscription.type === 'trial') trialInfo.active = true;
                     if (me.subscription && me.subscription.type === 'stripe' && me.subscription.hasAccess) {
+                        // Keep stripeTrialing flag for "end trial early" even when app trial is converted
+                        window._stripeTrialing = me.subscription.status === 'trialing';
                         trialInfo = null;
+                    } else {
+                        window._stripeTrialing = me.subscription && me.subscription.status === 'trialing';
                     }
                 }
                 updateTrialBadge();
@@ -1361,6 +1477,11 @@
             });
             var aData = await aRes.json();
             if (aRes.status === 402 || !aData.success) {
+                if (aRes.status === 402 && (aData.upgradeRequired || (aData.trial && !aData.trial.active))) {
+                    showUpgradeModal({
+                        message: aData.message || 'Your free trial has ended (7 days or 3 ranking videos). Upgrade to continue.'
+                    });
+                }
                 throw new Error(aData.message || aData.error || 'Assembly failed');
             }
             if (aData.trial) {
@@ -1420,6 +1541,7 @@
     // ==================== INIT ====================
     function init() {
         loadCredits(); initUpload(); initUrlImport(); initTimeline(); initPlayControls(); initTrimControls(); initTitleControls(); initPositionControls(); initStylePresets();
+        wireUpgradeModal();
         document.getElementById('btn-next-trim').addEventListener('click', startTrimming);
         document.getElementById('btn-assemble').addEventListener('click', assembleVideo);
         ['title-text', 'title-highlight', 'voice-picker', 'subtitle-font', 'subtitle-y', 'commentary-toggle'].forEach(function(id) {

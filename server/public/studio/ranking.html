@@ -194,7 +194,8 @@
             <div class="logo">Ranking <span>Video</span></div>
         </div>
         <div class="credit-badge"><span id="credit-balance">&mdash;</span> credits</div>
-        <div class="credit-badge" id="trial-badge" style="display:none;margin-left:0.5rem;background:rgba(52,211,153,0.12);border-color:rgba(52,211,153,0.35);color:#34d399"><span id="trial-remaining"></span></div>
+        <div class="credit-badge" id="trial-badge" style="display:none;margin-left:0.5rem;background:rgba(52,211,153,0.12);border-color:rgba(52,211,153,0.35);color:#34d399;cursor:pointer" title="Upgrade"><span id="trial-remaining"></span></div>
+        <button type="button" class="btn btn-secondary" id="btn-upgrade-trial" style="display:none;margin-left:0.5rem;padding:0.35rem 0.75rem;font-size:0.78rem">Upgrade</button>
     </header>
     <div class="steps">
         <div class="step active" id="step-1"></div>
@@ -445,6 +446,46 @@
         </div>
     </div>
 </div>
-<script src="/studio/ranking-app.js?v=20260329b"></script>
+
+<!-- Upgrade / end-trial paywall -->
+<div id="upgrade-modal" class="upgrade-modal hidden" role="dialog" aria-modal="true" aria-labelledby="upgrade-modal-title">
+    <div class="upgrade-modal-card">
+        <button type="button" class="upgrade-modal-close" id="upgrade-modal-close" aria-label="Close">&times;</button>
+        <h2 id="upgrade-modal-title">Keep the Shorts Challenge going</h2>
+        <p id="upgrade-modal-sub" class="upgrade-modal-sub">Your free trial ends after 3 ranking videos or 7 days. Start Creator to post every day — card collected, 7-day Stripe trial, cancel anytime.</p>
+        <div class="upgrade-plans">
+            <button type="button" class="upgrade-plan-btn" data-plan="starter">
+                <strong>Starter · $29/mo</strong>
+                <span>Post almost daily</span>
+            </button>
+            <button type="button" class="upgrade-plan-btn upgrade-plan-pop" data-plan="creator">
+                <strong>Creator · $59/mo</strong>
+                <span>Post every day (or 2×) — most popular</span>
+            </button>
+            <button type="button" class="upgrade-plan-btn" data-plan="studio">
+                <strong>Studio · $119/mo</strong>
+                <span>Run multiple channels</span>
+            </button>
+        </div>
+        <button type="button" class="btn btn-secondary" id="btn-end-stripe-trial" style="display:none;width:100%;margin-top:0.75rem">End Stripe trial &amp; start billing now</button>
+        <p class="upgrade-modal-note">Stripe saves your card and charges after the 7-day plan trial unless you cancel.</p>
+    </div>
+</div>
+
+<style>
+.upgrade-modal{position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,0.65);display:flex;align-items:center;justify-content:center;padding:1rem}
+.upgrade-modal.hidden{display:none}
+.upgrade-modal-card{position:relative;width:100%;max-width:420px;background:var(--surface,#1a1a24);border:1px solid var(--border,#2a2a3a);border-radius:14px;padding:1.5rem 1.25rem;box-shadow:0 20px 60px rgba(0,0,0,0.45)}
+.upgrade-modal-close{position:absolute;top:0.5rem;right:0.75rem;background:none;border:none;color:var(--text-dim,#888);font-size:1.5rem;cursor:pointer}
+.upgrade-modal-card h2{font-size:1.2rem;margin:0 0 0.5rem;color:var(--text,#fff)}
+.upgrade-modal-sub{font-size:0.85rem;color:var(--text-dim,#9a9aaf);line-height:1.5;margin:0 0 1rem}
+.upgrade-plans{display:flex;flex-direction:column;gap:0.5rem}
+.upgrade-plan-btn{text-align:left;padding:0.85rem 1rem;border-radius:10px;border:1px solid var(--border,#2a2a3a);background:rgba(255,255,255,0.03);color:var(--text,#fff);cursor:pointer;display:flex;flex-direction:column;gap:0.2rem}
+.upgrade-plan-btn span{font-size:0.78rem;color:var(--text-dim,#9a9aaf)}
+.upgrade-plan-btn:hover{border-color:rgba(124,92,252,0.5)}
+.upgrade-plan-pop{border-color:rgba(124,92,252,0.55);background:rgba(124,92,252,0.12)}
+.upgrade-modal-note{font-size:0.72rem;color:var(--text-dim,#777);margin:0.85rem 0 0;line-height:1.4}
+</style>
+<script src="/studio/ranking-app.js?v=20260719a"></script>
 </body>
 </html>

@@ -241,7 +241,7 @@ img{max-width:100%;display:block}
             <a href="#templates">Templates</a>
             <a href="#pricing">Pricing</a>
             <a href="/app">Sign In</a>
-            <a href="/app?signup=1" class="nav-cta">Get Started Free</a>
+            <a href="/app?signup=1&next=ranking" class="nav-cta">Get Started Free</a>
         </div>
         <button class="mobile-menu-btn" onclick="document.querySelector('.nav-links').classList.toggle('show')" aria-label="Menu">&#9776;</button>
     </div>
@@ -255,10 +255,10 @@ img{max-width:100%;display:block}
             <h1>Enter Trending Niches.<br>Make Videos with AI.<br><span class="gradient">Go Viral.</span></h1>
             <p class="hero-sub">It's never been easier to print with content. Browse what's blowing up on YouTube, pick a niche, and generate scroll-stopping Shorts with AI. No video editing. No excuses.</p>
             <div class="hero-buttons">
-                <a href="/app?signup=1" class="btn-hero btn-hero-primary">Start Free — Find Your Niche</a>
-                <a href="#templates" class="btn-hero btn-hero-secondary">Browse AI Templates</a>
+                <a href="/app?signup=1&next=ranking" class="btn-hero btn-hero-primary">Start Free — 3 Ranking Videos</a>
+                <a href="#pricing" class="btn-hero btn-hero-secondary">See the Challenge</a>
             </div>
-            <p class="hero-note">No credit card required · Free niche discovery · Create from your phone</p>
+            <p class="hero-note">No credit card for your first 3 videos · Drop clips in → ranked Short with voiceover</p>
         </div>
         <!-- Viral Shorts Showcase -->
         <div class="hero-preview">
@@ -366,7 +366,7 @@ img{max-width:100%;display:block}
         </div>
         <div style="text-align:center;margin-top:2rem" class="fade-up">
             <p style="color:var(--text3);font-size:0.88rem;margin-bottom:1rem">New templates added every month. Make viral-ready videos on the go with AI.</p>
-            <a href="/app?signup=1" class="btn-hero btn-hero-primary">Open Content Studio</a>
+            <a href="/app?signup=1&next=ranking" class="btn-hero btn-hero-primary">Open Ranking Studio</a>
         </div>
     </div>
 </section>
@@ -472,7 +472,7 @@ img{max-width:100%;display:block}
             <div class="guide-text">
                 <h3>Free Short-Form Content Guide Included</h3>
                 <p>Every account gets our guide to going viral with AI-generated Shorts. Niche selection, scripting frameworks, posting schedules, and monetization strategies — all included free.</p>
-                <a href="/app?signup=1" class="btn-green">Get Free Access</a>
+                <a href="/app?signup=1&next=ranking" class="btn-green">Get Free Access</a>
             </div>
         </div>
     </div>
@@ -525,60 +525,81 @@ img{max-width:100%;display:block}
 <section class="section" id="pricing" style="background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
     <div class="container">
         <div class="section-header center fade-up">
-            <div class="section-tag">Pricing</div>
-            <h2 class="section-title">Start free. Scale when you're ready.</h2>
-            <p class="section-sub">Start with a 7-day free trial (or 3 ranking videos — whichever comes first). Upgrade anytime to Starter, Creator, or Studio.</p>
+            <div class="section-tag">30-Day Shorts Challenge</div>
+            <h2 class="section-title">Start the challenge. Post before the wave.</h2>
+            <p class="section-sub">Try 3 ranking videos free — no card. When you're ready to post every day, start a plan with a 7-day Stripe trial (card saved, cancel anytime).</p>
         </div>
         <div class="pricing-grid">
             <div class="price-card fade-up">
                 <div class="price-name">Starter</div>
                 <div class="price-amount">$29 <span>/mo</span></div>
-                <div class="price-credits">300 credits/month</div>
-                <div class="price-videos">~54 scene clips/month</div>
+                <div class="price-credits">Post almost daily</div>
+                <div class="price-videos">Build the habit before GTA 6</div>
                 <ul class="price-features">
-                    <li>7-day free trial, then $29/mo</li>
-                    <li>ViewHunt Niche Database (unlimited)</li>
-                    <li>300 video credits per month</li>
-                    <li>All video formats & styles</li>
+                    <li>7-day plan trial, then $29/mo</li>
+                    <li>~1 ranking Short per day cadence</li>
+                    <li>Drop clips → ViewHunt edits + voiceover</li>
+                    <li>Unlimited niche database</li>
                     <li>Word-by-word captions</li>
                 </ul>
-                <a href="/app?signup=1" class="btn-price btn-price-secondary">Start Free Trial</a>
+                <a href="/app?signup=1&plan=starter" class="btn-price btn-price-secondary" data-plan="starter">Start Challenge</a>
             </div>
             <div class="price-card pop fade-up">
                 <div class="price-pop-badge">Most Popular</div>
                 <div class="price-name">Creator</div>
                 <div class="price-amount">$59 <span>/mo</span></div>
-                <div class="price-credits">600 credits/month</div>
-                <div class="price-videos">~109 scene clips/month</div>
+                <div class="price-credits">Post every day (or 2×)</div>
+                <div class="price-videos">~60 ranking videos / month volume</div>
                 <ul class="price-features">
-                    <li>7-day free trial, then $59/mo</li>
-                    <li>ViewHunt Niche Database (unlimited)</li>
-                    <li>600 video credits per month</li>
-                    <li>All video formats & styles</li>
-                    <li>Word-by-word captions</li>
+                    <li>7-day plan trial, then $59/mo</li>
+                    <li>Daily posting challenge — monetize faster</li>
+                    <li>Run the challenge on 2 channels</li>
                     <li>Priority generation queue</li>
+                    <li>Captions, niches, ranking formats</li>
                 </ul>
-                <a href="/app?signup=1" class="btn-price btn-price-primary">Start Free Trial</a>
+                <a href="/app?signup=1&plan=creator" class="btn-price btn-price-primary" data-plan="creator">Start Creator Challenge</a>
             </div>
             <div class="price-card fade-up">
                 <div class="price-name">Studio</div>
                 <div class="price-amount">$119 <span>/mo</span></div>
-                <div class="price-credits">1,200 credits/month</div>
-                <div class="price-videos">~218 scene clips/month</div>
+                <div class="price-credits">Run it like a studio</div>
+                <div class="price-videos">Max volume · multi-channel</div>
                 <ul class="price-features">
-                    <li>7-day free trial, then $119/mo</li>
-                    <li>ViewHunt Niche Database (unlimited)</li>
-                    <li>1,200 video credits per month</li>
-                    <li>All video formats & styles</li>
-                    <li>Word-by-word captions</li>
+                    <li>7-day plan trial, then $119/mo</li>
+                    <li>Highest daily output for operators</li>
+                    <li>Multi-channel ranking pipeline</li>
                     <li>Priority generation queue</li>
+                    <li>Best for serious volume</li>
                 </ul>
-                <a href="/app?signup=1" class="btn-price btn-price-secondary">Start Free Trial</a>
+                <a href="/app?signup=1&plan=studio" class="btn-price btn-price-secondary" data-plan="studio">Start Studio Challenge</a>
             </div>
         </div>
-        <p style="text-align:center;margin-top:1.5rem;font-size:0.82rem;color:var(--text3)">Trial ends after 7 days or 3 ranking videos — whichever comes first. <a href="/pricing" style="color:var(--accent2)">See full pricing details & top-up packs</a></p>
+        <p style="text-align:center;margin-top:1.5rem;font-size:0.82rem;color:var(--text3)">Free path: 3 ranking videos or 7 days, no card. Paid plans: card at checkout, 7-day Stripe trial, then billed. <a href="/pricing" style="color:var(--accent2)">Full details &amp; top-ups</a></p>
     </div>
 </section>
+<script>
+(function(){
+    function getAuthToken(){
+        return localStorage.getItem('viewhunt_token')||localStorage.getItem('token')||null;
+    }
+    document.querySelectorAll('#pricing a[data-plan]').forEach(function(a){
+        a.addEventListener('click', function(e){
+            var plan = a.getAttribute('data-plan');
+            var token = getAuthToken();
+            if (!token) return; // let href send them to signup with ?plan=
+            e.preventDefault();
+            fetch('/api/subscription/create-plan-checkout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ plan: plan })
+            }).then(function(r){ return r.json(); }).then(function(data){
+                if (data.url) window.location.href = data.url;
+                else window.location.href = a.getAttribute('href');
+            }).catch(function(){ window.location.href = a.getAttribute('href'); });
+        });
+    });
+})();
+</script>
 
 <!-- ═══ 45-DAY GUARANTEE ═══ -->
 <section class="section">
@@ -598,8 +619,8 @@ img{max-width:100%;display:block}
             <h2>The wave is here.<br>Stop scrolling. Start creating.</h2>
             <p>AI makes the videos. You pick the niche. The money follows. Join the creators already printing with ViewHunt.</p>
             <div class="hero-buttons">
-                <a href="/app?signup=1" class="btn-hero btn-hero-primary">Start Free Today</a>
-                <a href="#pricing" class="btn-hero btn-hero-secondary">View Pricing</a>
+                <a href="/app?signup=1&next=ranking" class="btn-hero btn-hero-primary">Start Free — 3 Videos</a>
+                <a href="#pricing" class="btn-hero btn-hero-secondary">View Challenge Plans</a>
             </div>
         </div>
     </div>

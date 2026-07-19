@@ -1235,6 +1235,49 @@ body {
     transform: translateY(0);
 }
 
+.auth-btn-google-primary {
+    padding: 0.95rem 1.25rem;
+    font-size: 1.02rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+}
+
+.email-verify-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1200;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem 1rem;
+    padding: 0.55rem 1rem;
+    background: rgba(124, 92, 252, 0.95);
+    color: #fff;
+    font-size: 0.85rem;
+    font-weight: 600;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.email-verify-banner-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.email-verify-banner .auth-link {
+    color: #fff;
+    text-decoration: underline;
+    font-weight: 700;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+}
+
 .auth-btn-google {
     background: rgba(255, 255, 255, 0.9);
     color: #3c4043;

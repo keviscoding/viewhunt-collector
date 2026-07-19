@@ -1465,6 +1465,7 @@ class ViewHuntApp {
                 if (response.ok) {
                     this.user = await response.json();
                     this.updateUIForLoggedInUser();
+                    this.updateEmailVerifyBanner();
                 } else {
                     // Token is invalid, remove it
                     localStorage.removeItem('viewhunt_token');
@@ -1689,6 +1690,116 @@ class ViewHuntApp {
         if (registerFormElement) {
             registerFormElement.reset();
         }
+        var inviteWrap = document.getElementById('invite-code-wrap');
+        if (inviteWrap) inviteWrap.style.display = 'none';
+        var toggleInvite = document.getElementById('toggle-invite-code');
+        if (toggleInvite) toggleInvite.textContent = 'Have an invite?';
+    }
+
+    toggleInviteCode() {
+        var wrap = document.getElementById('invite-code-wrap');
+        var toggle = document.getElementById('toggle-invite-code');
+        if (!wrap) return;
+        var open = wrap.style.display === 'none' || !wrap.style.display;
+        wrap.style.display = open ? 'block' : 'none';
+        if (toggle) toggle.textContent = open ? 'Hide invite code' : 'Have an invite?';
+        if (open) {
+            var input = document.getElementById('register-invite-code');
+            if (input) input.focus();
+        }
+    }
+
+    updateEmailVerifyBanner() {
+        var banner = document.getElementById('email-verify-banner');
+        if (!banner) return;
+        var needs = this.user && this.user.emailVerified === false;
+        if (sessionStorage.getItem('viewhunt_dismiss_verify_banner') === '1') {
+            needs = false;
+        }
+        banner.style.display = needs ? 'flex' : 'none';
+        if (needs) {
+            var text = document.getElementById('email-verify-banner-text');
+            if (text) {
+                text.textContent = 'Confirm ' + (this.user.email || 'your email') + ' — we sent a code.';
+            }
+            this._pendingVerifyEmail = this.user.email;
+            var openBtn = document.getElementById('email-verify-open-btn');
+            var resendBtn = document.getElementById('email-verify-resend-btn');
+            var dismissBtn = document.getElementById('email-verify-dismiss-btn');
+            var self = this;
+            if (openBtn) openBtn.onclick = function() { self.showVerifyForm(self.user.email); };
+            if (resendBtn) resendBtn.onclick = function() { self.handleResendCode(); };
+            if (dismissBtn) {
+                dismissBtn.onclick = function() {
+                    try { sessionStorage.setItem('viewhunt_dismiss_verify_banner', '1'); } catch (e) {}
+                    banner.style.display = 'none';
+                };
+            }
+        }
+    }
+
+    async finishAuthSession(data, welcomeMsg) {
+        this.token = data.token;
+        this.authToken = data.token;
+        this.user = data.user || this.user;
+        localStorage.setItem('viewhunt_token', this.token);
+        this.closeAuth();
+        this.showToast(welcomeMsg);
+        await this.checkAuthStatus();
+        await this.checkSubscriptionStatus();
+        this.updateSubscriptionUI();
+        this.updateEmailVerifyBanner();
+        await this.loadStats();
+        await this.loadChannels();
+        if (typeof showOnboarding === 'function') showOnboarding();
+        await this.handlePostAuthRedirect();
+    }
+
+    async handlePostAuthRedirect() {
+        var next = null;
+        var plan = null;
+        try {
+            next = sessionStorage.getItem('viewhunt_post_auth_next');
+            plan = sessionStorage.getItem('viewhunt_post_auth_plan');
+        } catch (e) {}
+
+        if (plan && ['starter', 'creator', 'studio'].indexOf(plan) !== -1) {
+            try { sessionStorage.removeItem('viewhunt_post_auth_plan'); } catch (e) {}
+            try { sessionStorage.removeItem('viewhunt_post_auth_next'); } catch (e) {}
+            await this.startPlanCheckout(plan);
+            return;
+        }
+
+        if (next === 'ranking') {
+            try { sessionStorage.removeItem('viewhunt_post_auth_next'); } catch (e) {}
+            window.location.href = '/studio/ranking';
+            return;
+        }
+    }
+
+    async startPlanCheckout(plan) {
+        if (!this.token) {
+            try { sessionStorage.setItem('viewhunt_post_auth_plan', plan); } catch (e) {}
+            this.showRegister();
+            return;
+        }
+        try {
+            this.showToast('Starting checkout…');
+            var res = await this.fetchWithAuth(this.apiBase + '/subscription/create-plan-checkout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ plan: plan })
+            });
+            var data = await res.json();
+            if (data.url) {
+                window.location.href = data.url;
+            } else {
+                this.showToast(data.error || 'Could not start checkout ❌');
+            }
+        } catch (err) {
+            console.error('Checkout error:', err);
+            this.showToast('Checkout error ❌');
+        }
     }
 
     closeAuth() {
@@ -1729,18 +1840,13 @@ class ViewHuntApp {
             });
             var data = await response.json();
             if (response.ok && data.token) {
-                this.token = data.token;
-                this.authToken = data.token;
-                this.user = data.user;
-                localStorage.setItem('viewhunt_token', this.token);
+                try { sessionStorage.removeItem('viewhunt_dismiss_verify_banner'); } catch (e) {}
+                await this.finishAuthSession(data, 'Email verified! Welcome to ViewHunt 🎉');
+            } else if (response.ok && data.alreadyVerified && this.token) {
                 this.closeAuth();
-                this.showToast('Email verified! Welcome to ViewHunt 🎉');
                 await this.checkAuthStatus();
-                await this.checkSubscriptionStatus();
-                this.updateSubscriptionUI();
-                await this.loadStats();
-                await this.loadChannels();
-                if (typeof showOnboarding === 'function') showOnboarding();
+                this.updateEmailVerifyBanner();
+                this.showToast('Email already verified ✅');
             } else {
                 this.showToast(data.error || 'Verification failed ❌');
             }
@@ -1803,29 +1909,14 @@ class ViewHuntApp {
 
             const data = await response.json();
 
-            if (response.ok) {
-                this.token = data.token;
-                this.authToken = data.token;
-                this.user = data.user;
-                localStorage.setItem('viewhunt_token', this.token);
-
-                this.closeAuth();
-                this.showToast(`Welcome back, ${this.user.display_name}! 🎉`);
-
-                // Re-run the full post-auth initialization so everything loads properly
-                await this.checkAuthStatus();
-                await this.checkSubscriptionStatus();
-                this.updateSubscriptionUI();
-                await this.loadStats();
-                await this.loadChannels();
-
-                // Show onboarding tips if first time
-                if (typeof showOnboarding === 'function') showOnboarding();
-            } else if (data.requiresVerification) {
-                // Unverified email — show verification form
-                this._pendingVerifyEmail = data.email || email;
-                this.showVerifyForm(this._pendingVerifyEmail);
-                this.showToast('Please verify your email first 📧');
+            if (response.ok && data.token) {
+                await this.finishAuthSession(
+                    data,
+                    'Welcome back, ' + (data.user && data.user.display_name ? data.user.display_name : '') + '! 🎉'
+                );
+                if (data.needsEmailVerification) {
+                    this.showToast('Signed in — confirm your email when you can 📧');
+                }
             } else {
                 this.showToast(data.error || 'Login failed ❌');
             }
@@ -1839,14 +1930,19 @@ class ViewHuntApp {
         }
 
     async handleRegister() {
-        const inviteCode = document.getElementById('register-invite-code').value.trim();
-        const displayName = document.getElementById('register-display-name').value;
-        const email = document.getElementById('register-email').value;
+        const inviteInput = document.getElementById('register-invite-code');
+        const inviteCode = inviteInput ? inviteInput.value.trim() : '';
+        const email = document.getElementById('register-email').value.trim();
         const password = document.getElementById('register-password').value;
         const submitBtn = document.querySelector('#register-form button[type="submit"]');
 
-        if (!displayName || !email || !password) {
-            this.showToast('Please fill in all fields ❌');
+        if (!email || !password) {
+            this.showToast('Enter your email and password ❌');
+            return;
+        }
+
+        if (password.length < 8) {
+            this.showToast('Password must be at least 8 characters ❌');
             return;
         }
 
@@ -1855,30 +1951,20 @@ class ViewHuntApp {
             try {
                 const validateResponse = await fetch(`${this.apiBase}/auth/validate-invite`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ invite_code: inviteCode })
                 });
 
                 if (validateResponse.ok) {
                     const validateData = await validateResponse.json();
-                    
                     if (!validateData.valid) {
                         this.showToast(validateData.error || 'Invalid invite code ❌');
                         return;
                     }
-                    
-                    this.showToast(`✅ Valid invite code: ${validateData.description}`);
                 }
             } catch (error) {
-                console.log('Skipping frontend validation, backend will validate during registration');
+                console.log('Skipping frontend invite validation');
             }
-        }
-
-        if (password.length < 8) {
-            this.showToast('Password must be at least 8 characters ❌');
-            return;
         }
 
         submitBtn.disabled = true;
@@ -1887,12 +1973,9 @@ class ViewHuntApp {
         try {
             const response = await fetch(`${this.apiBase}/auth/register`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     invite_code: inviteCode || undefined,
-                    display_name: displayName,
                     email,
                     password
                 })
@@ -1900,29 +1983,14 @@ class ViewHuntApp {
 
             const data = await response.json();
 
-            if (response.ok) {
-                if (data.requiresVerification) {
-                    // Show verification form
-                    this._pendingVerifyEmail = data.email || email;
-                    this.showVerifyForm(this._pendingVerifyEmail);
-                    this.showToast('Check your email for a verification code 📧');
-                } else if (data.token) {
-                    // Fallback: if server returns token directly (e.g. Resend not configured)
-                    this.token = data.token;
-                    this.authToken = data.token;
-                    this.user = data.user;
-                    localStorage.setItem('viewhunt_token', this.token);
-                    
-                    this.closeAuth();
-                    this.showToast(`Welcome to ViewHunt, ${this.user.display_name}! 🎉`);
-                    
-                    await this.checkAuthStatus();
-                    await this.checkSubscriptionStatus();
-                    this.updateSubscriptionUI();
-                    await this.loadStats();
-                    await this.loadChannels();
-
-                    if (typeof showOnboarding === 'function') showOnboarding();
+            if (response.ok && data.token) {
+                this._pendingVerifyEmail = data.email || email;
+                await this.finishAuthSession(
+                    data,
+                    'Welcome to ViewHunt! Your 3 free ranking videos are ready 🎉'
+                );
+                if (data.needsEmailVerification) {
+                    this.showToast('We emailed a confirm code — you can keep building now 📧');
                 }
             } else {
                 this.showToast(data.error || 'Registration failed ❌');
@@ -1932,7 +2000,7 @@ class ViewHuntApp {
             this.showToast('Network error. Please try again ❌');
         } finally {
             submitBtn.disabled = false;
-            submitBtn.textContent = 'Create Free Account';
+            submitBtn.textContent = 'Start Free — 3 Videos';
         }
     }
 
@@ -2125,34 +2193,36 @@ class ViewHuntApp {
     }
 
     handleOAuthCallback() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const token = urlParams.get('token');
-            const success = urlParams.get('success');
-            const error = urlParams.get('error');
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        const success = urlParams.get('success');
+        const error = urlParams.get('error');
 
-            if (token) {
-                // Store the token and clean up URL
-                localStorage.setItem('viewhunt_token', token);
-                this.token = token;
-                this.authToken = token;
+        if (token) {
+            localStorage.setItem('viewhunt_token', token);
+            this.token = token;
+            this.authToken = token;
+            window.history.replaceState({}, document.title, window.location.pathname);
 
-                // Clean up URL
-                window.history.replaceState({}, document.title, window.location.pathname);
-
-                if (success === 'google_login') {
-                    this.showToast('Welcome! Signed in with Google 🎉');
-                }
-            } else if (error) {
-                // Clean up URL
-                window.history.replaceState({}, document.title, window.location.pathname);
-
-                if (error === 'oauth_failed') {
-                    this.showToast('Google sign-in failed. Please try again. ❌');
-                } else {
-                    this.showToast('Sign-in error: ' + decodeURIComponent(error) + ' ❌');
-                }
+            if (success === 'google_login') {
+                this.showToast('Welcome! Signed in with Google 🎉');
+            }
+            var self = this;
+            Promise.resolve()
+                .then(function() { return self.checkAuthStatus(); })
+                .then(function() { return self.checkSubscriptionStatus(); })
+                .then(function() { self.updateEmailVerifyBanner(); })
+                .then(function() { return self.handlePostAuthRedirect(); })
+                .catch(function(e) { console.warn('OAuth post-auth:', e); });
+        } else if (error) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+            if (error === 'oauth_failed') {
+                this.showToast('Google sign-in failed. Please try again. ❌');
+            } else {
+                this.showToast('Sign-in error: ' + decodeURIComponent(error) + ' ❌');
             }
         }
+    }
 
     async signInWithGoogle() {
         // Redirect to Google OAuth using the correct base URL

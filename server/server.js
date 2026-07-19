@@ -844,6 +844,20 @@ const validateDisplayName = (displayName) => {
     return null;
 };
 
+/** Build a unique display_name from email local-part when signup skips the name field. */
+async function allocateDisplayName(preferredBase) {
+    var base = String(preferredBase || 'creator').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 16);
+    if (base.length < 3) base = 'creator';
+    var candidate = base;
+    for (var i = 0; i < 25; i++) {
+        var exists = await db.collection('users').findOne({ display_name: candidate });
+        if (!exists) return candidate;
+        var suffix = String(Math.floor(Math.random() * 9000) + 1000);
+        candidate = (base.slice(0, 16) + suffix).slice(0, 20);
+    }
+    return ('user_' + Date.now().toString(36)).slice(0, 20);
+}
+
 // Helper function to validate email
 const validateEmail = (email) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -937,6 +951,8 @@ async function sendVerificationEmail(email, code, displayName) {
 app.post('/api/auth/register', authLimiter, async (req, res) => {
     try {
         const { email, password, display_name, invite_code } = req.body;
+        const reqEmail = email;
+        const reqPassword = password;
 
         // If invite code is provided, validate it
         let inviteCodeDoc = null;
@@ -964,11 +980,9 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
             }
         }
 
-        const { email: reqEmail, password: reqPassword, display_name: reqDisplayName } = req.body;
-
-        // Validation
-        if (!reqEmail || !reqPassword || !reqDisplayName) {
-            return res.status(400).json({ error: 'Email, password, and display name are required' });
+        // Validation — display name optional (auto from email for cold-traffic signup)
+        if (!reqEmail || !reqPassword) {
+            return res.status(400).json({ error: 'Email and password are required' });
         }
 
         if (!validateEmail(reqEmail)) {
@@ -979,9 +993,14 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
             return res.status(400).json({ error: 'Password must be at least 8 characters long' });
         }
 
-        const displayNameError = validateDisplayName(reqDisplayName);
-        if (displayNameError) {
-            return res.status(400).json({ error: displayNameError });
+        let reqDisplayName = (display_name || '').trim();
+        if (reqDisplayName) {
+            const displayNameError = validateDisplayName(reqDisplayName);
+            if (displayNameError) {
+                return res.status(400).json({ error: displayNameError });
+            }
+        } else {
+            reqDisplayName = await allocateDisplayName(reqEmail.split('@')[0]);
         }
 
         // Check if user already exists
@@ -995,8 +1014,12 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         if (existingUser) {
             if (existingUser.email === reqEmail.toLowerCase()) {
                 return res.status(400).json({ error: 'Email already registered' });
-            } else {
-                return res.status(400).json({ error: 'Display name already taken' });
+            }
+            // Race on auto name — retry once
+            reqDisplayName = await allocateDisplayName(reqEmail.split('@')[0]);
+            const stillTaken = await db.collection('users').findOne({ display_name: reqDisplayName });
+            if (stillTaken) {
+                return res.status(400).json({ error: 'Could not create account. Please try again.' });
             }
         }
 
@@ -1004,7 +1027,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         const saltRounds = 12;
         const hashedPassword = await bcrypt.hash(reqPassword, saltRounds);
 
-        // Generate verification code
+        // Generate verification code (soft verify — session issued immediately)
         const verificationCode = generateVerificationCode();
 
         // Create user — free tier or invite tier (new free users get ranking trial)
@@ -1047,13 +1070,31 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
             );
         }
 
-        // Send verification email
-        await sendVerificationEmail(reqEmail.toLowerCase(), verificationCode, reqDisplayName);
+        // Send verification email (non-blocking for account use)
+        try {
+            await sendVerificationEmail(reqEmail.toLowerCase(), verificationCode, reqDisplayName);
+        } catch (mailErr) {
+            console.warn('Verification email send failed (account still created):', mailErr.message);
+        }
+
+        const token = jwt.sign(
+            { userId: result.insertedId, email: reqEmail.toLowerCase(), display_name: reqDisplayName },
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' }
+        );
 
         res.status(201).json({
-            message: 'Account created. Please check your email for a verification code.',
-            requiresVerification: true,
-            email: reqEmail.toLowerCase()
+            message: 'Account created. You can start now — confirm your email when you can.',
+            token,
+            needsEmailVerification: true,
+            email: reqEmail.toLowerCase(),
+            user: {
+                id: result.insertedId,
+                email: reqEmail.toLowerCase(),
+                display_name: reqDisplayName,
+                emailVerified: false,
+                stats: newUser.stats
+            }
         });
 
     } catch (error) {
@@ -1252,17 +1293,11 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
             return res.status(401).json({ error: 'Invalid email or password' });
         }
 
-        // Step 5: Check email verification (skip for existing users without the field, admin, and migrated users)
-        if (user.emailVerified === false) {
-            console.log('Unverified email login attempt:', email.toLowerCase());
-            return res.status(403).json({
-                error: 'Please verify your email before signing in.',
-                requiresVerification: true,
-                email: user.email
-            });
-        }
+        // Soft verify: unverified users can sign in; client shows a confirm-email banner
+        const needsEmailVerification = user.emailVerified === false;
 
-        console.log(`Login successful for user: ${email.toLowerCase()} (${userSource})`);
+        console.log(`Login successful for user: ${email.toLowerCase()} (${userSource})` +
+            (needsEmailVerification ? ' [unverified]' : ''));
 
         // Generate JWT token
         const token = jwt.sign(
@@ -1277,6 +1312,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
         res.json({
             message: 'Login successful',
+            needsEmailVerification,
             token,
             user: {
                 id: user._id,
@@ -3882,6 +3918,54 @@ app.post('/api/subscription/create-plan-checkout', authenticateToken, async (req
     } catch (error) {
         console.error('Plan checkout error:', error);
         res.status(500).json({ error: 'Failed to create checkout session' });
+    }
+});
+
+// End Stripe trial early and start billing now (user already on trialing subscription)
+app.post('/api/subscription/end-trial-early', authenticateToken, async (req, res) => {
+    try {
+        if (!stripe) return res.status(500).json({ error: 'Payment system not configured' });
+
+        const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        const subId = user.subscription && user.subscription.stripeSubscriptionId;
+        if (!subId) {
+            return res.status(400).json({
+                error: 'No Stripe subscription on file. Start a plan checkout first.',
+                needsCheckout: true
+            });
+        }
+
+        const subscription = await stripe.subscriptions.retrieve(subId);
+        if (subscription.status !== 'trialing') {
+            return res.status(400).json({
+                error: 'Subscription is not in a free trial.',
+                status: subscription.status
+            });
+        }
+
+        const updated = await stripe.subscriptions.update(subId, { trial_end: 'now' });
+        await db.collection('users').updateOne(
+            { _id: user._id },
+            {
+                $set: {
+                    'subscription.status': updated.status,
+                    'subscription.trialEnd': null,
+                    updated_at: new Date()
+                }
+            }
+        );
+        try { await trialHelper.convertTrial(db, user._id); } catch (e) {}
+
+        res.json({
+            success: true,
+            status: updated.status,
+            message: 'Trial ended — your plan is now billing.'
+        });
+    } catch (error) {
+        console.error('End trial early error:', error);
+        res.status(500).json({ error: 'Failed to end trial early' });
     }
 });
 

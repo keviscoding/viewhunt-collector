@@ -42,8 +42,8 @@
         </div>
     </nav>
     <div class="hero">
-        <h1>Simple, transparent <em>pricing</em></h1>
-        <p>7-day free trial on every plan (or 3 ranking videos on signup — whichever comes first). Card required at checkout; you won’t be charged until the trial ends.</p>
+        <h1>30-Day Shorts <em>Challenge</em></h1>
+        <p>Try 3 ranking videos free with no card. Plans start with a 7-day Stripe trial (card saved at checkout) so you can post every day — cancel anytime before you're charged.</p>
     </div>
     <div id="plans"></div>
     <div id="features"></div>
@@ -114,35 +114,26 @@ function getAuthToken(){
 (function(){
     // === PLANS ===
     var plans=[
-        {id:'starter',name:'Starter',price:'$29',credits:'300',pop:false,content:'~54 scene clips/month',features:[
-            '7-day free trial, then $29/mo',
-            'ViewHunt Niche Database (unlimited)',
-            '300 video credits per month',
-            '~54 scene clips per month',
-            'All video formats & styles',
-            'Custom SFX & background music',
+        {id:'starter',name:'Starter',price:'$29',tagline:'Post almost daily',content:'Build the habit before the wave',features:[
+            '7-day Stripe trial (card saved), then $29/mo',
+            '~1 ranking Short per day cadence',
+            'Drop clips → edit + voiceover for you',
+            'Unlimited niche database',
             'Word-by-word captions'
         ]},
-        {id:'creator',name:'Creator',price:'$59',credits:'600',pop:true,content:'~109 scene clips/month',features:[
-            '7-day free trial, then $59/mo',
-            'ViewHunt Niche Database (unlimited)',
-            '600 video credits per month',
-            '~109 scene clips per month',
-            'All video formats & styles',
-            'Custom SFX & background music',
-            'Word-by-word captions',
-            'Priority generation queue'
-        ]},
-        {id:'studio',name:'Studio',price:'$119',credits:'1,200',pop:false,content:'~218 scene clips/month',features:[
-            '7-day free trial, then $119/mo',
-            'ViewHunt Niche Database (unlimited)',
-            '1,200 video credits per month',
-            '~218 scene clips per month',
-            'All video formats & styles',
-            'Custom SFX & background music',
-            'Word-by-word captions',
+        {id:'creator',name:'Creator',price:'$59',tagline:'Post every day (or 2×)',content:'~60 ranking videos / month',pop:true,features:[
+            '7-day Stripe trial (card saved), then $59/mo',
+            'Daily Shorts challenge — monetize faster',
+            'Run the challenge on 2 channels',
             'Priority generation queue',
-            'Best top-up rates'
+            'Captions, niches, ranking formats'
+        ]},
+        {id:'studio',name:'Studio',price:'$119',tagline:'Run it like a studio',content:'Max volume · multi-channel',features:[
+            '7-day Stripe trial (card saved), then $119/mo',
+            'Highest daily output for operators',
+            'Multi-channel ranking pipeline',
+            'Priority generation queue',
+            'Best top-up rates when you need more'
         ]}
     ];
 
@@ -152,12 +143,12 @@ function getAuthToken(){
         if(p.pop) h+='<div class="plan-badge">Most Popular</div>';
         h+='<div class="plan-name">'+p.name+'</div>';
         h+='<div class="plan-price">'+p.price+' <span>/month</span></div>';
-        h+='<div class="plan-credits">💎 '+p.credits+' credits/month</div>';
-        if(p.content) h+='<div class="plan-videos">📹 '+p.content+'</div>';
+        h+='<div class="plan-credits">'+p.tagline+'</div>';
+        if(p.content) h+='<div class="plan-videos">'+p.content+'</div>';
         h+='<ul class="plan-features">';
         p.features.forEach(function(f){h+='<li>'+f+'</li>'});
         h+='</ul>';
-        h+='<button class="plan-btn '+(p.pop?'plan-btn-primary':'plan-btn-secondary')+'" onclick="subscribe(\''+p.id+'\')">Start Free Trial</button>';
+        h+='<button class="plan-btn '+(p.pop?'plan-btn-primary':'plan-btn-secondary')+'" onclick="subscribe(\''+p.id+'\')">Start Challenge</button>';
         h+='</div>';
     });
     h+='</div>';
@@ -183,7 +174,7 @@ function getAuthToken(){
 
 async function subscribe(plan){
     var token=getAuthToken();
-    if(!token){window.location.href='/app?redirect=pricing';return}
+    if(!token){window.location.href='/app?signup=1&plan='+encodeURIComponent(plan);return}
     try{
         var res=await fetch('/api/subscription/create-plan-checkout',{
             method:'POST',
