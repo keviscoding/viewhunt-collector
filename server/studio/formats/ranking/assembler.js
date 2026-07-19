@@ -740,9 +740,18 @@ class RankingAssembler {
                 var w = String(wt.word || '').trim();
                 if (!w) continue;
                 var wStart = base + Math.max(0, wt.start || 0);
-                var wEnd = base + Math.max(wStart - base + 0.05, wt.end != null ? wt.end : (wt.start || 0) + 0.15);
+                var wEnd = base + Math.max(wStart - base + 0.04, wt.end != null ? wt.end : (wt.start || 0) + 0.12);
                 if (wStart > base + span) break;
-                wEnd = Math.min(wEnd, base + span + 0.05);
+                // Never overlap the next word (fixes stacked captions)
+                for (var ni = i + 1; ni < wordTimings.length; ni++) {
+                    var nw = String(wordTimings[ni].word || '').trim();
+                    if (!nw) continue;
+                    var nextStart = base + Math.max(0, wordTimings[ni].start || 0);
+                    wEnd = Math.min(wEnd, nextStart - 0.01);
+                    break;
+                }
+                wEnd = Math.min(wEnd, base + span);
+                if (wEnd <= wStart) wEnd = wStart + 0.04;
                 var style = (onWhite && i % 3 === 1) ? styleAlt : styleMain;
                 out += 'Dialogue: 4,' + this.assTime(wStart) + ',' + this.assTime(wEnd) + ',' + style + ',,0,0,0,,' + pop + w.toUpperCase() + '\n';
             }

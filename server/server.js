@@ -312,21 +312,25 @@ app.get('/subscription-success', async (req, res) => {
                 );
                 
                 console.log('Subscription updated successfully for:', user.email, subStatus);
-                res.redirect(subStatus === 'trialing'
-                    ? '/app?success=trial_started'
-                    : '/app?success=subscription_activated');
+                var returnTo = (session.metadata && session.metadata.returnTo) || '/studio/ranking';
+                if (typeof returnTo !== 'string' || !/^\/studio(\/|$)/.test(returnTo)) {
+                    returnTo = '/studio/ranking';
+                }
+                returnTo = returnTo.split('?')[0];
+                var flag = subStatus === 'trialing' ? 'trial_started' : 'subscription_activated';
+                res.redirect(returnTo + (returnTo.indexOf('?') >= 0 ? '&' : '?') + 'success=' + flag);
             } else {
                 console.error('User not found for email:', customer.email);
-                res.redirect('/app?error=user_not_found');
+                res.redirect('/studio/ranking?error=user_not_found');
             }
         } else {
             console.error('Payment not completed:', session.payment_status);
-            res.redirect('/app?error=payment_failed');
+            res.redirect('/studio/ranking?error=payment_failed');
         }
         
     } catch (error) {
         console.error('Error handling subscription success:', error);
-        res.redirect('/app?error=processing_failed');
+        res.redirect('/studio/ranking?error=processing_failed');
     }
 });
 
@@ -3859,7 +3863,7 @@ app.post('/api/subscription/create-plan-checkout', authenticateToken, async (req
     try {
         if (!stripe) return res.status(500).json({ error: 'Payment system not configured' });
 
-        const { plan } = req.body;
+        const { plan, returnTo } = req.body;
         const validPlans = {
             starter: process.env.STRIPE_PRICE_STARTER,
             creator: process.env.STRIPE_PRICE_CREATOR,
@@ -3872,6 +3876,12 @@ app.post('/api/subscription/create-plan-checkout', authenticateToken, async (req
 
         var priceId = validPlans[plan];
         if (!priceId) return res.status(500).json({ error: 'Plan pricing not configured in Stripe' });
+
+        // Keep beginners in Ranking after checkout (not dumped on /app)
+        var safeReturn = '/studio/ranking';
+        if (typeof returnTo === 'string' && /^\/studio(\/|$)/.test(returnTo) && returnTo.length < 200) {
+            safeReturn = returnTo.split('?')[0];
+        }
 
         const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
         if (!user) return res.status(404).json({ error: 'User not found' });
@@ -3891,20 +3901,25 @@ app.post('/api/subscription/create-plan-checkout', authenticateToken, async (req
             );
         }
 
+        var appBase = process.env.APP_URL || 'https://viewhunt.app';
         const session = await stripe.checkout.sessions.create({
             customer: customerId,
             payment_method_types: ['card'],
             line_items: [{ price: priceId, quantity: 1 }],
             mode: 'subscription',
-            success_url: (process.env.APP_URL || 'https://viewhunt.app') + '/subscription-success?session_id={CHECKOUT_SESSION_ID}',
-            cancel_url: (process.env.APP_URL || 'https://viewhunt.app') + '/studio/ranking',
-            metadata: { userId: user._id.toString(), plan: plan },
+            success_url: appBase + '/subscription-success?session_id={CHECKOUT_SESSION_ID}',
+            cancel_url: appBase + safeReturn,
+            metadata: {
+                userId: user._id.toString(),
+                plan: plan,
+                returnTo: safeReturn
+            },
             allow_promotion_codes: true,
             billing_address_collection: 'auto',
             // 7-day free trial on Starter / Creator / Studio (card collected, charged after trial)
             subscription_data: {
                 trial_period_days: trialHelper.STRIPE_TRIAL_DAYS || 7,
-                metadata: { userId: user._id.toString(), plan: plan }
+                metadata: { userId: user._id.toString(), plan: plan, returnTo: safeReturn }
             }
         });
 

@@ -392,34 +392,22 @@ Do NOT say subscribe. Do NOT use vague hype with no detail.`;
 
     async _ttsLineWithTimings(line, label) {
         const audioPath = await this._ttsLine(line, label);
-        let wordTimings = await this._alignWords(audioPath, line);
-        if (!wordTimings || !wordTimings.length) {
-            var dur = await this._probeAudioDuration(audioPath);
-            if (!dur) dur = this._wavDurationSeconds(audioPath);
-            if (!dur) {
-                dur = Math.min(4, Math.max(1.0, String(line || '').split(/\s+/).length * 0.26));
-            }
-            wordTimings = this._charWeightedTimings(line, dur);
-        }
-        // Lead captions slightly so on-screen words never feel late vs speech
-        wordTimings = this._nudgeTimingsEarly(wordTimings, 0.08);
-        return { audioPath, wordTimings };
-    }
+        const audioDur = (await this._probeAudioDuration(audioPath))
+            || this._wavDurationSeconds(audioPath)
+            || Math.min(4, Math.max(1.0, String(line || '').split(/\s+/).length * 0.26));
+        const speechWin = await this._detectSpeechWindow(audioPath, audioDur);
 
-    _nudgeTimingsEarly(timings, leadSeconds) {
-        var lead = Math.max(0, leadSeconds || 0);
-        if (!timings || !timings.length || !lead) return timings || [];
-        return timings.map(function(t, i) {
-            var start = Math.max(0, (t.start || 0) - lead);
-            // Keep order: don't overlap previous word's start
-            if (i > 0) {
-                var prev = timings[i - 1];
-                var prevStart = Math.max(0, (prev.start || 0) - lead);
-                if (start < prevStart) start = prevStart;
-            }
-            var end = Math.max(start + 0.05, (t.end || 0) - lead * 0.25);
-            return { word: t.word, start: start, end: end };
-        });
+        // Whisper word timestamps + fit into real speech window (no fixed ms nudge)
+        let wordTimings = await this._alignWords(audioPath, line, speechWin);
+        if (!wordTimings || !wordTimings.length) {
+            wordTimings = this._charWeightedTimings(
+                line,
+                Math.max(0.35, speechWin.end - speechWin.start),
+                speechWin.start
+            );
+        }
+        wordTimings = this._finalizeWordTimings(wordTimings, line, speechWin);
+        return { audioPath, wordTimings };
     }
 
     async _probeAudioDuration(audioPath) {
@@ -433,6 +421,151 @@ Do NOT say subscribe. Do NOT use vague hype with no detail.`;
         } catch (e) {
             return 0;
         }
+    }
+
+    /**
+     * Find where speech actually lives (skip leading/trailing silence).
+     * Uses ffmpeg silencedetect — same idea as WhisperX VAD windowing.
+     */
+    async _detectSpeechWindow(audioPath, audioDur) {
+        var dur = audioDur || 2;
+        var win = { start: 0, end: dur };
+        try {
+            var log = '';
+            try {
+                var r = await execFileAsync(ffmpegPath, [
+                    '-hide_banner', '-nostats',
+                    '-i', audioPath,
+                    '-af', 'silencedetect=noise=-32dB:d=0.05',
+                    '-f', 'null', '-'
+                ], { timeout: 15000 });
+                log = String((r.stderr || '') + (r.stdout || ''));
+            } catch (ffErr) {
+                // ffmpeg often exits non-zero with null muxer; silence lines are still on stderr
+                log = String((ffErr && (ffErr.stderr || ffErr.message)) || '');
+            }
+            var silenceStarts = [];
+            var silenceEnds = [];
+            var reStart = /silence_start:\s*([0-9.]+)/g;
+            var reEnd = /silence_end:\s*([0-9.]+)/g;
+            var m;
+            while ((m = reStart.exec(log))) silenceStarts.push(parseFloat(m[1]));
+            while ((m = reEnd.exec(log))) silenceEnds.push(parseFloat(m[1]));
+
+            // First silence_end ≈ speech start (after leading silence)
+            if (silenceEnds.length && silenceEnds[0] < dur * 0.6) {
+                win.start = Math.max(0, silenceEnds[0] - 0.02);
+            }
+            // Last silence_start near the end ≈ speech end
+            for (var i = silenceStarts.length - 1; i >= 0; i--) {
+                if (silenceStarts[i] > win.start + 0.2) {
+                    win.end = Math.min(dur, silenceStarts[i] + 0.02);
+                    break;
+                }
+            }
+            if (win.end <= win.start + 0.15) {
+                win.start = 0;
+                win.end = dur;
+            }
+        } catch (e) {
+            // keep full duration
+        }
+        return win;
+    }
+
+    /**
+     * Map Whisper words → script words, clamp overlaps, fit into speech window.
+     * Inspired by WhisperX/stable-ts: align known text to audio, then enforce chronology.
+     */
+    _finalizeWordTimings(timings, line, speechWin) {
+        var scriptWords = String(line || '').replace(/\n/g, ' ').trim().split(/\s+/).filter(Boolean);
+        if (!scriptWords.length) return [];
+
+        var winStart = (speechWin && speechWin.start != null) ? speechWin.start : 0;
+        var winEnd = (speechWin && speechWin.end != null) ? speechWin.end : 2;
+        if (winEnd <= winStart) {
+            winStart = 0;
+            winEnd = 2;
+        }
+
+        var out = [];
+        if (timings && timings.length) {
+            var n = Math.min(timings.length, scriptWords.length);
+            for (var i = 0; i < n; i++) {
+                out.push({
+                    word: scriptWords[i],
+                    start: Number(timings[i].start) || 0,
+                    end: Number(timings[i].end) || 0
+                });
+            }
+            // Missing trailing script words: distribute in leftover speech window
+            if (out.length && out.length < scriptWords.length) {
+                var lastEnd = out[out.length - 1].end || out[out.length - 1].start || winStart;
+                var remain = scriptWords.length - out.length;
+                var room = Math.max(0.08 * remain, winEnd - lastEnd);
+                var slice = room / remain;
+                var cursor = lastEnd;
+                for (var r = out.length; r < scriptWords.length; r++) {
+                    out.push({ word: scriptWords[r], start: cursor, end: cursor + slice });
+                    cursor += slice;
+                }
+            }
+        }
+        if (!out.length) {
+            return this._charWeightedTimings(line, winEnd - winStart, winStart);
+        }
+
+        // If Whisper times sit mostly outside speech window, or span is tiny, rebuild in window
+        var first = out[0].start;
+        var last = out[out.length - 1].end;
+        var span = last - first;
+        var winSpan = winEnd - winStart;
+        if (!(span > 0.12) || first > winEnd || last < winStart) {
+            return this._charWeightedTimings(line, winSpan, winStart);
+        }
+
+        // Linear fit into [winStart, winEnd] when Whisper drift is large (>120ms)
+        var driftStart = Math.abs(first - winStart);
+        var driftEnd = Math.abs(last - winEnd);
+        if (driftStart > 0.12 || driftEnd > 0.12 || first < winStart - 0.05 || last > winEnd + 0.08) {
+            for (var j = 0; j < out.length; j++) {
+                var rel0 = (out[j].start - first) / span;
+                var rel1 = (out[j].end - first) / span;
+                out[j].start = winStart + rel0 * winSpan;
+                out[j].end = winStart + rel1 * winSpan;
+            }
+        }
+
+        // Enforce non-overlapping chronology (centisecond-safe for ASS)
+        for (var k = 0; k < out.length; k++) {
+            out[k].start = Math.max(winStart, out[k].start);
+            out[k].end = Math.min(winEnd, Math.max(out[k].start + 0.04, out[k].end));
+        }
+        for (var k2 = 0; k2 < out.length - 1; k2++) {
+            var gap = 0.012; // ~1 ASS centisecond
+            if (out[k2].end > out[k2 + 1].start - gap) {
+                // Prefer cutting at next word start
+                out[k2].end = Math.max(out[k2].start + 0.04, out[k2 + 1].start - gap);
+                if (out[k2].end > out[k2 + 1].start - gap) {
+                    out[k2 + 1].start = Math.min(out[k2 + 1].end - 0.04, out[k2].end + gap);
+                }
+                if (out[k2].end <= out[k2].start) {
+                    out[k2].end = out[k2].start + 0.04;
+                    out[k2 + 1].start = out[k2].end + gap;
+                }
+            }
+        }
+        // Snap to 1ms precision for stable ASS
+        out = out.map(function(t) {
+            return {
+                word: t.word,
+                start: Math.round(t.start * 1000) / 1000,
+                end: Math.round(t.end * 1000) / 1000
+            };
+        });
+        console.log('  ✓ Aligned ' + out.length + ' words in speech window ' +
+            winStart.toFixed(3) + '–' + winEnd.toFixed(3) + 's');
+        return out;
     }
 
     async _ttsLine(line, label) {
@@ -525,21 +658,25 @@ Do NOT say subscribe. Do NOT use vague hype with no detail.`;
         return filepath;
     }
 
-    async _alignWords(audioPath, line) {
+    async _alignWords(audioPath, line, speechWin) {
         if (!this.openai || !audioPath || !fs.existsSync(audioPath)) return null;
         if (process.env.RANKING_SKIP_WHISPER === '1' || process.env.RANKING_SKIP_WHISPER === 'true') {
             return null;
         }
         try {
+            // Exact script as prompt steers Whisper toward our TTS text (pseudo forced-align)
             const transcription = await Promise.race([
                 this.openai.audio.transcriptions.create({
                     file: fs.createReadStream(audioPath),
                     model: 'whisper-1',
+                    language: 'en',
+                    prompt: String(line || ''),
+                    temperature: 0,
                     response_format: 'verbose_json',
                     timestamp_granularities: ['word']
                 }),
                 new Promise(function(_, reject) {
-                    setTimeout(function() { reject(new Error('Whisper timeout')); }, 12000);
+                    setTimeout(function() { reject(new Error('Whisper timeout')); }, 15000);
                 })
             ]);
 
@@ -554,29 +691,8 @@ Do NOT say subscribe. Do NOT use vague hype with no detail.`;
                 };
             }).filter(function(w) { return w.word; });
 
-            // Prefer script word tokens when Whisper splits oddly; keep Whisper times
-            var scriptWords = String(line || '').replace(/\n/g, ' ').trim().split(/\s+/).filter(Boolean);
-            if (timings.length && scriptWords.length && Math.abs(timings.length - scriptWords.length) <= 2) {
-                var n = Math.min(timings.length, scriptWords.length);
-                for (var si = 0; si < n; si++) {
-                    timings[si].word = scriptWords[si];
-                }
-                timings = timings.slice(0, scriptWords.length);
-                // If Whisper missed trailing words, estimate from last end
-                if (timings.length < scriptWords.length && timings.length) {
-                    var last = timings[timings.length - 1];
-                    var remain = scriptWords.length - timings.length;
-                    var slice = Math.max(0.12, ((last.end || last.start) + 0.4 - (last.end || last.start)) / remain);
-                    var tCursor = last.end || last.start || 0;
-                    for (var ri = timings.length; ri < scriptWords.length; ri++) {
-                        timings.push({ word: scriptWords[ri], start: tCursor, end: tCursor + slice });
-                        tCursor += slice;
-                    }
-                }
-            }
-
             if (timings.length) {
-                console.log('  ✓ Whisper word timings: ' + timings.length + ' words');
+                console.log('  ✓ Whisper raw word stamps: ' + timings.length);
             }
             return timings.length ? timings : null;
         } catch (err) {
@@ -585,17 +701,18 @@ Do NOT say subscribe. Do NOT use vague hype with no detail.`;
         }
     }
 
-    _charWeightedTimings(line, durationSeconds) {
+    _charWeightedTimings(line, durationSeconds, offsetSeconds) {
         const words = String(line || '').replace(/\n/g, ' ').trim().split(/\s+/).filter(Boolean);
         if (!words.length) return [];
         const dur = Math.max(0.4, durationSeconds || 2);
-        const weights = words.map(function(w) { return Math.max(1, w.replace(/[^a-zA-Z0-9]/g, '').length || 1); });
+        const offset = Math.max(0, offsetSeconds || 0);
+        const weights = words.map(function(w) { return Math.max(1, w.replace(/[^a-zA-Z0-9']/g, '').length || 1); });
         const total = weights.reduce(function(a, b) { return a + b; }, 0);
         let t = 0;
         const out = [];
         for (let i = 0; i < words.length; i++) {
             const slice = (weights[i] / total) * dur;
-            out.push({ word: words[i], start: t, end: t + slice });
+            out.push({ word: words[i], start: offset + t, end: offset + t + slice });
             t += slice;
         }
         return out;

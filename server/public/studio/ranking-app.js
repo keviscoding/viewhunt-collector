@@ -539,10 +539,12 @@
 
     async function startPlanCheckout(plan) {
         try {
+            // Persist project so return from Stripe lands back on the same ranking draft
+            await saveDraftNow();
             var res = await apiFetch('/api/subscription/create-plan-checkout', {
                 method: 'POST',
                 headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
-                body: JSON.stringify({ plan: plan })
+                body: JSON.stringify({ plan: plan, returnTo: '/studio/ranking' })
             });
             var data = await res.json();
             if (data.url) {
@@ -1712,6 +1714,23 @@
             if (ss) ss.style.display = '';
         }
         resumeSession();
+
+        // Returned from Stripe plan checkout — keep them cooking
+        try {
+            var params = new URLSearchParams(window.location.search || '');
+            var ok = params.get('success');
+            if (ok === 'trial_started' || ok === 'subscription_activated') {
+                showResumeBanner(
+                    'You\'re in — free challenge active. Hit Assemble Video to finish cooking.',
+                    '<button type="button" class="btn btn-primary btn-sm" id="btn-dismiss-draft">Got it</button>'
+                );
+                var got = document.getElementById('btn-dismiss-draft');
+                if (got) got.addEventListener('click', hideResumeBanner);
+                if (window.history && window.history.replaceState) {
+                    window.history.replaceState({}, '', '/studio/ranking');
+                }
+            }
+        } catch (e) {}
     }
 
     window._rk = {
