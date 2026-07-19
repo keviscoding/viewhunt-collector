@@ -107,73 +107,66 @@ class RankingCommentary {
         return clipPath;
     }
 
+    /**
+     * Generate cold-open hook (clip 0), mid reactions, and final subscribe CTA.
+     * Each result: { clipIndex, line, label, audioPath, wordTimings }
+     * Mutates clips[i].label when Gemini returns a short rank label.
+     */
     async generateCommentary(clips, rankingTitle, voiceName) {
         console.log(`🎙️ Ranking commentary: generating for ${clips.length} clips, title: "${rankingTitle}", voice: ${voiceName || 'Kore'}`);
         this.voiceName = voiceName || 'Kore';
         await this._ensureAi();
 
-        await this._progress('Writing intro line…');
-        const introLine = await this._generateIntroLine(rankingTitle);
-        console.log(`  Intro: "${introLine}"`);
-
         const commentaryLines = [];
-        for (let i = 1; i < clips.length; i++) {
+        for (let i = 0; i < clips.length; i++) {
             const clip = clips[i];
+            const role = i === 0 ? 'hook' : (i === clips.length - 1 ? 'cta' : 'react');
+            const rankNumber = clip.number != null ? clip.number : (clips.length - i);
             try {
-                await this._progress('Watching clip ' + (i + 1) + ' of ' + clips.length + ' for commentary…');
-                const line = await this._analyzeClipAndComment(clip.path, rankingTitle, i + 1, clips.length, clip);
-                commentaryLines.push({ clipIndex: i, line });
-                console.log(`  Clip ${i + 1}: "${line}"`);
+                await this._progress(
+                    role === 'hook' ? 'Writing cold-open hook…'
+                        : role === 'cta' ? 'Writing subscribe CTA for #1…'
+                            : ('Watching clip ' + (i + 1) + ' of ' + clips.length + '…')
+                );
+                const parsed = await this._analyzeClipAndComment(
+                    clip.path, rankingTitle, rankNumber, clips.length, clip, role
+                );
+                if (parsed.label && clips[i]) clips[i].label = parsed.label;
+                commentaryLines.push({ clipIndex: i, line: parsed.line, label: parsed.label || '' });
+                console.log(`  Clip ${i + 1} [${role}]: "${parsed.line}"` + (parsed.label ? ` [${parsed.label}]` : ''));
             } catch (err) {
                 console.warn(`  Clip ${i + 1}: commentary failed — ${err.message}`);
-                var fallback = this._fallbackReaction(clip, i + 1, clips.length);
-                commentaryLines.push({ clipIndex: i, line: fallback });
-                console.log(`  Clip ${i + 1} fallback: "${fallback}"`);
+                var fb = this._fallbackForRole(clip, rankNumber, clips.length, role);
+                if (fb.label && clips[i] && !clips[i].label) clips[i].label = fb.label;
+                commentaryLines.push({ clipIndex: i, line: fb.line, label: fb.label || '' });
+                console.log(`  Clip ${i + 1} fallback [${role}]: "${fb.line}"`);
             }
         }
 
         await this._progress('Generating voiceover audio…');
-        const ttsPromises = [];
-
-        ttsPromises.push(
-            this._ttsLineWithTimings(introLine, 'intro')
+        const ttsPromises = commentaryLines.map((c) => {
+            if (!c.line) {
+                return Promise.resolve({
+                    clipIndex: c.clipIndex, line: null, label: c.label || '',
+                    audioPath: null, wordTimings: []
+                });
+            }
+            return this._ttsLineWithTimings(c.line, 'clip-' + (c.clipIndex + 1))
                 .then(({ audioPath, wordTimings }) => ({
-                    clipIndex: 0, line: introLine, audioPath, wordTimings
+                    clipIndex: c.clipIndex, line: c.line, label: c.label || '',
+                    audioPath, wordTimings
                 }))
                 .catch(err => {
-                    console.warn(`  Intro TTS failed: ${err.message}`);
+                    console.warn(`  Clip ${c.clipIndex + 1} TTS failed: ${err.message}`);
                     return {
-                        clipIndex: 0,
-                        line: introLine,
+                        clipIndex: c.clipIndex,
+                        line: c.line,
+                        label: c.label || '',
                         audioPath: null,
-                        wordTimings: this._charWeightedTimings(introLine, 2.0)
+                        wordTimings: this._charWeightedTimings(c.line, 2.0)
                     };
-                })
-        );
-
-        for (const c of commentaryLines) {
-            if (!c.line) {
-                ttsPromises.push(Promise.resolve({
-                    clipIndex: c.clipIndex, line: null, audioPath: null, wordTimings: []
-                }));
-                continue;
-            }
-            ttsPromises.push(
-                this._ttsLineWithTimings(c.line, 'clip-' + (c.clipIndex + 1))
-                    .then(({ audioPath, wordTimings }) => ({
-                        clipIndex: c.clipIndex, line: c.line, audioPath, wordTimings
-                    }))
-                    .catch(err => {
-                        console.warn(`  Clip ${c.clipIndex + 1} TTS failed: ${err.message}`);
-                        return {
-                            clipIndex: c.clipIndex,
-                            line: c.line,
-                            audioPath: null,
-                            wordTimings: this._charWeightedTimings(c.line, 2.0)
-                        };
-                    })
-            );
-        }
+                });
+        });
 
         const results = await Promise.all(ttsPromises);
 
@@ -186,59 +179,138 @@ class RankingCommentary {
         return results;
     }
 
-    _fallbackReaction(clip, clipNumber, totalClips) {
-        var label = (clip && (clip.label || clip.filename)) ? String(clip.label || clip.filename) : '';
+    _fallbackForRole(clip, clipNumber, totalClips, role) {
+        var label = (clip && clip.label) ? String(clip.label).trim() : '';
+        if (role === 'hook') {
+            return {
+                line: 'Watch this — you need to see what happens.',
+                label: (label || 'WATCH THIS').toUpperCase().slice(0, 22)
+            };
+        }
+        if (role === 'cta') {
+            return {
+                line: 'Subscribe before this ends if you\'re fast.',
+                label: (label || 'NUMBER ONE').toUpperCase().slice(0, 22)
+            };
+        }
         var reactions = [
-            'bro what',
-            'she cooked',
-            'that was wild',
-            'poor homie',
-            'no way',
-            'he folded',
-            'absolute cinema',
-            'I felt that'
+            { line: 'bro what', label: 'BRO WHAT' },
+            { line: 'that was wild', label: 'WILD' },
+            { line: 'poor homie', label: 'PAIN' },
+            { line: 'no way', label: 'NO WAY' },
+            { line: 'he folded', label: 'FOLDED' },
+            { line: 'absolute cinema', label: 'CINEMA' }
         ];
-        if (clipNumber === totalClips) return 'number one for a reason';
-        if (/fail|fall|crash/i.test(label)) return 'that hurt to watch';
-        return reactions[(clipNumber - 1) % reactions.length];
+        var pick = reactions[(Math.max(1, clipNumber) - 1) % reactions.length];
+        if (/fail|fall|crash/i.test(label)) return { line: 'that hurt to watch', label: (label || 'OUCH').toUpperCase() };
+        return { line: pick.line, label: (label || pick.label).toUpperCase().slice(0, 22) };
     }
 
-    async _generateIntroLine(rankingTitle) {
-        await this._ensureAi();
-        var t = String(rankingTitle || 'the best moments').trim();
-        var fallback = t.toLowerCase().startsWith('these are') ? t : ('These are ' + t);
+    _parseLineAndLabel(raw, fallbackLine, fallbackLabel) {
+        var text = String(raw || '').replace(/^["']|["']$/g, '').trim();
+        if (!text) return { line: fallbackLine, label: fallbackLabel };
 
-        if (!this.ai) return fallback;
-
-        const prompt = `You are a fast-paced, upbeat YouTube Shorts narrator for ranking/compilation videos.
-
-Generate a single intro line that reads out this ranking title. Keep it natural, energetic, and under 12 words.
-
-Examples of good intro lines:
-- "These are the funniest fishing moments."
-- "These are the best dad reflex moments."
-- "These are the best baby in church moments."
-- "These are the funniest jump scares on the internet."
-
-Ranking title: "${rankingTitle}"
-
-Reply with ONLY the intro line, nothing else. No quotes, no explanation.`;
+        // Strip markdown fences
+        text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
         try {
-            const response = await this.ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: [{ parts: [{ text: prompt }] }]
-            });
-            const text = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-            if (!text) return fallback;
-            return text.replace(/^["']|["']$/g, '').trim();
-        } catch (err) {
-            console.warn('Intro Gemini failed, using fallback:', err.message);
-            return fallback;
+            var jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                var obj = JSON.parse(jsonMatch[0]);
+                var line = String(obj.line || obj.commentary || obj.voice || '').trim();
+                var lab = String(obj.label || obj.rankLabel || obj.title || '').trim();
+                if (line) {
+                    return {
+                        line: line.replace(/^["']|["']$/g, '').trim(),
+                        label: this._normalizeRankLabel(lab || fallbackLabel)
+                    };
+                }
+            }
+        } catch (e) { /* fall through */ }
+
+        // "line || LABEL" or "line | LABEL"
+        var pipe = text.split(/\s*\|\|\s*|\s*\|\s*/);
+        if (pipe.length >= 2) {
+            return {
+                line: pipe[0].replace(/^["']|["']$/g, '').trim(),
+                label: this._normalizeRankLabel(pipe.slice(1).join(' ') || fallbackLabel)
+            };
         }
+
+        return { line: text, label: this._normalizeRankLabel(fallbackLabel) };
     }
 
-    async _analyzeClipAndComment(clipPath, rankingTitle, clipNumber, totalClips, clip) {
+    _normalizeRankLabel(label) {
+        var s = String(label || '')
+            .replace(/["']/g, '')
+            .replace(/[^a-zA-Z0-9 !?]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toUpperCase();
+        if (!s) return 'MOMENT';
+        var words = s.split(' ').filter(Boolean).slice(0, 4);
+        return words.join(' ').slice(0, 24);
+    }
+
+    _rolePrompt(role, rankingTitle, clipNumber, totalClips) {
+        var shared = `You are a viral YouTube Shorts ranking narrator (think high-retention countdown compilations).
+Ranking title (context only — do NOT read it aloud): "${rankingTitle}"
+This clip's rank number on screen: #${clipNumber} of ${totalClips} (countdown; #1 is last).
+
+Return ONLY valid JSON, no markdown:
+{"line":"<spoken voiceover>","label":"<1-4 word ALL CAPS rank tag>"}
+
+label examples: NEVER AGAIN, DOUBLE CHECK, GOT LUCKY, BY A THREAD, AARRRGGGGHHHH
+Keep labels punchy — not full sentences.`;
+
+        if (role === 'hook') {
+            return shared + `
+
+ROLE: COLD-OPEN HOOK on the FIRST clip shown (highest number).
+Write "line" as a comment on WHAT IS HAPPENING in this clip — intrigue / reaction, not a title read.
+Good vibes (vary each time — invent a fresh line for THIS footage):
+- "He'll never do this again."
+- "Watch this guy try to explain himself."
+- "Bro is about to regret everything."
+Rules:
+- 4–12 words, casual, spoken aloud
+- Do NOT say "ranking", "these are", or repeat the title
+- Do NOT use hashtags or emojis
+- label = short tag for this moment`;
+        }
+
+        if (role === 'cta') {
+            return shared + `
+
+ROLE: FINAL CLIP (#1) — subscribe CTA tied to the ON-SCREEN action.
+"line" must urge subscribe/follow using whatever is about to happen in THIS clip as the joke/threat/payoff.
+Good vibes (ALWAYS invent a new one for THIS footage — never reuse a stock phrase):
+- "Subscribe before he cuts the rope if you're fast."
+- "Hit subscribe before she drops it."
+- "Subscribe before this goes wrong."
+Rules:
+- 6–14 words, casual, urgent, funny
+- Must mention subscribe/follow AND reference something visible in the clip
+- Do NOT use hashtags or emojis
+- label = short tag for the #1 moment`;
+        }
+
+        return shared + `
+
+ROLE: MID-RANK reaction for #${clipNumber}.
+"line" = one punchy live reaction (3–10 words).
+Style: "bro folded", "where did her shoes go?", "why did he try to grab her?", "that was close"
+Rules:
+- React — don't narrate literally beat-by-beat
+- Match the clip energy
+- Do NOT use hashtags or emojis
+- Do NOT say subscribe (save that for #1)
+- label = short tag for this moment`;
+    }
+
+    async _analyzeClipAndComment(clipPath, rankingTitle, clipNumber, totalClips, clip, role) {
+        role = role || 'react';
+        var fallback = this._fallbackForRole(clip, clipNumber, totalClips, role);
         await this._ensureAi();
         if (!this.ai) {
             throw new Error('Gemini SDK unavailable for clip commentary');
@@ -253,21 +325,7 @@ Reply with ONLY the intro line, nothing else. No quotes, no explanation.`;
             }
             const base64Video = videoBuffer.toString('base64');
             const mimeType = 'video/mp4';
-
-            const prompt = `You are a fast-paced, upbeat YouTube Shorts narrator for ranking/compilation videos.
-
-This is clip #${clipNumber} of ${totalClips} in a ranking video titled: "${rankingTitle}"
-
-Watch this clip and write ONE short commentary line (3-10 words max) that reacts to what happens in the clip. 
-
-Style guide:
-- Super casual, like you're reacting live
-- Short punchy reactions: "bro folded", "she didn't expect that", "poor homie", "that was close", "he got what he wanted"
-- Match the energy of the clip — funny clips get funny reactions, intense clips get hype reactions
-- Do NOT describe what happens literally — react to it
-- Do NOT use hashtags or emojis
-
-Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
+            const prompt = this._rolePrompt(role, rankingTitle, clipNumber, totalClips);
 
             const response = await Promise.race([
                 this.ai.models.generateContent({
@@ -286,7 +344,12 @@ Reply with ONLY the commentary line, nothing else. No quotes, no explanation.`;
 
             const text = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
             if (!text) throw new Error('No commentary generated');
-            return text.replace(/^["']|["']$/g, '').trim();
+            var parsed = this._parseLineAndLabel(text, fallback.line, fallback.label);
+            // Prefer existing user label if they typed one
+            if (clip && clip.label && String(clip.label).trim()) {
+                parsed.label = this._normalizeRankLabel(clip.label);
+            }
+            return parsed;
         } finally {
             if (cleanupSample) {
                 try { fs.unlinkSync(samplePath); } catch (e) {}

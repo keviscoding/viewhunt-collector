@@ -1662,7 +1662,7 @@ function rankingDraftFromBody(body) {
         subtitleFont: body.subtitleFont || 'Arial',
         subtitleY: body.subtitleY != null ? body.subtitleY : 55,
         subtitleColor: body.subtitleColor || 'yellow',
-        stylePreset: body.stylePreset || 'classic',
+        stylePreset: body.stylePreset || 'viral',
         commentary: !!body.commentary,
         voiceName: body.voiceName || 'Kore',
         currentStep: body.currentStep || 1
@@ -1743,14 +1743,7 @@ router.get('/ranking/session', requireAuth, async (req, res) => {
             });
             draft = Object.assign({}, draftDoc.draft, { clips: clips });
         }
-        // Also offer last completed job payload as regenerate source
-        var lastComplete = null;
-        if (!draft || !draft.clips || !draft.clips.length) {
-            lastComplete = await db.collection('ranking_jobs').findOne(
-                { userId: userId, status: 'complete', 'payload.clips.0': { $exists: true } },
-                { sort: { createdAt: -1 } }
-            );
-        }
+        // Never auto-restore a finished project — only unfinished drafts with live clip files
         res.json({
             activeJob: activeJob ? {
                 jobId: String(activeJob._id),
@@ -1759,9 +1752,9 @@ router.get('/ranking/session', requireAuth, async (req, res) => {
                 worker: activeJob.worker || null,
                 createdAt: activeJob.createdAt
             } : null,
-            draft: draft,
+            draft: (draft && draft.clips && draft.clips.length) ? draft : null,
             draftUpdatedAt: draftDoc ? draftDoc.updatedAt : null,
-            lastCompleteJobId: lastComplete ? String(lastComplete._id) : null
+            lastCompleteJobId: null
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -1860,6 +1853,7 @@ async function runLocalRankingAssembly(opts) {
     var subtitleFont = opts.subtitleFont || 'Arial';
     var subtitleY = opts.subtitleY != null ? opts.subtitleY : 55;
     var subtitleColor = opts.subtitleColor || 'yellow';
+    var stylePreset = opts.stylePreset || 'viral';
     var usingTrial = !!opts.usingTrial;
     var rankingCreditsCharged = opts.rankingCreditsCharged || 0;
     var db = opts.db || (await getDb());
@@ -1933,7 +1927,10 @@ async function runLocalRankingAssembly(opts) {
             subtitleFont: subtitleFont || 'Arial',
             subtitleY: subtitleY != null ? subtitleY : 55,
             subtitleColor: subtitleColor || 'yellow',
-            hookEnabled: !!enableCommentary && commentaryData.length > 0
+            stylePreset: stylePreset,
+            overlayStyle: (stylePreset === 'classic' || stylePreset === 'checkered') ? 'classic' : 'viral',
+            // Cold-open on first clip — flash montage disabled for viral format
+            hookEnabled: false
         });
 
         console.log('🏆 Ranking video assembled: ' + result.videoUrl + (commentaryData.length > 0 ? ' (with ' + commentaryData.length + ' commentary lines)' : ''));
@@ -1958,6 +1955,13 @@ async function runLocalRankingAssembly(opts) {
         }
 
         await updateRankingJob(jobId, { status: 'complete', result: finalResult });
+
+        // Finished project — drop in-progress draft so next visit starts clean
+        try {
+            await db.collection('ranking_drafts').deleteOne({ userId: String(userId) });
+        } catch (draftClearErr) {
+            console.warn('Draft clear after complete:', draftClearErr.message);
+        }
 
         if (usingTrial) {
             await trialHelper.recordRankingVideoComplete(db, userId);
@@ -2036,7 +2040,8 @@ async function watchFlyThenLocalFallback(opts) {
 
 router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req, res) => {
     try {
-        var { clips, title, layout, commentary: enableCommentary, voiceName, colorPalette, checkeredMode, subtitleFont, subtitleY, subtitleColor } = req.body;
+        var { clips, title, layout, commentary: enableCommentary, voiceName, colorPalette, checkeredMode, subtitleFont, subtitleY, subtitleColor, stylePreset } = req.body;
+        stylePreset = stylePreset || 'viral';
 
         if (!clips || !Array.isArray(clips) || clips.length === 0) {
             return res.status(400).json({ error: 'At least one clip is required' });
@@ -2138,7 +2143,8 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             checkeredMode: !!checkeredMode,
             subtitleFont: subtitleFont || 'Arial',
             subtitleY: subtitleY != null ? subtitleY : 55,
-            subtitleColor: subtitleColor || 'yellow'
+            subtitleColor: subtitleColor || 'yellow',
+            stylePreset: stylePreset || 'viral'
         };
         await updateRankingJob(jobId, {
             creditsCharged: rankingCreditsCharged,
@@ -2274,6 +2280,7 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                     subtitleFont: subtitleFont,
                     subtitleY: subtitleY,
                     subtitleColor: subtitleColor,
+                    stylePreset: stylePreset,
                     usingTrial: usingTrial,
                     rankingCreditsCharged: rankingCreditsCharged,
                     db: db
@@ -2303,6 +2310,7 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             subtitleFont: subtitleFont,
             subtitleY: subtitleY,
             subtitleColor: subtitleColor,
+            stylePreset: stylePreset,
             usingTrial: usingTrial,
             rankingCreditsCharged: rankingCreditsCharged,
             db: db
@@ -2392,6 +2400,7 @@ router.get('/ranking/assemble/status/:jobId', requireAuth, async (req, res) => {
                             subtitleFont: payload.subtitleFont,
                             subtitleY: payload.subtitleY,
                             subtitleColor: payload.subtitleColor,
+                            stylePreset: payload.stylePreset || 'viral',
                             usingTrial: !!claimedDoc.usingTrial,
                             rankingCreditsCharged: claimedDoc.creditsCharged || 0,
                             fromFlyFallback: true,

@@ -347,7 +347,10 @@ async function main() {
         subtitleFont: payload.subtitleFont || 'Arial',
         subtitleY: payload.subtitleY != null ? payload.subtitleY : 55,
         subtitleColor: payload.subtitleColor || 'yellow',
-        hookEnabled: enableCommentary && commentaryData.length > 0
+        stylePreset: payload.stylePreset || 'viral',
+        overlayStyle: (payload.stylePreset === 'classic' || payload.stylePreset === 'checkered') ? 'classic' : 'viral',
+        // Cold-open voiceover plays on clip 0 — no flash montage
+        hookEnabled: false
     });
 
     const localName = path.basename(result.videoUrl);
@@ -436,6 +439,14 @@ async function main() {
 
     if (usingTrial && userId && db) {
         await trialHelper.recordRankingVideoComplete(db, userId);
+    }
+
+    if (userId && db) {
+        try {
+            await db.collection('ranking_drafts').deleteOne({ userId: String(userId) });
+        } catch (e) {
+            console.warn('Draft clear after Fly complete:', e.message);
+        }
     }
 
     console.log('Job complete:', videoUrl);

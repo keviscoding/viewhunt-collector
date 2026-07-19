@@ -18,10 +18,20 @@
     var colorPalette = 'yellow';
     var checkeredMode = false;
     var subtitleColor = 'yellow';
-    var stylePreset = 'classic';
+    var stylePreset = 'viral';
     var previewActiveClip = 0; // which clip looks "active" in dashboard preview
 
     var STYLE_PRESETS = {
+        viral: {
+            label: 'Viral Shorts',
+            colorPalette: 'yellow',
+            checkeredMode: false,
+            layout: { listX: 5, titleY: 4, titleSize: 52, lineSpacing: 65, numSize: 50 },
+            subtitleFont: 'Arial Black',
+            subtitleY: 50,
+            subtitleColor: 'yellow',
+            overlayStyle: 'viral'
+        },
         classic: {
             label: 'Classic Yellow',
             colorPalette: 'yellow',
@@ -29,7 +39,8 @@
             layout: { listX: 5, titleY: 6, titleSize: 48, lineSpacing: 65, numSize: 50 },
             subtitleFont: 'Arial',
             subtitleY: 55,
-            subtitleColor: 'yellow'
+            subtitleColor: 'yellow',
+            overlayStyle: 'classic'
         },
         bold: {
             label: 'Bold Impact',
@@ -37,8 +48,9 @@
             checkeredMode: false,
             layout: { listX: 4, titleY: 5, titleSize: 58, lineSpacing: 72, numSize: 62 },
             subtitleFont: 'Impact',
-            subtitleY: 62,
-            subtitleColor: 'white'
+            subtitleY: 50,
+            subtitleColor: 'yellow',
+            overlayStyle: 'viral'
         },
         minimal: {
             label: 'Minimal Bottom Caps',
@@ -47,7 +59,8 @@
             layout: { listX: 8, titleY: 8, titleSize: 40, lineSpacing: 58, numSize: 42 },
             subtitleFont: 'Arial',
             subtitleY: 72,
-            subtitleColor: 'white'
+            subtitleColor: 'white',
+            overlayStyle: 'classic'
         },
         checkered: {
             label: 'Checkered Pro',
@@ -56,9 +69,95 @@
             layout: { listX: 5, titleY: 6, titleSize: 48, lineSpacing: 68, numSize: 52 },
             subtitleFont: 'Verdana',
             subtitleY: 58,
-            subtitleColor: 'cyan'
+            subtitleColor: 'cyan',
+            overlayStyle: 'classic'
         }
     };
+
+    var SETTINGS_LS_KEY = 'viewhunt_ranking_settings_v1';
+
+    function collectSettingsPrefs() {
+        var titleEl = document.getElementById('title-text');
+        var hlEl = document.getElementById('title-highlight');
+        var voiceEl = document.getElementById('voice-picker');
+        var fontEl = document.getElementById('subtitle-font');
+        var subYEl = document.getElementById('subtitle-y');
+        var commentaryEl = document.getElementById('commentary-toggle');
+        return {
+            title: {
+                text: titleEl ? titleEl.value : '',
+                highlightWord: hlEl ? hlEl.value : ''
+            },
+            layout: layout,
+            colorPalette: colorPalette,
+            checkeredMode: checkeredMode,
+            subtitleFont: fontEl ? fontEl.value : 'Arial Black',
+            subtitleY: subYEl ? (parseInt(subYEl.value, 10) || 50) : 50,
+            subtitleColor: subtitleColor,
+            stylePreset: stylePreset,
+            commentary: commentaryEl ? !!commentaryEl.checked : true,
+            voiceName: voiceEl ? voiceEl.value : 'Kore'
+        };
+    }
+
+    function saveSettingsPrefs() {
+        try {
+            localStorage.setItem(SETTINGS_LS_KEY, JSON.stringify({
+                settings: collectSettingsPrefs(),
+                savedAt: Date.now()
+            }));
+        } catch (e) {}
+    }
+
+    function applySettingsPrefs(settings) {
+        if (!settings) return;
+        applyDraft({
+            clips: [],
+            title: settings.title,
+            layout: settings.layout,
+            colorPalette: settings.colorPalette,
+            checkeredMode: settings.checkeredMode,
+            subtitleFont: settings.subtitleFont,
+            subtitleY: settings.subtitleY,
+            subtitleColor: settings.subtitleColor,
+            stylePreset: settings.stylePreset || 'viral',
+            commentary: settings.commentary,
+            voiceName: settings.voiceName,
+            currentStep: 1
+        });
+        // applyDraft with empty clips goes to step 1 — keep style preset button state
+        if (settings.stylePreset) {
+            document.querySelectorAll('.style-preset').forEach(function(b) {
+                b.classList.toggle('active', b.dataset.preset === settings.stylePreset);
+            });
+        }
+    }
+
+    function loadSettingsPrefs() {
+        try {
+            var raw = localStorage.getItem(SETTINGS_LS_KEY);
+            if (!raw) return null;
+            var parsed = JSON.parse(raw);
+            return parsed && parsed.settings ? parsed.settings : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    async function validateDraftClips(draftClips) {
+        var list = draftClips || [];
+        var ok = [];
+        for (var i = 0; i < list.length; i++) {
+            var c = list[i];
+            if (!c || !c.filename) continue;
+            try {
+                var url = c.url || ('/studio/ranking-uploads/' + encodeURIComponent(c.filename));
+                var res = await fetch(url, { method: 'HEAD', headers: authHeaders() });
+                if (res.ok) ok.push(c);
+            } catch (e) { /* missing */ }
+        }
+        return ok;
+    }
 
     function getToken() { return localStorage.getItem('viewhunt_token') || localStorage.getItem('token') || null; }
     function authHeaders() { return { 'Authorization': 'Bearer ' + getToken() }; }
@@ -119,10 +218,15 @@
 
     async function saveDraftNow() {
         var draft = collectDraft();
+        saveSettingsPrefs();
         try {
             localStorage.setItem(DRAFT_LS_KEY, JSON.stringify({ draft: draft, savedAt: Date.now() }));
         } catch (e) {}
-        if (!draft.clips.length && !(draft.title && draft.title.text)) return;
+        // Don't keep a server draft of dead/empty clip projects
+        if (!draft.clips.length) {
+            try { await apiFetch('/api/studio/ranking/draft', { method: 'DELETE' }); } catch (e) {}
+            return;
+        }
         try {
             await apiFetch('/api/studio/ranking/draft', {
                 method: 'PUT',
@@ -161,7 +265,7 @@
         colorPalette = draft.colorPalette || 'yellow';
         checkeredMode = !!draft.checkeredMode;
         subtitleColor = draft.subtitleColor || 'yellow';
-        stylePreset = draft.stylePreset || 'classic';
+        stylePreset = draft.stylePreset || 'viral';
         var titleEl = document.getElementById('title-text');
         var hlEl = document.getElementById('title-highlight');
         if (titleEl) titleEl.value = (draft.title && draft.title.text) || '';
@@ -278,6 +382,10 @@
     }
 
     async function resumeSession() {
+        // Always restore last style/title prefs first (never blocked by dead clips)
+        var prefs = loadSettingsPrefs();
+        if (prefs) applySettingsPrefs(prefs);
+
         try {
             var res = await apiFetch('/api/studio/ranking/session');
             if (!res.ok) return;
@@ -313,56 +421,53 @@
             }
 
             if (data.draft && data.draft.clips && data.draft.clips.length) {
+                var live = await validateDraftClips(data.draft.clips);
+                if (live.length) {
+                    var serverDraft = Object.assign({}, data.draft, { clips: live });
+                    if (!data.activeJob) {
+                        showResumeBanner(
+                            'Restored your saved ranking project (' + live.length + ' clips).',
+                            '<button type="button" class="btn btn-secondary btn-sm" id="btn-dismiss-draft">Dismiss</button>'
+                        );
+                        var dismiss = document.getElementById('btn-dismiss-draft');
+                        if (dismiss) dismiss.addEventListener('click', hideResumeBanner);
+                    }
+                    applyDraft(serverDraft);
+                    return;
+                }
+                // Clips gone — keep settings only, wipe dead draft
+                try { localStorage.removeItem(DRAFT_LS_KEY); } catch (e) {}
+                apiFetch('/api/studio/ranking/draft', { method: 'DELETE' }).catch(function() {});
                 if (!data.activeJob) {
                     showResumeBanner(
-                        'Restored your saved ranking project (' + data.draft.clips.length + ' clips).',
-                        '<button type="button" class="btn btn-secondary btn-sm" id="btn-dismiss-draft">Dismiss</button>'
+                        'Previous clips expired — your title & style were kept. Upload new clips to continue.',
+                        '<button type="button" class="btn btn-secondary btn-sm" id="btn-dismiss-draft">Got it</button>'
                     );
-                    var dismiss = document.getElementById('btn-dismiss-draft');
-                    if (dismiss) dismiss.addEventListener('click', hideResumeBanner);
+                    var dMiss = document.getElementById('btn-dismiss-draft');
+                    if (dMiss) dMiss.addEventListener('click', hideResumeBanner);
                 }
-                applyDraft(data.draft);
                 return;
             }
 
-            // Fallback: localStorage draft
+            // localStorage draft only if clips still exist on server
             try {
                 var raw = localStorage.getItem(DRAFT_LS_KEY);
                 if (raw) {
                     var parsed = JSON.parse(raw);
                     if (parsed && parsed.draft && parsed.draft.clips && parsed.draft.clips.length) {
-                        applyDraft(parsed.draft);
-                        showResumeBanner('Restored local draft (' + parsed.draft.clips.length + ' clips).',
-                            '<button type="button" class="btn btn-secondary btn-sm" id="btn-dismiss-draft">Dismiss</button>');
-                        var d2 = document.getElementById('btn-dismiss-draft');
-                        if (d2) d2.addEventListener('click', hideResumeBanner);
+                        var localLive = await validateDraftClips(parsed.draft.clips);
+                        if (localLive.length) {
+                            applyDraft(Object.assign({}, parsed.draft, { clips: localLive }));
+                            showResumeBanner('Restored draft (' + localLive.length + ' clips still available).',
+                                '<button type="button" class="btn btn-secondary btn-sm" id="btn-dismiss-draft">Dismiss</button>');
+                            var d2 = document.getElementById('btn-dismiss-draft');
+                            if (d2) d2.addEventListener('click', hideResumeBanner);
+                        } else {
+                            localStorage.removeItem(DRAFT_LS_KEY);
+                        }
                     }
                 }
             } catch (e) {}
-
-            if (data.lastCompleteJobId && (!clips || !clips.length)) {
-                showResumeBanner(
-                    'Reload clips & settings from your last completed ranking video?',
-                    '<button type="button" class="btn btn-primary btn-sm" id="btn-restore-last">Reload last project</button>' +
-                    '<button type="button" class="btn btn-secondary btn-sm" id="btn-dismiss-draft">No thanks</button>'
-                );
-                var restoreBtn = document.getElementById('btn-restore-last');
-                if (restoreBtn) {
-                    restoreBtn.addEventListener('click', async function() {
-                        try {
-                            var r = await apiFetch('/api/studio/ranking/restore-job/' + data.lastCompleteJobId, { method: 'POST' });
-                            var rd = await r.json();
-                            if (!r.ok) throw new Error(rd.error || 'Restore failed');
-                            applyDraft(rd.draft);
-                            hideResumeBanner();
-                        } catch (err) {
-                            alert(err.message);
-                        }
-                    });
-                }
-                var d3 = document.getElementById('btn-dismiss-draft');
-                if (d3) d3.addEventListener('click', hideResumeBanner);
-            }
         } catch (e) {
             console.warn('Session resume skipped:', e.message);
         }
@@ -1338,76 +1443,87 @@
             return;
         }
 
+        var viral = stylePreset === 'viral' || stylePreset === 'bold';
         var html = '<div class="pv-bars top"></div><div class="pv-bars bottom"></div><div class="pv-bg"></div>';
 
-        // Title — position and size from layout
         var titleYPct = layout.titleY;
         var titleFontRem = (layout.titleSize / 48) * 0.7;
-        if (titleText) {
-            var titleHtml = escapeHtml(titleText);
+        if (viral && titleText) {
+            html += '<div style="position:absolute;top:0;left:0;right:0;height:14%;background:#000;z-index:2"></div>';
+            var tw = titleText.trim().split(/\s+/).filter(Boolean);
+            var viralColors = ['#ffffff', '#f472b6', '#f472b6', '#facc15', '#facc15', '#22d3ee'];
+            var titleHtml = tw.map(function(w, i) {
+                var col = viralColors[Math.min(i, viralColors.length - 1)];
+                if (hlWord && w.toLowerCase() === hlWord.toLowerCase()) col = '#facc15';
+                return '<span style="color:' + col + '">' + escapeHtml(w.toUpperCase()) + '</span>';
+            }).join(' ');
+            html += '<div class="pv-title" style="top:2%;z-index:3"><div class="pv-title-text" style="font-size:' + titleFontRem.toFixed(2) + 'rem;font-weight:900;line-height:1.15;text-align:center;padding:0 0.3rem">' + titleHtml + '</div></div>';
+            var activeIdx = isTrim ? currentTrimIndex : Math.min(previewActiveClip, totalClips - 1);
+            var activeClip = clips[activeIdx];
+            var rankNum = totalClips - activeIdx;
+            var rankLab = (activeClip && activeClip.label) ? String(activeClip.label).toUpperCase() : 'MOMENT';
+            html += '<div style="position:absolute;top:15%;left:0;right:0;text-align:center;z-index:3;font-weight:900;font-size:0.78rem;color:#fff;-webkit-text-stroke:1px #000;text-shadow:0 0 2px #000">' + rankNum + '. ' + escapeHtml(rankLab) + '</div>';
+        } else if (titleText) {
+            var titleHtmlClassic = escapeHtml(titleText);
             if (hlWord) {
                 var re = new RegExp('(' + escapeRegex(hlWord) + ')', 'i');
-                titleHtml = titleHtml.replace(re, '<span style="color:' + colors.hl + '">$1</span>');
+                titleHtmlClassic = titleHtmlClassic.replace(re, '<span style="color:' + colors.hl + '">$1</span>');
             }
-            html += '<div class="pv-title" style="top:' + titleYPct + '%"><div class="pv-title-text" style="font-size:' + titleFontRem.toFixed(2) + 'rem">' + titleHtml + '</div></div>';
+            html += '<div class="pv-title" style="top:' + titleYPct + '%"><div class="pv-title-text" style="font-size:' + titleFontRem.toFixed(2) + 'rem">' + titleHtmlClassic + '</div></div>';
         }
 
-        var listXPct = layout.listX;
-        // Scale lineSpacing from ASS pixels (65 default at 1920h) to preview gap
-        var gapPx = Math.round((layout.lineSpacing / 65) * 3);
-        html += '<div class="pv-list" style="left:' + listXPct + '%;gap:' + gapPx + 'px">';
+        if (!viral) {
+            var listXPct = layout.listX;
+            var gapPx = Math.round((layout.lineSpacing / 65) * 3);
+            html += '<div class="pv-list" style="left:' + listXPct + '%;gap:' + gapPx + 'px">';
 
-        for (var row = 0; row < totalClips; row++) {
-            var num = row + 1;
-            var clipIdx = totalClips - num;
-            var clip = clips[clipIdx];
-            var label = (clip && clip.label) || '';
+            for (var row = 0; row < totalClips; row++) {
+                var num = row + 1;
+                var clipIdx = totalClips - num;
+                var clip = clips[clipIdx];
+                var label = (clip && clip.label) || '';
 
-            var numClass = 'dim';
-            var labelClass = 'dim';
-            var numColor = '';
+                var numClass = 'dim';
+                var labelClass = 'dim';
+                var numColor = '';
 
-            if (isTrim) {
-                if (clipIdx < currentTrimIndex) { numClass = 'done'; labelClass = ''; }
-                else if (clipIdx === currentTrimIndex) { numClass = 'active'; labelClass = ''; }
-            } else {
-                // Simulate mid-ranking: earlier (higher) numbers done, one active
-                var activeIdx = Math.min(previewActiveClip, totalClips - 1);
-                if (clipIdx < activeIdx) { numClass = 'done'; labelClass = ''; }
-                else if (clipIdx === activeIdx) { numClass = 'active'; labelClass = ''; }
-                else { numClass = 'dim'; labelClass = 'dim'; }
-            }
-
-            // Apply color palette
-            if (numClass === 'active') {
-                numColor = 'color:' + colors.active + ';';
-            } else if (numClass === 'done') {
-                // Checkered mode: alternate between palette color and white
-                if (checkeredMode) {
-                    numColor = (row % 2 === 0) ? 'color:' + colors.done + ';' : 'color:#ffffff;';
+                if (isTrim) {
+                    if (clipIdx < currentTrimIndex) { numClass = 'done'; labelClass = ''; }
+                    else if (clipIdx === currentTrimIndex) { numClass = 'active'; labelClass = ''; }
                 } else {
-                    numColor = 'color:' + colors.done + ';';
+                    var actIdx = Math.min(previewActiveClip, totalClips - 1);
+                    if (clipIdx < actIdx) { numClass = 'done'; labelClass = ''; }
+                    else if (clipIdx === actIdx) { numClass = 'active'; labelClass = ''; }
+                    else { numClass = 'dim'; labelClass = 'dim'; }
                 }
+
+                if (numClass === 'active') {
+                    numColor = 'color:' + colors.active + ';';
+                } else if (numClass === 'done') {
+                    if (checkeredMode) {
+                        numColor = (row % 2 === 0) ? 'color:' + colors.done + ';' : 'color:#ffffff;';
+                    } else {
+                        numColor = 'color:' + colors.done + ';';
+                    }
+                }
+
+                var numFontRem = (layout.numSize / 50) * 0.65;
+                var numActiveFontRem = (layout.numSize / 50) * 0.72;
+                var numFontStyle = (numClass === 'active') ? 'font-size:' + numActiveFontRem.toFixed(2) + 'rem;' : 'font-size:' + numFontRem.toFixed(2) + 'rem;';
+
+                html += '<div class="pv-row"><div class="pv-num ' + numClass + '" style="' + numColor + numFontStyle + '">' + num + '.</div><div class="pv-label ' + labelClass + '">' + escapeHtml(label) + '</div></div>';
             }
-
-            // Scale numSize from ASS pixels (50 default) to preview rem
-            var numFontRem = (layout.numSize / 50) * 0.65;
-            var numActiveFontRem = (layout.numSize / 50) * 0.72;
-            var numFontStyle = (numClass === 'active') ? 'font-size:' + numActiveFontRem.toFixed(2) + 'rem;' : 'font-size:' + numFontRem.toFixed(2) + 'rem;';
-
-            html += '<div class="pv-row"><div class="pv-num ' + numClass + '" style="' + numColor + numFontStyle + '">' + num + '.</div><div class="pv-label ' + labelClass + '">' + escapeHtml(label) + '</div></div>';
+            html += '</div>';
         }
-        html += '</div>';
 
-        // Live caption preview inside phone frame (when commentary on, or always as sample)
         var commentaryOn = document.getElementById('commentary-toggle') && document.getElementById('commentary-toggle').checked;
-        var sampleCap = (document.getElementById('title-text') || {}).value
-            ? 'These are the ' + ((document.getElementById('title-highlight') || {}).value || 'best') + ' moments'
+        var sampleCap = viral
+            ? (previewActiveClip === 0 ? 'watch this you need to see it' : 'subscribe before this goes wrong')
             : 'bro did not see that coming';
-        if (commentaryOn || !isTrim) {
+        if (commentaryOn || viral || !isTrim) {
             var subY = parseInt((document.getElementById('subtitle-y') || {}).value, 10);
-            if (isNaN(subY)) subY = 55;
-            var subFont = ((document.getElementById('subtitle-font') || {}).value) || 'Arial';
+            if (isNaN(subY)) subY = viral ? 50 : 55;
+            var subFont = ((document.getElementById('subtitle-font') || {}).value) || (viral ? 'Arial Black' : 'Arial');
             var subColorMap = {
                 yellow: '#facc15', cyan: '#22d3ee', green: '#34d399', red: '#f87171',
                 pink: '#f472b6', orange: '#fb923c', white: '#ffffff'
@@ -1416,9 +1532,9 @@
             var words = sampleCap.split(/\s+/);
             var mid = Math.max(0, Math.floor(words.length / 2) - 1);
             var capHtml = words.map(function(w, i) {
-                return '<span class="pv-cap-word' + (i === mid ? ' on' : '') + '">' + escapeHtml(w.toUpperCase()) + '</span>';
+                return '<span class="pv-cap-word' + (i === mid ? ' on' : '') + '" style="-webkit-text-stroke:1px #000;paint-order:stroke fill">' + escapeHtml(w.toUpperCase()) + '</span>';
             }).join(' ');
-            html += '<div class="pv-caption" style="top:' + subY + '%;color:' + capColor + ';font-family:\'' + subFont.replace(/'/g, '') + '\',sans-serif;font-size:0.72rem">' + capHtml + '</div>';
+            html += '<div class="pv-caption" style="top:' + subY + '%;color:' + capColor + ';font-family:\'' + subFont.replace(/'/g, '') + '\',sans-serif;font-size:' + (viral ? '0.85' : '0.72') + 'rem;font-weight:900;text-align:center;width:100%">' + capHtml + '</div>';
         }
 
         if (isTrim && clips[currentTrimIndex]) {
@@ -1512,6 +1628,14 @@
 
     function showResult(data) {
         document.getElementById('assembly-progress').classList.add('hidden');
+        // Project finished — keep style prefs, drop clip draft so next open is clean
+        saveSettingsPrefs();
+        try {
+            localStorage.removeItem(DRAFT_LS_KEY);
+            localStorage.removeItem('viewhunt_ranking_active_job');
+        } catch (e) {}
+        apiFetch('/api/studio/ranking/draft', { method: 'DELETE' }).catch(function() {});
+
         var v = document.getElementById('result-video');
         var url = data && data.videoUrl;
         if (!url) {
@@ -1553,8 +1677,9 @@
             if (el) el.addEventListener('input', scheduleDraftSave);
         });
         document.getElementById('btn-new').addEventListener('click', function() {
-            clips = []; currentTrimIndex = 0; layout = { listX: 5, titleY: 6, titleSize: 48, lineSpacing: 65, numSize: 50 };
-            colorPalette = 'yellow'; checkeredMode = false; subtitleColor = 'yellow';
+            saveSettingsPrefs();
+            clips = [];
+            currentTrimIndex = 0;
             activeJobId = null;
             hideResumeBanner();
             try {
@@ -1562,36 +1687,30 @@
                 localStorage.removeItem('viewhunt_ranking_active_job');
             } catch (e) {}
             apiFetch('/api/studio/ranking/draft', { method: 'DELETE' }).catch(function() {});
-            renderClipList(); updateNextButton();
-            document.getElementById('title-text').value = ''; document.getElementById('title-highlight').value = '';
-            document.getElementById('result-video').classList.add('hidden'); document.getElementById('result-info').classList.add('hidden');
+            // Keep last title/style; only clear clips & result
+            var prefs = loadSettingsPrefs();
+            if (prefs) applySettingsPrefs(prefs);
+            else applyStylePreset('viral');
+            renderClipList();
+            updateNextButton();
+            document.getElementById('result-video').classList.add('hidden');
+            document.getElementById('result-info').classList.add('hidden');
             document.getElementById('result-actions').classList.add('hidden');
-            document.getElementById('btn-assemble').disabled = false; document.getElementById('btn-assemble').textContent = assembleButtonLabel(false);
-            // Reset commentary toggle + voice picker
-            document.getElementById('commentary-toggle').checked = false;
-            document.getElementById('voice-picker').style.display = 'none';
-            document.getElementById('voice-picker').value = 'Kore';
-            document.getElementById('subtitle-settings').style.display = 'none';
-            document.getElementById('subtitle-font').value = 'Arial';
-            document.getElementById('subtitle-y').value = 55;
-            document.getElementById('subtitle-y-val').textContent = '55%';
-            // Reset subtitle color swatches
-            document.querySelectorAll('.sub-color-swatch').forEach(function(b) { b.classList.remove('active'); });
-            var defSubSwatch = document.querySelector('.sub-color-swatch[data-color="yellow"]');
-            if (defSubSwatch) defSubSwatch.classList.add('active');
-            var subPreview = document.getElementById('subtitle-preview');
-            if (subPreview) { subPreview.style.color = '#facc15'; subPreview.style.fontFamily = 'Arial'; }
-            // Reset checkered toggle
-            document.getElementById('checkered-toggle').checked = false;
-            // Reset color swatches
-            document.querySelectorAll('.color-swatch').forEach(function(b) { b.classList.remove('active'); });
-            var defSwatch = document.querySelector('.color-swatch[data-color="yellow"]');
-            if (defSwatch) defSwatch.classList.add('active');
-            // Reset sliders
-            ['pos-list-x','pos-title-y','pos-title-size'].forEach(function(id) { var el = document.getElementById(id); if (el) el.dispatchEvent(new Event('input')); });
+            document.getElementById('btn-assemble').disabled = false;
+            document.getElementById('btn-assemble').textContent = assembleButtonLabel(
+                !!(document.getElementById('commentary-toggle') && document.getElementById('commentary-toggle').checked)
+            );
             goToStep(1);
         });
         goToStep(1);
+        applyStylePreset(stylePreset || 'viral');
+        var ctInit = document.getElementById('commentary-toggle');
+        if (ctInit && ctInit.checked) {
+            var vp = document.getElementById('voice-picker');
+            var ss = document.getElementById('subtitle-settings');
+            if (vp) vp.style.display = '';
+            if (ss) ss.style.display = '';
+        }
         resumeSession();
     }
 

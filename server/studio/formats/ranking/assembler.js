@@ -1,12 +1,10 @@
 /**
  * Ranking Video Assembler — Pure FFmpeg, no AI APIs.
- * 
- * Overlay layout (like real ranking videos):
- *   - Title at top center (highlighted keyword in yellow)
- *   - ALL numbers (1-N) stacked on left side, visible the ENTIRE video
- *   - As each clip plays, its label fades in next to its number
- *   - Currently playing number is highlighted
- *   - Black bars top/bottom, hard cuts between clips
+ *
+ * Overlay modes:
+ *   viral (default with commentary): black title bar, multi-color title,
+ *     centered "N. LABEL" under the bar, thick karaoke captions mid-frame
+ *   classic: left number stack + single highlight word in title
  */
 const { execFile } = require('child_process');
 const { promisify } = require('util');
@@ -75,7 +73,7 @@ class RankingAssembler {
      * Assemble ranking video.
      * clips: [{ path, number, label }] in playback order (highest number first, #1 last)
      * title: { text, highlightWord }
-     * options: { layout, commentary, commentaryLines, colorPalette, checkeredMode, subtitleFont, subtitleY, subtitleColor, hookEnabled }
+     * options: { layout, commentary, commentaryLines, colorPalette, checkeredMode, subtitleFont, subtitleY, subtitleColor, hookEnabled, overlayStyle, stylePreset }
      */
     async assemble(clips, title, options) {
         var jobId = 'ranking-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
@@ -83,8 +81,13 @@ class RankingAssembler {
         fs.mkdirSync(jobDir, { recursive: true });
 
         var commentary = (options && options.commentary) || [];
+        // Flash-montage hook is opt-in only — viral format cold-opens on clip 0
         var hookEnabled = !!(options && options.hookEnabled);
-        console.log('\n🏆 Ranking assembly: ' + clips.length + ' clips' + (commentary.length > 0 ? ' + ' + commentary.filter(function(c) { return c.audioPath; }).length + ' commentary lines' : '') + (hookEnabled ? ' + hook intro' : ''));
+        var overlayStyle = (options && options.overlayStyle)
+            || ((options && options.stylePreset === 'viral') ? 'viral' : null)
+            || (commentary.length > 0 ? 'viral' : 'classic');
+        options = Object.assign({}, options || {}, { overlayStyle: overlayStyle });
+        console.log('\n🏆 Ranking assembly: ' + clips.length + ' clips' + (commentary.length > 0 ? ' + ' + commentary.filter(function(c) { return c.audioPath; }).length + ' commentary lines' : '') + (hookEnabled ? ' + hook montage' : '') + ' [' + overlayStyle + ']');
 
         try {
             // Step 1: Normalize each clip
@@ -100,7 +103,7 @@ class RankingAssembler {
                 console.log('  ✓ Clip ' + (i + 1) + '/' + clips.length + ' (' + dur.toFixed(1) + 's)');
             }
 
-            // Step 1b: Build hook intro if commentary is enabled
+            // Step 1b: Optional legacy flash-montage hook
             var hookPath = null;
             var hookDuration = 0;
             var introCommentary = commentary.find(function(c) { return c.clipIndex === 0; });
@@ -112,27 +115,7 @@ class RankingAssembler {
                 console.log('  ✓ Hook intro: ' + hookDuration.toFixed(1) + 's');
             }
 
-            // Calculate time offsets for each clip (shifted by hook duration)
-            var offsets = [hookDuration];
-            for (var i = 0; i < durations.length - 1; i++) {
-                offsets.push(offsets[i] + durations[i]);
-            }
-
-            // Step 2: Hard-cut concat (hook + ranked clips)
-            console.log('  [Step 2] Concatenating...');
-            var concatList = path.join(jobDir, 'concat.txt');
-            var concatEntries = [];
-            if (hookPath) concatEntries.push("file '" + hookPath + "'");
-            for (var i = 0; i < normalizedPaths.length; i++) {
-                concatEntries.push("file '" + normalizedPaths[i] + "'");
-            }
-            fs.writeFileSync(concatList, concatEntries.join('\n'));
-            var concatPath = path.join(jobDir, 'concat.mp4');
-            await this.ffmpeg(['-f', 'concat', '-safe', '0', '-i', concatList, '-c', 'copy', '-y', concatPath]);
-
-            // Step 3: Generate ASS overlay (offsets already include hook duration)
-            // Probe actual TTS audio durations for accurate subtitle sync
-            console.log('  [Step 3] Generating ASS overlay...');
+            // Probe TTS durations
             var commentaryDurations = {};
             for (var cd = 0; cd < commentary.length; cd++) {
                 var cItem = commentary[cd];
@@ -143,8 +126,59 @@ class RankingAssembler {
                     } catch (e) { /* skip */ }
                 }
             }
+
+            // Viral white-card beats: before mid clips, VO+karaoke on solid white (Jinxy style)
+            var useWhiteCards = overlayStyle === 'viral' && commentary.length > 0 && !hookEnabled;
+            var clipOffsets = [];
+            var voiceOffsets = {}; // clipIndex → when VO/karaoke starts
+            var whiteMeta = {}; // clipIndex → { offset, duration }
+            var concatEntries = [];
+            if (hookPath) concatEntries.push("file '" + hookPath + "'");
+
+            var cursor = hookDuration;
+            for (var i = 0; i < normalizedPaths.length; i++) {
+                var isMid = i > 0 && i < normalizedPaths.length - 1;
+                var midLine = commentary.find(function(c) { return c.clipIndex === i; });
+                var hasMidVo = !!(useWhiteCards && isMid && midLine && midLine.audioPath && fs.existsSync(midLine.audioPath));
+
+                if (hasMidVo) {
+                    var wDur = Math.max(1.1, Math.min(4.5, (commentaryDurations[i] || 2) + 0.12));
+                    var whitePath = path.join(jobDir, 'white-' + i + '.ts');
+                    await this.createWhiteCard(whitePath, wDur);
+                    concatEntries.push("file '" + whitePath + "'");
+                    voiceOffsets[i] = cursor;
+                    whiteMeta[i] = { offset: cursor, duration: wDur };
+                    cursor += wDur;
+                    console.log('  ✓ White card before clip ' + (i + 1) + ' (' + wDur.toFixed(1) + 's)');
+                }
+
+                concatEntries.push("file '" + normalizedPaths[i] + "'");
+                clipOffsets[i] = cursor;
+                if (!hasMidVo) {
+                    // Hook / CTA / no-white: VO sits on the clip itself
+                    voiceOffsets[i] = cursor;
+                }
+                cursor += durations[i];
+            }
+
+            // Legacy offsets alias (clip starts) for mix helper
+            var offsets = clipOffsets;
+
+            // Step 2: Hard-cut concat
+            console.log('  [Step 2] Concatenating...');
+            var concatList = path.join(jobDir, 'concat.txt');
+            fs.writeFileSync(concatList, concatEntries.join('\n'));
+            var concatPath = path.join(jobDir, 'concat.mp4');
+            await this.ffmpeg(['-f', 'concat', '-safe', '0', '-i', concatList, '-c', 'copy', '-y', concatPath]);
+
+            // Step 3: Generate ASS overlay
+            console.log('  [Step 3] Generating ASS overlay...');
             var assPath = path.join(jobDir, 'overlay.ass');
-            this.generateASS(assPath, clips, durations, title, options, hookDuration, commentaryDurations);
+            this.generateASS(assPath, clips, durations, title, options, hookDuration, commentaryDurations, {
+                clipOffsets: clipOffsets,
+                voiceOffsets: voiceOffsets,
+                whiteMeta: whiteMeta
+            });
 
             // Step 4: Burn subtitles
             console.log('  [Step 4] Burning subtitles...');
@@ -159,22 +193,20 @@ class RankingAssembler {
                 '-c:a', 'copy', '-y', subtitledPath
             ]);
 
-            // Step 5: Mix commentary audio (if any) — skip intro line since it's already in the hook
+            // Step 5: Mix commentary audio at voiceOffsets
             console.log('  [Step 5] Mixing commentary audio...');
             var outputName = 'ranking-' + Date.now() + '.mp4';
             var finalPath = path.join(this.outputDir, outputName);
 
             var commentaryWithAudio = commentary.filter(function(c) {
-                // Skip clipIndex 0 (intro) if hook is enabled — it's already mixed into the hook
                 if (hookEnabled && c.clipIndex === 0) return false;
                 return c.audioPath && fs.existsSync(c.audioPath);
             });
 
             if (commentaryWithAudio.length > 0) {
                 console.log('  🎙️ Mixing ' + commentaryWithAudio.length + ' commentary audio tracks...');
-                await this._mixCommentaryAudio(subtitledPath, commentaryWithAudio, offsets, durations, finalPath, jobDir);
+                await this._mixCommentaryAudio(subtitledPath, commentaryWithAudio, voiceOffsets, durations, finalPath, jobDir, cursor);
             } else {
-                // No commentary — just copy subtitled as final
                 fs.copyFileSync(subtitledPath, finalPath);
             }
 
@@ -284,27 +316,54 @@ class RankingAssembler {
     }
 
     /**
-     * Mix commentary audio tracks into the video at the correct timestamps.
-     * Each commentary line plays at the start of its corresponding clip.
-     * Commentary is mixed on top of existing audio (lowered volume during commentary).
+     * Solid white 1080x1920 card (mpegts) for viral caption beats.
      */
-    async _mixCommentaryAudio(videoPath, commentary, offsets, durations, outputPath, jobDir) {
-        // Build FFmpeg filter to overlay commentary at correct timestamps
-        // Strategy: create a single commentary track with all lines placed at their timestamps,
-        // then mix it with the original audio using smooth ducking via sidechaincompress
+    async createWhiteCard(outputPath, durationSeconds) {
+        var dur = Math.max(0.8, durationSeconds || 2);
+        await this.ffmpeg([
+            '-f', 'lavfi', '-i', 'color=c=white:s=1080x1920:r=30:d=' + dur.toFixed(3),
+            '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+            '-t', dur.toFixed(3),
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-threads', '1',
+            '-r', '30', '-pix_fmt', 'yuv420p',
+            '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
+            '-f', 'mpegts', '-y', outputPath
+        ]);
+        return outputPath;
+    }
 
-        var totalDuration = offsets[offsets.length - 1] + durations[durations.length - 1];
+    /**
+     * Mix commentary audio tracks into the video at the correct timestamps.
+     * offsets may be an array (clip index → time) or map-like object (voiceOffsets).
+     */
+    async _mixCommentaryAudio(videoPath, commentary, offsets, durations, outputPath, jobDir, totalDurationOverride) {
+        var totalDuration = totalDurationOverride;
+        if (!(totalDuration > 0)) {
+            if (Array.isArray(offsets)) {
+                totalDuration = offsets[offsets.length - 1] + durations[durations.length - 1];
+            } else {
+                totalDuration = 0;
+                Object.keys(offsets || {}).forEach(function(k) {
+                    var idx = parseInt(k, 10);
+                    var start = offsets[k] || 0;
+                    var end = start + (durations[idx] || 2) + 1;
+                    if (end > totalDuration) totalDuration = end;
+                });
+                if (!(totalDuration > 0)) totalDuration = 60;
+            }
+        }
 
-        // Build individual delayed commentary tracks and amerge them
         var inputs = ['-i', videoPath];
         var filterParts = [];
         var commentaryLabels = [];
 
         for (var i = 0; i < commentary.length; i++) {
             var c = commentary[i];
-            var startMs = Math.round((offsets[c.clipIndex] || 0) * 1000);
+            var startSec = Array.isArray(offsets)
+                ? (offsets[c.clipIndex] || 0)
+                : ((offsets && offsets[c.clipIndex] != null) ? offsets[c.clipIndex] : 0);
+            var startMs = Math.round(startSec * 1000);
             inputs.push('-i', c.audioPath);
-            // Delay commentary to clip start (TTS is already normalized during generation)
             filterParts.push('[' + (i + 1) + ':a]aresample=44100,adelay=' + startMs + '|' + startMs + ',apad=whole_dur=' + totalDuration.toFixed(2) + '[c' + i + ']');
             commentaryLabels.push('[c' + i + ']');
         }
@@ -354,20 +413,47 @@ class RankingAssembler {
     }
 
     /**
-     * Generate ASS subtitle file with ranking-style overlays.
-     * 
-     * Layout (1080x1920):
-     *   - Title at top center, entire duration
-     *   - Numbers stacked on left side, ALL visible entire duration
-     *   - Number order: #1 at top, ascending down (#1, #2, #3...)
-     *   - When a clip plays, its label fades in next to its number
-     *   - Currently playing number is highlighted
-     *   - Position controlled by layout params from frontend
-     *   - Commentary subtitles: one word at a time, configurable color
+     * Multi-color viral title (white / pink / yellow / cyan), optional highlight override.
      */
-    generateASS(outputPath, clips, durations, title, options, hookDuration, commentaryDurations) {
+    formatViralTitleASS(text, highlightWord) {
+        var words = String(text || '').trim().split(/\s+/).filter(Boolean);
+        if (!words.length) return '';
+        var white = '&H00FFFFFF';
+        var pink = '&H00B672F4';
+        var yellow = '&H0015CCFA';
+        var cyan = '&H00EED322';
+        var hl = highlightWord ? String(highlightWord).toLowerCase().trim() : '';
+        var n = words.length;
+        var parts = [];
+        for (var i = 0; i < n; i++) {
+            var w = words[i];
+            var color = yellow;
+            if (hl && w.toLowerCase() === hl) {
+                color = yellow;
+            } else if (i === 0) {
+                color = white;
+            } else if (i === n - 1 && n > 2) {
+                color = cyan;
+            } else if (i < Math.ceil(n * 0.4)) {
+                color = pink;
+            } else {
+                color = yellow;
+            }
+            parts.push('{\\c' + color + '}' + w.toUpperCase());
+            // Soft wrap ~ every 3 words for vertical Shorts
+            if ((i + 1) % 3 === 0 && i < n - 1) parts.push('\\N');
+            else if (i < n - 1) parts.push(' ');
+        }
+        return parts.join('');
+    }
+
+    /**
+     * Generate ASS subtitle file with ranking-style overlays.
+     */
+    generateASS(outputPath, clips, durations, title, options, hookDuration, commentaryDurations, timeline) {
         hookDuration = hookDuration || 0;
         commentaryDurations = commentaryDurations || {};
+        timeline = timeline || {};
         var totalClips = clips.length;
         var lo = (options && options.layout) || {};
         var listXPct = lo.listXPercent || 5;
@@ -377,6 +463,11 @@ class RankingAssembler {
         var numActiveSize = numSize + 6;
         var palette = (options && options.colorPalette) || 'yellow';
         var checkered = !!(options && options.checkeredMode);
+        var overlayStyle = (options && options.overlayStyle) || 'classic';
+        var viral = overlayStyle === 'viral';
+        var clipOffsetsTL = timeline.clipOffsets;
+        var voiceOffsetsTL = timeline.voiceOffsets || {};
+        var whiteMeta = timeline.whiteMeta || {};
 
         // ASS color format: &H00BBGGRR (BGR, not RGB)
         var colorMap = {
@@ -391,8 +482,7 @@ class RankingAssembler {
         var colors = colorMap[palette] || colorMap.yellow;
         var whiteASS = '&H00FFFFFF';
 
-        // Subtitle color (user-chosen, default yellow)
-        var subtitleColorName = (options && options.subtitleColor) || 'yellow';
+        var subtitleColorName = (options && options.subtitleColor) || (viral ? 'yellow' : 'yellow');
         var subColorMap = {
             yellow:  '&H0015CCFA',
             cyan:    '&H00EED322',
@@ -404,22 +494,30 @@ class RankingAssembler {
         };
         var subtitleASS = subColorMap[subtitleColorName] || subColorMap.yellow;
 
-        // Convert percentages to pixel positions (1080x1920)
         var listX = Math.round((listXPct / 100) * 1080);
-        var titleY = Math.round((titleYPct / 100) * 1920);
+        var titleY = viral ? 70 : Math.round((titleYPct / 100) * 1920);
+        if (viral) titleFontSize = Math.max(titleFontSize, 52);
 
-        // Calculate time offsets (shifted by hookDuration)
-        var offsets = [hookDuration];
-        for (var i = 0; i < durations.length - 1; i++) {
-            offsets.push(offsets[i] + durations[i]);
+        var offsets;
+        if (clipOffsetsTL && clipOffsetsTL.length === durations.length) {
+            offsets = clipOffsetsTL.slice();
+        } else {
+            offsets = [hookDuration];
+            for (var i = 0; i < durations.length - 1; i++) {
+                offsets.push(offsets[i] + durations[i]);
+            }
         }
         var totalDuration = offsets[offsets.length - 1] + durations[durations.length - 1];
+        Object.keys(whiteMeta).forEach(function(k) {
+            var w = whiteMeta[k];
+            if (w && (w.offset + w.duration) > totalDuration) {
+                totalDuration = w.offset + w.duration;
+            }
+        });
 
-        // Sort numbers ascending for display (#1 at top, #2 below, etc.)
         var allNumbers = clips.map(function(c) { return c.number; });
         var sortedNumbers = allNumbers.slice().sort(function(a, b) { return a - b; });
 
-        // Calculate vertical positions — centered in content area
         var rowHeight = lo.lineSpacing || 65;
         var listHeight = sortedNumbers.length * rowHeight;
         var listStartY = Math.max(400, Math.floor(960 - listHeight / 2));
@@ -430,6 +528,8 @@ class RankingAssembler {
         }
 
         var labelX = listX + 80;
+        var barHeight = viral ? 210 : 0;
+        var rankY = viral ? (barHeight + 36) : 0;
 
         var ass = '';
         ass += '[Script Info]\n';
@@ -442,22 +542,27 @@ class RankingAssembler {
         ass += '[V4+ Styles]\n';
         ass += 'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n';
 
-        // Title style — uses custom font size and Y position via MarginV
-        ass += 'Style: Title,Arial,' + titleFontSize + ',&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,8,20,20,' + titleY + ',1\n';
+        ass += 'Style: TitleBar,Arial,20,&H00000000,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n';
+        ass += 'Style: Title,Arial Black,' + titleFontSize + ',&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,' + (viral ? '5' : '4') + ',2,' + (viral ? '8' : '8') + ',20,20,' + titleY + ',1\n';
+        ass += 'Style: RankLine,Arial Black,56,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,6,0,8,40,40,' + rankY + ',1\n';
+        ass += 'Style: RankLineYellow,Arial Black,56,&H0015CCFA,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,6,0,8,40,40,' + rankY + ',1\n';
 
-        // Number styles — use palette colors and dynamic size
         ass += 'Style: NumDim,Arial,' + numSize + ',&H00888888,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
         ass += 'Style: NumActive,Arial,' + numActiveSize + ',' + colors.active + ',&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,7,0,0,0,1\n';
         ass += 'Style: NumDone,Arial,' + numSize + ',' + colors.done + ',&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
-        // Checkered alternate style (white or palette color depending on row)
         ass += 'Style: NumDoneAlt,Arial,' + numSize + ',' + whiteASS + ',&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,7,0,0,0,1\n';
         ass += 'Style: Label,Arial,32,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,7,0,0,0,1\n';
 
-        // Commentary subtitle style — font, Y position, and color from options
-        var subFont = (options && options.subtitleFont) || 'Arial';
-        var subYPct = (options && options.subtitleY != null) ? options.subtitleY : 55;
+        var subFont = (options && options.subtitleFont) || (viral ? 'Arial Black' : 'Arial');
+        var subYPct = (options && options.subtitleY != null) ? options.subtitleY : (viral ? 50 : 55);
         var subY = Math.round((subYPct / 100) * 1920);
-        ass += 'Style: ComSub,' + subFont + ',52,' + subtitleASS + ',&H000000FF,&H00000000,&HC0000000,-1,0,0,0,100,100,0,0,1,3,2,2,40,40,' + subY + ',1\n';
+        var subSize = viral ? 68 : 52;
+        var subOutline = viral ? 6 : 3;
+        // Centered karaoke — Alignment 5 (center). White-card style is larger + heavier stroke.
+        ass += 'Style: ComSub,' + subFont + ',' + subSize + ',' + subtitleASS + ',&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,' + subOutline + ',2,5,40,40,0,1\n';
+        ass += 'Style: ComSubWhite,' + subFont + ',92,' + subtitleASS + ',&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,8,3,5,40,40,0,1\n';
+        // Cyan variant for variety on white cards (every other word can switch via inline override)
+        ass += 'Style: ComSubWhiteAlt,' + subFont + ',92,&H00EED322,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,8,3,5,40,40,0,1\n';
 
         ass += '\n[Events]\n';
         ass += 'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n';
@@ -465,20 +570,30 @@ class RankingAssembler {
         var t0 = this.assTime(0);
         var tEnd = this.assTime(totalDuration);
 
-        // Title (entire duration)
-        if (title && title.text) {
-            var titleText = title.text;
-            if (title.highlightWord && titleText.toLowerCase().includes(title.highlightWord.toLowerCase())) {
-                var idx = titleText.toLowerCase().indexOf(title.highlightWord.toLowerCase());
-                var before = titleText.substring(0, idx);
-                var hl = titleText.substring(idx, idx + title.highlightWord.length);
-                var after = titleText.substring(idx + title.highlightWord.length);
-                titleText = before + '{\\c' + colors.hl + '}' + hl + '{\\c&HFFFFFF&}' + after;
-            }
-            ass += 'Dialogue: 2,' + t0 + ',' + tEnd + ',Title,,0,0,0,,' + titleText + '\n';
+        // Viral: solid black title bar
+        if (viral && barHeight > 0) {
+            ass += 'Dialogue: 0,' + t0 + ',' + tEnd + ',TitleBar,,0,0,0,,{\\p1\\bord0\\shad0\\1c&H000000&\\1a&H00&}m 0 0 l 1080 0 1080 ' + barHeight + ' 0 ' + barHeight + '{\\p0}\n';
         }
 
-        // Build lookup: number → clip info
+        // Title
+        if (title && title.text) {
+            var titleText;
+            if (viral) {
+                titleText = this.formatViralTitleASS(title.text, title.highlightWord);
+                ass += 'Dialogue: 2,' + t0 + ',' + tEnd + ',Title,,0,0,0,,{\\an8\\pos(540,' + titleY + ')\\b1}' + titleText + '\n';
+            } else {
+                titleText = title.text;
+                if (title.highlightWord && titleText.toLowerCase().includes(title.highlightWord.toLowerCase())) {
+                    var idx = titleText.toLowerCase().indexOf(title.highlightWord.toLowerCase());
+                    var before = titleText.substring(0, idx);
+                    var hl = titleText.substring(idx, idx + title.highlightWord.length);
+                    var after = titleText.substring(idx + title.highlightWord.length);
+                    titleText = before + '{\\c' + colors.hl + '}' + hl + '{\\c&HFFFFFF&}' + after;
+                }
+                ass += 'Dialogue: 2,' + t0 + ',' + tEnd + ',Title,,0,0,0,,' + titleText + '\n';
+            }
+        }
+
         var numberInfo = {};
         for (var c = 0; c < clips.length; c++) {
             numberInfo[clips[c].number] = {
@@ -486,38 +601,47 @@ class RankingAssembler {
             };
         }
 
-        // Numbers — #1 at top, ascending
-        for (var s = 0; s < sortedNumbers.length; s++) {
-            var num = sortedNumbers[s];
-            var y = numberYMap[num];
-            var info = numberInfo[num];
-            var clipStart = info.offset;
-            var clipEnd = info.offset + info.duration;
-
-            // Phase 1: Before clip plays — dim
-            if (clipStart > 0.1) {
-                ass += 'Dialogue: 1,' + t0 + ',' + this.assTime(clipStart) + ',NumDim,,0,0,0,,{\\pos(' + listX + ',' + y + ')}' + num + '.\n';
+        if (viral) {
+            // Centered "N. LABEL" only while that clip plays
+            for (var vc = 0; vc < clips.length; vc++) {
+                var vClip = clips[vc];
+                var vStart = offsets[vc];
+                var vEnd = offsets[vc] + durations[vc];
+                var vLabel = String(vClip.label || '').trim().toUpperCase();
+                var rankText = vClip.number + '.' + (vLabel ? (' ' + vLabel) : '');
+                var rankStyle = (vc === clips.length - 1) ? 'RankLineYellow' : 'RankLine';
+                ass += 'Dialogue: 3,' + this.assTime(vStart) + ',' + this.assTime(vEnd) + ',' + rankStyle + ',,0,0,0,,{\\an8\\pos(540,' + rankY + ')\\fad(120,80)}' + rankText + '\n';
             }
+        } else {
+            // Classic left stack
+            for (var s = 0; s < sortedNumbers.length; s++) {
+                var num = sortedNumbers[s];
+                var y = numberYMap[num];
+                var info = numberInfo[num];
+                var clipStart = info.offset;
+                var clipEnd = info.offset + info.duration;
 
-            // Phase 2: While clip plays — active yellow
-            ass += 'Dialogue: 3,' + this.assTime(clipStart) + ',' + this.assTime(clipEnd) + ',NumActive,,0,0,0,,{\\pos(' + listX + ',' + y + ')}' + num + '.\n';
-            if (info.label) {
-                ass += 'Dialogue: 3,' + this.assTime(clipStart) + ',' + this.assTime(clipEnd) + ',Label,,0,0,0,,{\\pos(' + labelX + ',' + y + ')\\fad(300,0)}' + info.label + '\n';
-            }
+                if (clipStart > 0.1) {
+                    ass += 'Dialogue: 1,' + t0 + ',' + this.assTime(clipStart) + ',NumDim,,0,0,0,,{\\pos(' + listX + ',' + y + ')}' + num + '.\n';
+                }
 
-            // Phase 3: After clip plays — stays revealed (checkered: alternate style)
-            if (clipEnd < totalDuration - 0.1) {
-                // Determine row index for checkered mode
-                var rowIdx = sortedNumbers.indexOf(num);
-                var doneStyle = (checkered && rowIdx % 2 === 1) ? 'NumDoneAlt' : 'NumDone';
-                ass += 'Dialogue: 1,' + this.assTime(clipEnd) + ',' + tEnd + ',' + doneStyle + ',,0,0,0,,{\\pos(' + listX + ',' + y + ')}' + num + '.\n';
+                ass += 'Dialogue: 3,' + this.assTime(clipStart) + ',' + this.assTime(clipEnd) + ',NumActive,,0,0,0,,{\\pos(' + listX + ',' + y + ')}' + num + '.\n';
                 if (info.label) {
-                    ass += 'Dialogue: 1,' + this.assTime(clipEnd) + ',' + tEnd + ',Label,,0,0,0,,{\\pos(' + labelX + ',' + y + ')}' + info.label + '\n';
+                    ass += 'Dialogue: 3,' + this.assTime(clipStart) + ',' + this.assTime(clipEnd) + ',Label,,0,0,0,,{\\pos(' + labelX + ',' + y + ')\\fad(300,0)}' + info.label + '\n';
+                }
+
+                if (clipEnd < totalDuration - 0.1) {
+                    var rowIdx = sortedNumbers.indexOf(num);
+                    var doneStyle = (checkered && rowIdx % 2 === 1) ? 'NumDoneAlt' : 'NumDone';
+                    ass += 'Dialogue: 1,' + this.assTime(clipEnd) + ',' + tEnd + ',' + doneStyle + ',,0,0,0,,{\\pos(' + listX + ',' + y + ')}' + num + '.\n';
+                    if (info.label) {
+                        ass += 'Dialogue: 1,' + this.assTime(clipEnd) + ',' + tEnd + ',Label,,0,0,0,,{\\pos(' + labelX + ',' + y + ')}' + info.label + '\n';
+                    }
                 }
             }
         }
 
-        // Hook intro subtitles — timed to intro TTS when possible
+        // Optional montage hook karaoke (legacy)
         if (hookDuration > 0) {
             var introLine = null;
             var introTimings = null;
@@ -538,32 +662,45 @@ class RankingAssembler {
             }
         }
 
-        // Commentary subtitles — one word at a time with Whisper or char-weighted timings
         var commentaryLines = (options && options.commentaryLines) || [];
         for (var cl = 0; cl < commentaryLines.length; cl++) {
             var cLine = commentaryLines[cl];
             if (!cLine.line) continue;
-            // Skip intro line (clipIndex 0) if hook is enabled — already shown during hook
             if (hookDuration > 0 && cLine.clipIndex === 0) continue;
             var cInfo = numberInfo[clips[cLine.clipIndex] && clips[cLine.clipIndex].number];
             if (!cInfo) continue;
-            var cStart = cInfo.offset;
-            var cLineDur = commentaryDurations[cLine.clipIndex] || Math.min(cInfo.duration, 2.5);
-            ass += this.buildKaraokeASS(cLine.line, cLine.wordTimings, cStart, cLineDur);
+            var onWhite = !!(whiteMeta[cLine.clipIndex]);
+            var cStart = (voiceOffsetsTL[cLine.clipIndex] != null)
+                ? voiceOffsetsTL[cLine.clipIndex]
+                : cInfo.offset;
+            var cLineDur = onWhite
+                ? (whiteMeta[cLine.clipIndex].duration || commentaryDurations[cLine.clipIndex] || 2.2)
+                : (commentaryDurations[cLine.clipIndex] || Math.min(cInfo.duration, 2.8));
+            ass += this.buildKaraokeASS(cLine.line, cLine.wordTimings, cStart, cLineDur, {
+                onWhite: onWhite,
+                viral: viral
+            });
         }
 
         fs.writeFileSync(outputPath, ass);
-        console.log('  ASS overlay generated (' + totalClips + ' numbers, ' + totalDuration.toFixed(1) + 's, listX=' + listX + ', titleY=' + titleY + ', titleSize=' + titleFontSize + ')');
+        console.log('  ASS overlay generated (' + overlayStyle + ', ' + totalClips + ' clips, ' + totalDuration.toFixed(1) + 's)');
     }
 
     /**
      * Build ASS karaoke dialogues for a line.
      * Prefer wordTimings [{word,start,end}] relative to 0; else character-weighted over spanDuration.
      */
-    buildKaraokeASS(line, wordTimings, baseOffset, spanDuration) {
+    buildKaraokeASS(line, wordTimings, baseOffset, spanDuration, opts) {
         var out = '';
         var base = baseOffset || 0;
         var span = Math.max(0.2, spanDuration || 2);
+        opts = opts || {};
+        var onWhite = !!opts.onWhite;
+        var styleMain = onWhite ? 'ComSubWhite' : 'ComSub';
+        var styleAlt = onWhite ? 'ComSubWhiteAlt' : 'ComSub';
+        var pop = onWhite
+            ? '{\\an5\\pos(540,1040)\\fad(40,60)\\t(0,90,\\fscx118\\fscy118)\\t(90,160,\\fscx100\\fscy100)}'
+            : '{\\an5\\pos(540,1040)\\fad(50,50)}';
 
         if (wordTimings && wordTimings.length) {
             for (var i = 0; i < wordTimings.length; i++) {
@@ -572,26 +709,27 @@ class RankingAssembler {
                 if (!w) continue;
                 var wStart = base + Math.max(0, wt.start || 0);
                 var wEnd = base + Math.max(wStart - base + 0.05, wt.end != null ? wt.end : (wt.start || 0) + 0.15);
-                // Clamp into span so we don't overrun the clip/hook window badly
                 if (wStart > base + span) break;
                 wEnd = Math.min(wEnd, base + span + 0.05);
-                out += 'Dialogue: 4,' + this.assTime(wStart) + ',' + this.assTime(wEnd) + ',ComSub,,0,0,0,,{\\fad(50,50)}' + w.toUpperCase() + '\n';
+                var style = (onWhite && i % 3 === 1) ? styleAlt : styleMain;
+                out += 'Dialogue: 4,' + this.assTime(wStart) + ',' + this.assTime(wEnd) + ',' + style + ',,0,0,0,,' + pop + w.toUpperCase() + '\n';
             }
             return out;
         }
 
         var words = String(line || '').replace(/\n/g, ' ').trim().split(/\s+/).filter(Boolean);
         if (!words.length) return out;
-        var weights = words.map(function(w) {
-            return Math.max(1, w.replace(/[^a-zA-Z0-9]/g, '').length || 1);
+        var weights = words.map(function(word) {
+            return Math.max(1, word.replace(/[^a-zA-Z0-9']/g, '').length || 1);
         });
         var total = weights.reduce(function(a, b) { return a + b; }, 0);
         var t = 0;
-        for (var w = 0; w < words.length; w++) {
-            var slice = (weights[w] / total) * span;
+        for (var wi = 0; wi < words.length; wi++) {
+            var slice = (weights[wi] / total) * span;
             var ws = base + t;
             var we = ws + slice;
-            out += 'Dialogue: 4,' + this.assTime(ws) + ',' + this.assTime(we) + ',ComSub,,0,0,0,,{\\fad(50,50)}' + words[w].toUpperCase() + '\n';
+            var st = (onWhite && wi % 3 === 1) ? styleAlt : styleMain;
+            out += 'Dialogue: 4,' + this.assTime(ws) + ',' + this.assTime(we) + ',' + st + ',,0,0,0,,' + pop + words[wi].toUpperCase() + '\n';
             t += slice;
         }
         return out;
