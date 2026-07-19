@@ -260,6 +260,8 @@ async function startScraperMachine(runId) {
         APP_INTERNAL_URL: appInternal,
         MONGODB_URI: mongoUri,
         V2_MONGO_URI: mongoUri,
+        // Match DO server.js db name — URI path alone is often wrong/empty
+        MONGODB_DB: process.env.MONGODB_DB || process.env.MONGO_DB_NAME || 'viewhuntv2',
         YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY || '',
         SCRAPE_SCROLL_COUNT: process.env.SCRAPE_SCROLL_COUNT || '25',
         SCRAPE_MAX_CHANNELS: process.env.SCRAPE_MAX_CHANNELS || '40'

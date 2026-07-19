@@ -1916,6 +1916,23 @@ app.get('/api/channels/niche-scrape/status', authenticateToken, async (req, res)
     if (!isAdminUser(req.user)) {
         return res.status(403).json({ error: 'Admin only' });
     }
+    // Mark stuck Fly runs that never reported back (e.g. wrong Mongo db)
+    var staleCutoff = new Date(Date.now() - 20 * 60 * 1000);
+    await db.collection('scrape_runs').updateMany(
+        {
+            status: { $in: ['processing', 'queued'] },
+            worker: { $in: ['fly', 'fly-puppeteer'] },
+            createdAt: { $lt: staleCutoff }
+        },
+        {
+            $set: {
+                status: 'failed',
+                finishedAt: new Date(),
+                error: 'Timed out waiting for Fly scraper (machine likely crashed or could not reach Mongo)'
+            }
+        }
+    );
+
     const runs = await db.collection('scrape_runs')
         .find({})
         .project({ channelSamples: 0 })

@@ -12,6 +12,8 @@ const RUN_ID = process.env.RUN_ID;
 const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
 const APP_INTERNAL_URL = (process.env.APP_INTERNAL_URL || '').replace(/\/$/, '');
 const MONGODB_URI = process.env.MONGODB_URI || process.env.V2_MONGO_URI || process.env.MONGO_URI;
+// Must match DO server.js: v2Client.db('viewhuntv2')
+const MONGODB_DB = process.env.MONGODB_DB || process.env.MONGO_DB_NAME || 'viewhuntv2';
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY || '';
 const SCROLL_COUNT = parseInt(process.env.SCRAPE_SCROLL_COUNT || '25', 10);
 const MAX_CHANNELS_PER_KEYWORD = parseInt(process.env.SCRAPE_MAX_CHANNELS || '40', 10);
@@ -20,6 +22,10 @@ function delay(ms) {
     return new Promise(function(resolve) { setTimeout(resolve, ms); });
 }
 
+/**
+ * Mirrors Chrome extension Start loop (background.js + content.js):
+ * asterisk search → Shorts filter chip → scroll → extract unique channels.
+ */
 async function scrapeKeyword(page, keyword) {
     const searchKeyword = '*' + keyword + '*';
     const searchUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(searchKeyword);
@@ -35,26 +41,78 @@ async function scrapeKeyword(page, keyword) {
         await delay(1000);
     } catch (e) { /* ignore */ }
 
-    // Click Shorts chip
-    await page.evaluate(function() {
+    // Click Shorts chip — same strategies as content.js
+    const shortsApplied = await page.evaluate(function() {
+        function clickEl(el) {
+            if (!el) return false;
+            try { el.scrollIntoView({ block: 'center' }); } catch (e) { /* ignore */ }
+            el.click();
+            try {
+                el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+            } catch (e2) { /* ignore */ }
+            return true;
+        }
+
         var chipCloud = document.querySelector('yt-chip-cloud-renderer');
-        if (!chipCloud) return;
-        var chips = chipCloud.querySelectorAll('yt-chip-cloud-chip-renderer');
-        for (var i = 0; i < chips.length; i++) {
-            var text = (chips[i].textContent || '').trim().toLowerCase();
-            if (text === 'shorts') {
-                var btn = chips[i].querySelector('button, a, #chip-shape, .ytChipShapeButtonReset') || chips[i];
-                btn.click();
-                return;
+        if (chipCloud) {
+            var chips = chipCloud.querySelectorAll('yt-chip-cloud-chip-renderer');
+            for (var i = 0; i < chips.length; i++) {
+                var text = (chips[i].textContent || '').trim().toLowerCase();
+                if (text === 'shorts') {
+                    var btn = chips[i].querySelector('a') ||
+                        chips[i].querySelector('button') ||
+                        chips[i].querySelector('[role="tab"]') ||
+                        chips[i].querySelector('.yt-spec-button-shape-next') ||
+                        chips[i].querySelector('#chip-shape, .ytChipShapeButtonReset') ||
+                        chips[i];
+                    return clickEl(btn);
+                }
             }
         }
-    });
-    await delay(2000);
 
-    // Scroll
+        // Extension method 2: Shorts filter param
+        var shortsLinks = document.querySelectorAll('a[href*="sp=EgIYAQ"]');
+        for (var j = 0; j < shortsLinks.length; j++) {
+            var linkText = (shortsLinks[j].textContent || '').trim().toLowerCase();
+            if (linkText === 'shorts') return clickEl(shortsLinks[j]);
+        }
+
+        var headerArea = document.querySelector('ytd-search-header-renderer') ||
+            document.querySelector('#header') ||
+            document.querySelector('[role="tablist"]');
+        if (headerArea) {
+            var allLinks = headerArea.querySelectorAll('a');
+            for (var k = 0; k < allLinks.length; k++) {
+                var t = (allLinks[k].textContent || '').trim().toLowerCase();
+                if (t === 'shorts' && (allLinks[k].href || '').indexOf('youtube.com/results') >= 0) {
+                    return clickEl(allLinks[k]);
+                }
+            }
+        }
+        return false;
+    });
+    console.log('Shorts filter applied:', shortsApplied);
+    await delay(shortsApplied ? 3000 : 1500);
+
+    // Scroll like extension: stop after 3 scrolls with no new videos, or SCROLL_COUNT
+    var lastCount = 0;
+    var stale = 0;
     for (var s = 0; s < SCROLL_COUNT; s++) {
         await page.evaluate(function() { window.scrollTo(0, document.documentElement.scrollHeight); });
-        await delay(1200);
+        await delay(1500);
+        var count = await page.evaluate(function() {
+            return document.querySelectorAll('ytd-video-renderer, ytd-reel-item-renderer').length;
+        });
+        if (count === lastCount) {
+            stale++;
+            if (stale >= 3) {
+                console.log('Reached end of results after', s + 1, 'scrolls,', count, 'items');
+                break;
+            }
+        } else {
+            stale = 0;
+            lastCount = count;
+        }
     }
 
     const results = await page.evaluate(function(channelLimit) {
@@ -86,10 +144,13 @@ async function scrapeKeyword(page, keyword) {
                 var titleEl = video.querySelector('a#video-title') ||
                     video.querySelector('a[title]') ||
                     video.querySelector('h3 a') ||
+                    video.querySelector('span#video-title') ||
                     video.querySelector('.reel-item-endpoint');
                 var channelEl = video.querySelector('ytd-channel-name a') ||
+                    video.querySelector('a[href*="/channel/"]') ||
                     video.querySelector('a[href*="/@"]') ||
-                    video.querySelector('a[href*="/channel/"]');
+                    video.querySelector('.yt-simple-endpoint[href*="/channel/"]') ||
+                    video.querySelector('.yt-simple-endpoint[href*="/@"]');
                 var viewsEl = video.querySelector('#metadata-line span') ||
                     video.querySelector('span.inline-metadata-item') ||
                     video.querySelector('.yt-content-metadata-view-model__metadata-text');
@@ -104,7 +165,9 @@ async function scrapeKeyword(page, keyword) {
                 seen[channelUrl] = true;
 
                 var thumb = null;
-                var img = video.querySelector('img[src*="ytimg"]');
+                var img = video.querySelector('img[src*="ytimg"]') ||
+                    video.querySelector('img[src*="yt3.ggpht.com"]') ||
+                    video.querySelector('img');
                 if (img && img.src) thumb = img.src;
                 else {
                     var vid = extractVideoId(videoUrl);
@@ -247,10 +310,11 @@ async function main() {
 
     const client = new MongoClient(MONGODB_URI);
     await client.connect();
-    const db = client.db();
+    const db = client.db(MONGODB_DB);
+    console.log('Connected Mongo db:', MONGODB_DB, 'run:', RUN_ID);
 
     const run = await db.collection('scrape_runs').findOne({ _id: new ObjectId(RUN_ID) });
-    if (!run) throw new Error('scrape_runs not found: ' + RUN_ID);
+    if (!run) throw new Error('scrape_runs not found in ' + MONGODB_DB + ': ' + RUN_ID);
 
     await db.collection('scrape_runs').updateOne(
         { _id: run._id },
@@ -379,7 +443,7 @@ main().catch(async function(err) {
         if (MONGODB_URI && RUN_ID) {
             const client = new MongoClient(MONGODB_URI);
             await client.connect();
-            await client.db().collection('scrape_runs').updateOne(
+            await client.db(MONGODB_DB).collection('scrape_runs').updateOne(
                 { _id: new ObjectId(RUN_ID) },
                 { $set: { status: 'failed', error: err.message, finishedAt: new Date() } }
             );
