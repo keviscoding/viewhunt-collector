@@ -2193,15 +2193,20 @@ class ViewHuntApp {
                 return;
             }
 
-            // Text-only rows (no YouTube thumbnails) — keeps Admin Panel from cooking the CPU
+            // Thumbnails with lazy load — only current page (40) so the panel stays usable
             const rows = channels.map((ch) => {
                 const name = ch.channel_name || 'Unknown';
                 const url = ch.channel_url || '#';
+                const thumb = ch.thumbnail_url || ch.avatar_url || '';
                 const kw = ch.niche_keyword || '';
                 const views = this.formatViews(ch.view_count);
                 const titleText = ch.video_title || '';
+                const thumbHtml = thumb
+                    ? `<img src="${this.escapeHtml(thumb)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
+                    : '<div style="width:44px;height:44px;border-radius:8px;background:#e2e8f0;flex-shrink:0;"></div>';
                 return `
-                    <div class="scrape-channel-row scrape-channel-row-text">
+                    <div class="scrape-channel-row">
+                        ${thumbHtml}
                         <div style="min-width:0;">
                             <a href="${this.escapeHtml(url)}" target="_blank" rel="noopener" style="font-weight:600;color:#0f172a;text-decoration:none;">${this.escapeHtml(name)}</a>
                             <div style="font-size:11px;color:#64748b;">${this.escapeHtml(kw)} · ${views} views</div>

@@ -210,6 +210,7 @@ function summarizeChannels(channels) {
                 niche_keyword: kw,
                 view_count: ch.view_count || ch.viewCount || 0,
                 video_title: ch.video_title || ch.videoTitle || '',
+                thumbnail_url: ch.thumbnail_url || ch.thumbnailUrl || ch.avatar_url || ch.avatarUrl || null,
                 subscriber_count: ch.subscriber_count || ch.subscriberCount || 0,
                 average_views: ch.average_views || ch.averageViews || 0,
                 recent_average: ch.recent_average != null ? ch.recent_average : (ch.recentAverage != null ? ch.recentAverage : null),

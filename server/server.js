@@ -1979,11 +1979,12 @@ app.get('/api/channels/niche-scrape/runs/:runId', authenticateToken, async (req,
                 niche_keyword: 1,
                 view_count: 1,
                 video_title: 1,
+                thumbnail_url: 1,
+                avatar_url: 1,
                 status: 1,
                 source: 1,
                 created_at: 1,
                 subscriber_count: 1
-                // intentionally omit thumbnail_url / avatar_url — admin UI stays light
             })
             .sort({ view_count: -1 })
             .skip(skip)
@@ -2000,7 +2001,9 @@ app.get('/api/channels/niche-scrape/runs/:runId', authenticateToken, async (req,
                     channel_url: ch.channel_url,
                     niche_keyword: ch.niche_keyword,
                     view_count: ch.view_count,
-                    video_title: ch.video_title || ''
+                    video_title: ch.video_title || '',
+                    thumbnail_url: ch.thumbnail_url || null,
+                    avatar_url: ch.avatar_url || null
                 };
             });
         }
