@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const { MongoClient, ObjectId } = require('mongodb');
 const puppeteer = require('puppeteer');
+const { enrichChannelsFull } = require('./enrich');
 
 const RUN_ID = process.env.RUN_ID;
 const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
@@ -195,41 +196,6 @@ async function scrapeKeyword(page, keyword) {
     return results;
 }
 
-async function enrichWithApi(channels, scrapeRunId) {
-    // Keep scraped fields; bulk API accepts snake_case + camelCase
-    return channels.map(function(ch) {
-        return {
-            channel_name: ch.channel_name,
-            channel_url: ch.channel_url,
-            channelName: ch.channel_name,
-            channelUrl: ch.channel_url,
-            video_title: ch.video_title,
-            videoTitle: ch.video_title,
-            view_count: ch.view_count || 0,
-            viewCount: ch.view_count || 0,
-            subscriber_count: 0,
-            view_to_sub_ratio: 0,
-            avatar_url: ch.thumbnail_url || null,
-            avatarUrl: ch.thumbnail_url || null,
-            thumbnail_url: ch.thumbnail_url || null,
-            thumbnailUrl: ch.thumbnail_url || null,
-            video_url: ch.video_url || null,
-            videoUrl: ch.video_url || null,
-            total_views: 0,
-            video_count: 0,
-            average_views: ch.view_count || 0,
-            enhanced: false,
-            status: 'pending',
-            niche_keyword: ch.niche_keyword || null,
-            scrape_run_id: scrapeRunId || null,
-            scrapeRunId: scrapeRunId || null,
-            created_at: new Date(),
-            updated_at: new Date(),
-            source: 'fly-scraper'
-        };
-    });
-}
-
 function summarizeChannels(channels) {
     var byKeyword = {};
     var samples = [];
@@ -239,16 +205,31 @@ function summarizeChannels(channels) {
         byKeyword[kw] = (byKeyword[kw] || 0) + 1;
         if (samples.length < 500) {
             samples.push({
-                channel_name: ch.channel_name,
-                channel_url: ch.channel_url,
+                channel_name: ch.channel_name || ch.channelName,
+                channel_url: ch.channel_url || ch.channelUrl,
                 niche_keyword: kw,
-                view_count: ch.view_count || 0,
-                video_title: ch.video_title || '',
-                thumbnail_url: ch.thumbnail_url || null
+                view_count: ch.view_count || ch.viewCount || 0,
+                video_title: ch.video_title || ch.videoTitle || '',
+                subscriber_count: ch.subscriber_count || ch.subscriberCount || 0,
+                average_views: ch.average_views || ch.averageViews || 0,
+                view_to_sub_ratio: ch.view_to_sub_ratio || ch.viewToSubRatio || 0,
+                enhanced: !!ch.enhanced
             });
         }
     }
     return { byKeyword: byKeyword, samples: samples };
+}
+
+async function postBulkChunked(channels) {
+    var chunkSize = 40;
+    var inserted = 0;
+    for (var i = 0; i < channels.length; i += chunkSize) {
+        var chunk = channels.slice(i, i + chunkSize);
+        var bulk = await postBulk(chunk);
+        inserted += (bulk && (bulk.inserted || bulk.added || bulk.count)) || chunk.length;
+        await delay(300);
+    }
+    return { inserted: inserted };
 }
 
 function appBases() {
@@ -376,31 +357,111 @@ async function main() {
         unique.push(all[i]);
     }
 
-    const enriched = await enrichWithApi(unique, String(run._id));
-    const summary = summarizeChannels(unique);
+    if (!YOUTUBE_API_KEY) {
+        throw new Error('YOUTUBE_API_KEY missing — cannot enrich channels (subs/ratio/enhanced)');
+    }
 
-    // Prefer bulk API; also upsert directly as backup
+    const minViewThreshold = parseInt(process.env.SCRAPE_MIN_VIEW_THRESHOLD || '0', 10) || 0;
+    const enhancedAnalysis = process.env.SCRAPE_ENHANCED_ANALYSIS !== '0';
+
+    await db.collection('scrape_runs').updateOne(
+        { _id: run._id },
+        {
+            $set: {
+                enrichPhase: 'subscribers',
+                channelsScraped: unique.length,
+                minViewThreshold: minViewThreshold,
+                enhancedAnalysis: enhancedAnalysis
+            }
+        }
+    );
+
+    // Full extension pipeline: subs → enhanced → threshold filter → bulk
+    const enriched = await enrichChannelsFull(unique, {
+        apiKey: YOUTUBE_API_KEY,
+        minViewThreshold: minViewThreshold,
+        enhancedAnalysis: enhancedAnalysis,
+        scrapeRunId: String(run._id),
+        onProgress: async function(p) {
+            try {
+                await db.collection('scrape_runs').updateOne(
+                    { _id: run._id },
+                    {
+                        $set: {
+                            enrichPhase: p.phase,
+                            enrichProgress: p.done + '/' + p.total
+                        }
+                    }
+                );
+            } catch (e) { /* ignore */ }
+        }
+    });
+
+    const summary = summarizeChannels(enriched);
+
     let upserted = 0;
     try {
-        const bulk = await postBulk(enriched);
-        upserted = (bulk && (bulk.inserted || bulk.added || bulk.count)) || enriched.length;
+        const bulk = await postBulkChunked(enriched);
+        upserted = (bulk && bulk.inserted) || enriched.length;
     } catch (bulkErr) {
         console.warn('Bulk API failed, writing directly:', bulkErr.message);
         for (let i = 0; i < enriched.length; i++) {
             const ch = enriched[i];
-            const existing = await db.collection('channels').findOne({ channel_url: ch.channel_url });
+            const url = ch.channel_url || ch.channelUrl;
+            const existing = await db.collection('channels').findOne({ channel_url: url });
             if (!existing) {
-                await db.collection('channels').insertOne(ch);
+                await db.collection('channels').insertOne({
+                    channel_name: ch.channel_name || ch.channelName,
+                    channel_url: url,
+                    video_title: ch.video_title || ch.videoTitle || '',
+                    view_count: ch.view_count || ch.viewCount || 0,
+                    subscriber_count: ch.subscriber_count || ch.subscriberCount || 0,
+                    view_to_sub_ratio: ch.view_to_sub_ratio || ch.viewToSubRatio || 0,
+                    avatar_url: ch.avatar_url || ch.avatarUrl || null,
+                    thumbnail_url: ch.thumbnail_url || ch.thumbnailUrl || null,
+                    video_url: ch.video_url || ch.videoUrl || null,
+                    total_views: ch.total_views || ch.totalViews || 0,
+                    video_count: ch.video_count || ch.videoCount || 0,
+                    average_views: ch.average_views || ch.averageViews || 0,
+                    enhanced: !!ch.enhanced,
+                    recent_average: ch.recent_average || ch.recentAverage || null,
+                    videos_analyzed: ch.videos_analyzed || ch.videosAnalyzed || null,
+                    recent_shorts: ch.recent_shorts || ch.recentShorts || null,
+                    last_enhanced_update: ch.last_enhanced_update || ch.lastUpdated || null,
+                    niche_keyword: ch.niche_keyword || null,
+                    scrape_run_id: String(run._id),
+                    source: 'fly-scraper',
+                    status: 'pending',
+                    created_at: new Date(),
+                    updated_at: new Date()
+                });
                 upserted++;
             } else {
+                var preserveStatus = existing.status === 'approved' || existing.status === 'rejected';
                 await db.collection('channels').updateOne(
                     { _id: existing._id },
                     {
                         $set: {
-                            scrape_run_id: String(run._id),
+                            channel_name: ch.channel_name || ch.channelName || existing.channel_name,
+                            video_title: ch.video_title || ch.videoTitle || existing.video_title,
+                            view_count: ch.view_count || ch.viewCount || 0,
+                            subscriber_count: ch.subscriber_count || ch.subscriberCount || 0,
+                            view_to_sub_ratio: ch.view_to_sub_ratio || ch.viewToSubRatio || 0,
+                            avatar_url: ch.avatar_url || ch.avatarUrl || existing.avatar_url,
+                            thumbnail_url: ch.thumbnail_url || ch.thumbnailUrl || existing.thumbnail_url,
+                            total_views: ch.total_views || ch.totalViews || 0,
+                            video_count: ch.video_count || ch.videoCount || 0,
+                            average_views: ch.average_views || ch.averageViews || 0,
+                            enhanced: !!ch.enhanced,
+                            recent_average: ch.recent_average || ch.recentAverage || null,
+                            videos_analyzed: ch.videos_analyzed || ch.videosAnalyzed || null,
+                            recent_shorts: ch.recent_shorts || ch.recentShorts || null,
+                            last_enhanced_update: ch.last_enhanced_update || ch.lastUpdated || null,
                             niche_keyword: ch.niche_keyword || existing.niche_keyword,
+                            scrape_run_id: String(run._id),
                             source: 'fly-scraper',
-                            updated_at: new Date()
+                            updated_at: new Date(),
+                            ...(preserveStatus ? {} : { status: 'pending' })
                         }
                     }
                 );
@@ -430,7 +491,9 @@ async function main() {
             $set: {
                 status: 'complete',
                 finishedAt: new Date(),
+                enrichPhase: 'done',
                 channelsFound: unique.length,
+                channelsQualified: enriched.length,
                 channelsUpserted: upserted,
                 byKeyword: summary.byKeyword,
                 channelSamples: summary.samples
@@ -438,7 +501,10 @@ async function main() {
         }
     );
 
-    console.log('Scrape complete:', unique.length, 'found,', upserted, 'upserted');
+    console.log(
+        'Scrape complete:', unique.length, 'scraped →',
+        enriched.length, 'qualified →', upserted, 'upserted'
+    );
     await client.close();
 }
 

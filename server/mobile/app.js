@@ -2077,7 +2077,11 @@ class ViewHuntApp {
                 const when = run.createdAt ? new Date(run.createdAt).toLocaleString() : '';
                 const kws = (run.keywords || []).slice(0, 8).join(', ');
                 const more = (run.keywords || []).length > 8 ? '…' : '';
-                const counts = `${run.channelsFound || 0} found · ${run.channelsUpserted || 0} upserted`;
+                const qualified = run.channelsQualified != null ? ` · ${run.channelsQualified} qualified` : '';
+                const counts = `${run.channelsFound || 0} found${qualified} · ${run.channelsUpserted || 0} upserted`;
+                const enrich = run.enrichPhase && run.enrichPhase !== 'done'
+                    ? ` · enriching ${run.enrichPhase}${run.enrichProgress ? ' ' + run.enrichProgress : ''}`
+                    : '';
                 const active = this._selectedScrapeRunId === id ? ' active' : '';
                 return `
                     <div class="scrape-run-row${active}" onclick="window.app.viewScrapeRun('${id}')">
@@ -2085,7 +2089,7 @@ class ViewHuntApp {
                             <span class="scrape-status ${this.escapeHtml(status)}">${this.escapeHtml(status)}</span>
                             <span style="font-size:11px;color:#94a3b8;">${this.escapeHtml(when)}</span>
                         </div>
-                        <div style="font-size:12px;margin-top:4px;color:#334155;">${this.escapeHtml(counts)} · ${this.escapeHtml(run.worker || '—')}</div>
+                        <div style="font-size:12px;margin-top:4px;color:#334155;">${this.escapeHtml(counts)} · ${this.escapeHtml(run.worker || '—')}${this.escapeHtml(enrich)}</div>
                         <div style="font-size:11px;color:#64748b;margin-top:2px;">${this.escapeHtml(kws + more)}</div>
                         ${run.error ? `<div style="font-size:11px;color:#dc2626;margin-top:4px;">${this.escapeHtml(run.error)}</div>` : ''}
                     </div>

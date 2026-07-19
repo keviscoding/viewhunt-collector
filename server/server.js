@@ -2063,9 +2063,10 @@ app.post('/api/channels/bulk', async (req, res) => {
 
                 console.log('Processing channel:', channelName, 'enhanced:', !!(channel.enhanced));
                 
-                const channelDoc = {
+                const existing = await db.collection('channels').findOne({ channel_url: channelUrl });
+                const preserveStatus = existing && (existing.status === 'approved' || existing.status === 'rejected');
+                const setFields = {
                     channel_name: channelName,
-                    channel_url: channelUrl,
                     video_title: channel.videoTitle || channel.video_title || '',
                     view_count: channel.viewCount != null ? channel.viewCount : (channel.view_count || 0),
                     subscriber_count: channel.subscriberCount || channel.subscriber_count || 0,
@@ -2084,14 +2085,21 @@ app.post('/api/channels/bulk', async (req, res) => {
                     niche_keyword: channel.niche_keyword || channel.nicheKeyword || null,
                     scrape_run_id: channel.scrape_run_id || channel.scrapeRunId || null,
                     source: channel.source || 'bulk',
-                    status: channel.status || 'pending',
-                    created_at: channel.created_at ? new Date(channel.created_at) : new Date(),
                     updated_at: new Date()
                 };
+                if (!preserveStatus) {
+                    setFields.status = channel.status || 'pending';
+                }
 
-                await db.collection('channels').replaceOne(
+                await db.collection('channels').updateOne(
                     { channel_url: channelUrl },
-                    channelDoc,
+                    {
+                        $set: setFields,
+                        $setOnInsert: {
+                            channel_url: channelUrl,
+                            created_at: channel.created_at ? new Date(channel.created_at) : new Date()
+                        }
+                    },
                     { upsert: true }
                 );
                 

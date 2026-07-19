@@ -268,7 +268,10 @@ async function startScraperMachine(runId) {
         // Always unlimited unless SCRAPE_ALLOW_CHANNEL_CAP=1 (old default of 40 was too aggressive)
         SCRAPE_MAX_CHANNELS: process.env.SCRAPE_ALLOW_CHANNEL_CAP === '1'
             ? (process.env.SCRAPE_MAX_CHANNELS || '0')
-            : '0'
+            : '0',
+        // Full extension pipeline: subscriber stats + enhanced Shorts analysis
+        SCRAPE_ENHANCED_ANALYSIS: process.env.SCRAPE_ENHANCED_ANALYSIS || '1',
+        SCRAPE_MIN_VIEW_THRESHOLD: process.env.SCRAPE_MIN_VIEW_THRESHOLD || '0'
     };
 
     const machine = await flyRequest('POST', '/apps/' + app + '/machines', {

@@ -113,8 +113,15 @@ Every **3 days** (checked every 6h on DO boot), ViewHunt picks **12–18 spontan
 ultra-common keywords** (prepositions / auxiliaries / fillers — not niche nouns),
 then starts a `viewhunt-scraper` Fly Machine (Puppeteer YouTube Shorts search).
 Per-keyword channel cap is **off by default** (scroll until results dry up).
-**YouTube Data API fallback is disabled** — if Fly is not configured the run fails
-instead of collecting low-quality API results.
+After scrape, Fly runs the **full extension enrichment pipeline**:
+resolve handles → YouTube API subscriber/avg/ratio → enhanced recent-Shorts
+analysis → min-avg-views filter → `POST /api/channels/bulk`.
+
+Requires `YOUTUBE_API_KEY` on DO (passed into the Fly machine). Optional:
+`SCRAPE_MIN_VIEW_THRESHOLD` (default 0), `SCRAPE_ENHANCED_ANALYSIS=0` to skip
+enhanced step.
+
+**YouTube search API “fallback scrape” is disabled** — discovery is Puppeteer only.
 
 Also (admin JWT / Admin Panel in the app):
 - `POST /api/channels/niche-scrape` — run now
