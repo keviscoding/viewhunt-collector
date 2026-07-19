@@ -2,10 +2,17 @@
  * Full post-scrape enrichment — mirrors Chrome extension background.js:
  * 1) Resolve channel IDs (zero-quota handle scrape)
  * 2) YouTube Data API: subscribers, totals, average views, avatar, view/sub ratio
- * 3) Enhanced analysis: recent Shorts average via uploads playlist
+ * 3) Enhanced analysis: recent Shorts + calculateEnhancedMetrics (viral/trimmed mean)
  * 4) Min average-views threshold filter
  */
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
+// Docker image copies this next to enrich.js; local/dev uses server/lib/
+var calculateEnhancedMetrics;
+try {
+    calculateEnhancedMetrics = require('./calculate-enhanced-metrics').calculateEnhancedMetrics;
+} catch (e) {
+    calculateEnhancedMetrics = require('../../lib/calculate-enhanced-metrics').calculateEnhancedMetrics;
+}
 
 function delay(ms) {
     return new Promise(function(resolve) { setTimeout(resolve, ms); });
@@ -286,13 +293,6 @@ async function getEnhancedChannelDataYouTube(channel, apiKey) {
 
         if (!shorts.length) return null;
 
-        var viewCounts = shorts.map(function(s) {
-            return parseInt(s.statistics.viewCount || 0, 10);
-        });
-        var recentAverage = Math.round(
-            viewCounts.reduce(function(a, b) { return a + b; }, 0) / viewCounts.length
-        );
-
         var recentShorts = shorts.map(function(short) {
             return {
                 videoId: short.id,
@@ -302,15 +302,50 @@ async function getEnhancedChannelDataYouTube(channel, apiKey) {
                 duration: short.contentDetails.duration,
                 shortUrl: 'https://youtube.com/shorts/' + short.id,
                 watchUrl: 'https://youtube.com/watch?v=' + short.id,
-                thumbnailUrl: 'https://img.youtube.com/vi/' + short.id + '/hqdefault.jpg'
+                thumbnailUrl: 'https://img.youtube.com/vi/' + short.id + '/hqdefault.jpg',
+                // Shape used by calculateEnhancedMetrics
+                view_count: parseInt(short.statistics.viewCount || 0, 10),
+                short: true,
+                type: 'short'
             };
         });
 
+        // Canonical Niche Finder math (NOT a naive mean):
+        // viral outlier (>4× rest) → trimmed mean; else mean of positive views
+        var metrics = calculateEnhancedMetrics(recentShorts);
+        if (!metrics || metrics.enhanced === false || metrics.recentAverage == null) {
+            return null;
+        }
+
         return {
             enhanced: true,
-            recentAverage: recentAverage,
-            videosAnalyzed: shorts.length,
-            recentShorts: recentShorts,
+            recentAverage: metrics.recentAverage,
+            recentMean: metrics.recentMean,
+            recentMedian: metrics.recentMedian,
+            recentTrimmedMean: metrics.recentTrimmedMean,
+            consistencyScore: metrics.consistencyScore,
+            hasViralOutlier: metrics.hasViralOutlier,
+            viralMultiplier: metrics.viralMultiplier,
+            trendDirection: metrics.trendDirection,
+            trendPercentage: metrics.trendPercentage,
+            isConsistent: metrics.isConsistent,
+            distributionIssue: metrics.distributionIssue,
+            viewRange: metrics.viewRange,
+            shortsCount: metrics.shortsCount,
+            regularCount: metrics.regularCount,
+            videosAnalyzed: metrics.videosAnalyzed || shorts.length,
+            recentShorts: recentShorts.map(function(s) {
+                return {
+                    videoId: s.videoId,
+                    title: s.title,
+                    viewCount: s.viewCount,
+                    publishedAt: s.publishedAt,
+                    duration: s.duration,
+                    shortUrl: s.shortUrl,
+                    watchUrl: s.watchUrl,
+                    thumbnailUrl: s.thumbnailUrl
+                };
+            }),
             lastUpdated: new Date().toISOString()
         };
     } catch (e) {
@@ -425,6 +460,30 @@ async function enrichChannelsFull(scraped, options) {
             enhanced: !!ch.enhanced,
             recentAverage: ch.recentAverage != null ? ch.recentAverage : null,
             recent_average: ch.recentAverage != null ? ch.recentAverage : null,
+            recentMean: ch.recentMean != null ? ch.recentMean : null,
+            recent_mean: ch.recentMean != null ? ch.recentMean : null,
+            recentMedian: ch.recentMedian != null ? ch.recentMedian : null,
+            recent_median: ch.recentMedian != null ? ch.recentMedian : null,
+            recentTrimmedMean: ch.recentTrimmedMean != null ? ch.recentTrimmedMean : null,
+            recent_trimmed_mean: ch.recentTrimmedMean != null ? ch.recentTrimmedMean : null,
+            consistencyScore: ch.consistencyScore != null ? ch.consistencyScore : null,
+            consistency_score: ch.consistencyScore != null ? ch.consistencyScore : null,
+            hasViralOutlier: ch.hasViralOutlier != null ? ch.hasViralOutlier : null,
+            has_viral_outlier: ch.hasViralOutlier != null ? ch.hasViralOutlier : null,
+            viralMultiplier: ch.viralMultiplier != null ? ch.viralMultiplier : null,
+            viral_multiplier: ch.viralMultiplier != null ? ch.viralMultiplier : null,
+            isConsistent: ch.isConsistent != null ? ch.isConsistent : null,
+            is_consistent: ch.isConsistent != null ? ch.isConsistent : null,
+            trendDirection: ch.trendDirection || null,
+            trend_direction: ch.trendDirection || null,
+            trendPercentage: ch.trendPercentage != null ? ch.trendPercentage : null,
+            trend_percentage: ch.trendPercentage != null ? ch.trendPercentage : null,
+            distributionIssue: ch.distributionIssue != null ? ch.distributionIssue : null,
+            distribution_issue: ch.distributionIssue != null ? ch.distributionIssue : null,
+            viewRangeMin: ch.viewRange ? ch.viewRange.min : null,
+            view_range_min: ch.viewRange ? ch.viewRange.min : null,
+            viewRangeMax: ch.viewRange ? ch.viewRange.max : null,
+            view_range_max: ch.viewRange ? ch.viewRange.max : null,
             videosAnalyzed: ch.videosAnalyzed || null,
             videos_analyzed: ch.videosAnalyzed || null,
             recentShorts: ch.recentShorts || null,

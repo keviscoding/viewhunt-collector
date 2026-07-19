@@ -2078,7 +2078,19 @@ app.post('/api/channels/bulk', async (req, res) => {
                     video_count: channel.videoCount || channel.video_count || 0,
                     average_views: channel.averageViews || channel.average_views || 0,
                     enhanced: channel.enhanced || false,
-                    recent_average: channel.recentAverage || channel.recent_average || null,
+                    recent_average: channel.recentAverage != null ? channel.recentAverage : (channel.recent_average != null ? channel.recent_average : null),
+                    recent_mean: channel.recentMean != null ? channel.recentMean : (channel.recent_mean != null ? channel.recent_mean : null),
+                    recent_median: channel.recentMedian != null ? channel.recentMedian : (channel.recent_median != null ? channel.recent_median : null),
+                    recent_trimmed_mean: channel.recentTrimmedMean != null ? channel.recentTrimmedMean : (channel.recent_trimmed_mean != null ? channel.recent_trimmed_mean : null),
+                    consistency_score: channel.consistencyScore != null ? channel.consistencyScore : (channel.consistency_score != null ? channel.consistency_score : null),
+                    has_viral_outlier: channel.hasViralOutlier != null ? channel.hasViralOutlier : (channel.has_viral_outlier != null ? channel.has_viral_outlier : null),
+                    viral_multiplier: channel.viralMultiplier != null ? channel.viralMultiplier : (channel.viral_multiplier != null ? channel.viral_multiplier : null),
+                    is_consistent: channel.isConsistent != null ? channel.isConsistent : (channel.is_consistent != null ? channel.is_consistent : null),
+                    trend_direction: channel.trendDirection || channel.trend_direction || null,
+                    trend_percentage: channel.trendPercentage != null ? channel.trendPercentage : (channel.trend_percentage != null ? channel.trend_percentage : null),
+                    distribution_issue: channel.distributionIssue != null ? channel.distributionIssue : (channel.distribution_issue != null ? channel.distribution_issue : null),
+                    view_range_min: channel.viewRangeMin != null ? channel.viewRangeMin : (channel.view_range_min != null ? channel.view_range_min : null),
+                    view_range_max: channel.viewRangeMax != null ? channel.viewRangeMax : (channel.view_range_max != null ? channel.view_range_max : null),
                     videos_analyzed: channel.videosAnalyzed || channel.videos_analyzed || null,
                     recent_shorts: channel.recentShorts || channel.recent_shorts || null,
                     last_enhanced_update: channel.lastUpdated || channel.last_enhanced_update || null,
@@ -2244,101 +2256,8 @@ app.post('/api/channels/enhanced-analysis', async (req, res) => {
     }
 });
 
-// Helper function to calculate enhanced metrics from video data
-function calculateEnhancedMetrics(videos) {
-    if (!videos || videos.length === 0) return null;
-    
-    // Get view counts from recent videos (last 7-10)
-    const recentVideos = videos.slice(0, Math.min(10, videos.length));
-    const viewCounts = recentVideos
-        .map(v => v.view_count || 0)
-        .filter(count => count > 0)
-        .sort((a, b) => b - a);
-    
-    console.log(`calculateEnhancedMetrics: Processing ${recentVideos.length} videos`);
-    console.log(`View counts (sorted):`, viewCounts);
-    
-    if (viewCounts.length === 0) {
-        return {
-            enhanced: false,
-            reason: 'No valid view counts found'
-        };
-    }
-    
-    const mean = viewCounts.reduce((a, b) => a + b) / viewCounts.length;
-    const median = viewCounts[Math.floor(viewCounts.length / 2)];
-    
-    console.log(`Calculation: mean=${Math.round(mean)}, median=${Math.round(median)}`);
-    
-    // Trimmed mean (remove highest and lowest to reduce outlier impact)
-    let trimmedMean = mean;
-    if (viewCounts.length >= 3) {
-        const trimmed = viewCounts.slice(1, -1);
-        trimmedMean = trimmed.reduce((a, b) => a + b) / trimmed.length;
-    }
-    
-    // Consistency score (lower coefficient of variation = more consistent)
-    const variance = viewCounts.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / viewCounts.length;
-    const stdDev = Math.sqrt(variance);
-    const coefficientOfVariation = mean > 0 ? stdDev / mean : 0;
-    const consistencyScore = Math.max(0, 100 - (coefficientOfVariation * 100));
-    
-    // Detect viral outliers
-    const maxView = Math.max(...viewCounts);
-    const avgWithoutMax = viewCounts.filter(v => v !== maxView).reduce((a, b) => a + b, 0) / (viewCounts.length - 1);
-    const viralMultiplier = avgWithoutMax > 0 ? maxView / avgWithoutMax : 1;
-    const hasViralOutlier = viralMultiplier > 4;
-    
-    // Performance trend (comparing first half vs second half)
-    const firstHalf = viewCounts.slice(0, Math.ceil(viewCounts.length / 2));
-    const secondHalf = viewCounts.slice(Math.ceil(viewCounts.length / 2));
-    const firstHalfAvg = firstHalf.reduce((a, b) => a + b) / firstHalf.length;
-    const secondHalfAvg = secondHalf.reduce((a, b) => a + b) / secondHalf.length;
-    const trendPercentage = Math.round(((firstHalfAvg - secondHalfAvg) / secondHalfAvg) * 100);
-    
-    let trendDirection = 'STABLE';
-    if (Math.abs(trendPercentage) >= 15) {
-        trendDirection = trendPercentage > 0 ? 'IMPROVING' : 'DECLINING';
-    }
-    
-    // Count shorts vs regular videos
-    const shortsCount = recentVideos.filter(v => v.short === true || v.type === 'short').length;
-    const regularCount = recentVideos.length - shortsCount;
-    
-    return {
-        // RECENT AVERAGE - Distribution-aware metric from last 10 videos
-        recentAverage: hasViralOutlier ? Math.round(trimmedMean) : Math.round(mean),
-        
-        // Detailed breakdown for debugging/analysis
-        recentMean: Math.round(mean),
-        recentMedian: Math.round(median),
-        recentTrimmedMean: Math.round(trimmedMean),
-        
-        // Distribution analysis
-        consistencyScore: Math.round(consistencyScore),
-        hasViralOutlier,
-        viralMultiplier: hasViralOutlier ? parseFloat(viralMultiplier.toFixed(1)) : null,
-        
-        // Performance insights
-        trendDirection,
-        trendPercentage,
-        
-        // Content breakdown
-        shortsCount,
-        regularCount,
-        videosAnalyzed: recentVideos.length,
-        
-        // Quality indicators
-        isConsistent: consistencyScore > 70,
-        distributionIssue: Math.abs(mean - median) / mean > 0.3,
-        
-        // View range for context
-        viewRange: {
-            min: Math.min(...viewCounts),
-            max: Math.max(...viewCounts)
-        }
-    };
-}
+// Shared with Fly scraper — viral-outlier / trimmed-mean recent average
+const { calculateEnhancedMetrics } = require('./lib/calculate-enhanced-metrics');
 
 // Approve a channel (requires authentication) - User-specific approach
 app.put('/api/channels/:id/approve', authenticateToken, requireSubscription, async (req, res) => {
