@@ -270,8 +270,10 @@ async function startScraperMachine(runId) {
             ? (process.env.SCRAPE_MAX_CHANNELS || '0')
             : '0',
         // Full extension pipeline: subscriber stats + enhanced Shorts analysis
+        // (recent_average, recent_shorts → Niche Finder Enhanced / Active Recently / Recent Avg)
         SCRAPE_ENHANCED_ANALYSIS: process.env.SCRAPE_ENHANCED_ANALYSIS || '1',
-        SCRAPE_MIN_VIEW_THRESHOLD: process.env.SCRAPE_MIN_VIEW_THRESHOLD || '0'
+        SCRAPE_MIN_VIEW_THRESHOLD: process.env.SCRAPE_MIN_VIEW_THRESHOLD || '0',
+        SCRAPE_ENHANCED_STRICT: process.env.SCRAPE_ENHANCED_STRICT || '0'
     };
 
     const machine = await flyRequest('POST', '/apps/' + app + '/machines', {

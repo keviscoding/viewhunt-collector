@@ -216,14 +216,29 @@ async function enrichSubscriberData(scraped, apiKey, onProgress) {
     return results;
 }
 
-function shouldRunEnhancedAnalysis(channel, minViewThreshold) {
+/**
+ * Who gets enhanced (recent_average + recent_shorts)?
+ * Default: every channel we resolved + that clears min avg-views threshold.
+ * That powers Niche Finder: Enhanced Only, Recent Avg range, Active Recently.
+ *
+ * Set SCRAPE_ENHANCED_STRICT=1 to use the old extension tiered ratio gates
+ * (saves YouTube quota, but leaves many channels without recent_average).
+ */
+function shouldRunEnhancedAnalysis(channel, minViewThreshold, strict) {
     var subs = channel.subscriberCount || 0;
     var avgViews = channel.averageViews || 0;
     var ratio = channel.viewToSubRatio || 0;
     var threshold = minViewThreshold || 0;
 
+    if (!channel.realChannelId && !channel.channelUrl) return false;
     if (avgViews < threshold) return false;
 
+    if (!strict) {
+        // Need a resolvable channel to pull uploads playlist
+        return !!(channel.realChannelId || channel.channelUrl);
+    }
+
+    // Legacy extension tiered filters
     if (subs < 100000) {
         return ratio >= 1.0 && avgViews >= threshold;
     }
@@ -304,11 +319,14 @@ async function getEnhancedChannelDataYouTube(channel, apiKey) {
     }
 }
 
-async function runEnhancedAnalysis(channels, apiKey, minViewThreshold, onProgress) {
+async function runEnhancedAnalysis(channels, apiKey, minViewThreshold, onProgress, strict) {
     var qualifying = channels.filter(function(c) {
-        return shouldRunEnhancedAnalysis(c, minViewThreshold);
+        return shouldRunEnhancedAnalysis(c, minViewThreshold, !!strict);
     });
-    console.log('Enrich: enhanced analysis for', qualifying.length, '/', channels.length, 'channels');
+    console.log(
+        'Enrich: enhanced analysis for', qualifying.length, '/', channels.length,
+        'channels', strict ? '(strict tiers)' : '(all resolvable — Niche Finder fields)'
+    );
 
     var batchSize = 5;
     for (var i = 0; i < qualifying.length; i += batchSize) {
@@ -344,6 +362,7 @@ async function enrichChannelsFull(scraped, options) {
     var apiKey = options.apiKey;
     var minViewThreshold = options.minViewThreshold || 0;
     var enhancedEnabled = options.enhancedAnalysis !== false;
+    var enhancedStrict = !!options.enhancedStrict;
     var onProgress = options.onProgress || null;
     var scrapeRunId = options.scrapeRunId || null;
 
@@ -354,18 +373,30 @@ async function enrichChannelsFull(scraped, options) {
     var enriched = await enrichSubscriberData(scraped, apiKey, onProgress);
 
     if (enhancedEnabled) {
-        await runEnhancedAnalysis(enriched, apiKey, minViewThreshold, onProgress);
+        await runEnhancedAnalysis(enriched, apiKey, minViewThreshold, onProgress, enhancedStrict);
     }
 
     var qualified = enriched.filter(function(ch) {
         return (ch.averageViews || 0) >= minViewThreshold;
     });
+    var enhancedCount = qualified.filter(function(ch) { return ch.enhanced && ch.recentAverage; }).length;
     console.log(
         'Enrich: filtered', enriched.length, '→', qualified.length,
-        'qualified (min avg views', minViewThreshold + ')'
+        'qualified (min avg views', minViewThreshold + '),',
+        enhancedCount, 'with recent_average / recent_shorts'
     );
 
     return qualified.map(function(ch) {
+        // Niche Finder field map (server/mobile filters + sorts):
+        // view_to_sub_ratio → Best Ratio
+        // average_views     → Channel Avg / avg views range
+        // recent_average    → Recent Avg range + Enhanced Only
+        // recent_shorts     → Active Recently (4+ in last 14d via publishedAt)
+        // subscriber_count  → Subscribers range
+        // video_count       → Videos range
+        // video_title       → title search
+        // niche_keyword     → niche search
+        // enhanced          → Enhanced Only badge
         return {
             channelName: ch.channelName,
             channelUrl: ch.channelUrl,
@@ -392,8 +423,8 @@ async function enrichChannelsFull(scraped, options) {
             averageViews: ch.averageViews,
             average_views: ch.averageViews,
             enhanced: !!ch.enhanced,
-            recentAverage: ch.recentAverage || null,
-            recent_average: ch.recentAverage || null,
+            recentAverage: ch.recentAverage != null ? ch.recentAverage : null,
+            recent_average: ch.recentAverage != null ? ch.recentAverage : null,
             videosAnalyzed: ch.videosAnalyzed || null,
             videos_analyzed: ch.videosAnalyzed || null,
             recentShorts: ch.recentShorts || null,

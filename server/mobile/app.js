@@ -2078,7 +2078,8 @@ class ViewHuntApp {
                 const kws = (run.keywords || []).slice(0, 8).join(', ');
                 const more = (run.keywords || []).length > 8 ? '…' : '';
                 const qualified = run.channelsQualified != null ? ` · ${run.channelsQualified} qualified` : '';
-                const counts = `${run.channelsFound || 0} found${qualified} · ${run.channelsUpserted || 0} upserted`;
+                const enhanced = run.channelsEnhanced != null ? ` · ${run.channelsEnhanced} enhanced` : '';
+                const counts = `${run.channelsFound || 0} found${qualified}${enhanced} · ${run.channelsUpserted || 0} upserted`;
                 const enrich = run.enrichPhase && run.enrichPhase !== 'done'
                     ? ` · enriching ${run.enrichPhase}${run.enrichProgress ? ' ' + run.enrichProgress : ''}`
                     : '';

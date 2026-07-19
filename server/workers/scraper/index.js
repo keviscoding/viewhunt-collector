@@ -212,8 +212,11 @@ function summarizeChannels(channels) {
                 video_title: ch.video_title || ch.videoTitle || '',
                 subscriber_count: ch.subscriber_count || ch.subscriberCount || 0,
                 average_views: ch.average_views || ch.averageViews || 0,
+                recent_average: ch.recent_average != null ? ch.recent_average : (ch.recentAverage != null ? ch.recentAverage : null),
+                video_count: ch.video_count || ch.videoCount || 0,
                 view_to_sub_ratio: ch.view_to_sub_ratio || ch.viewToSubRatio || 0,
-                enhanced: !!ch.enhanced
+                enhanced: !!ch.enhanced,
+                recent_shorts_count: (ch.recent_shorts || ch.recentShorts || []).length
             });
         }
     }
@@ -363,6 +366,8 @@ async function main() {
 
     const minViewThreshold = parseInt(process.env.SCRAPE_MIN_VIEW_THRESHOLD || '0', 10) || 0;
     const enhancedAnalysis = process.env.SCRAPE_ENHANCED_ANALYSIS !== '0';
+    // Default OFF so Niche Finder Enhanced / Recent Avg / Active Recently have data
+    const enhancedStrict = process.env.SCRAPE_ENHANCED_STRICT === '1';
 
     await db.collection('scrape_runs').updateOne(
         { _id: run._id },
@@ -371,16 +376,18 @@ async function main() {
                 enrichPhase: 'subscribers',
                 channelsScraped: unique.length,
                 minViewThreshold: minViewThreshold,
-                enhancedAnalysis: enhancedAnalysis
+                enhancedAnalysis: enhancedAnalysis,
+                enhancedStrict: enhancedStrict
             }
         }
     );
 
-    // Full extension pipeline: subs → enhanced → threshold filter → bulk
+    // Full extension pipeline: subs → enhanced (recent_average + recent_shorts) → filter → bulk
     const enriched = await enrichChannelsFull(unique, {
         apiKey: YOUTUBE_API_KEY,
         minViewThreshold: minViewThreshold,
         enhancedAnalysis: enhancedAnalysis,
+        enhancedStrict: enhancedStrict,
         scrapeRunId: String(run._id),
         onProgress: async function(p) {
             try {
@@ -485,6 +492,10 @@ async function main() {
         console.warn('New Niches feed update failed:', feedErr.message);
     }
 
+    const enhancedSaved = enriched.filter(function(ch) {
+        return ch.enhanced && (ch.recent_average != null || ch.recentAverage != null);
+    }).length;
+
     await db.collection('scrape_runs').updateOne(
         { _id: run._id },
         {
@@ -494,6 +505,7 @@ async function main() {
                 enrichPhase: 'done',
                 channelsFound: unique.length,
                 channelsQualified: enriched.length,
+                channelsEnhanced: enhancedSaved,
                 channelsUpserted: upserted,
                 byKeyword: summary.byKeyword,
                 channelSamples: summary.samples
@@ -503,7 +515,8 @@ async function main() {
 
     console.log(
         'Scrape complete:', unique.length, 'scraped →',
-        enriched.length, 'qualified →', upserted, 'upserted'
+        enriched.length, 'qualified →', enhancedSaved, 'enhanced →',
+        upserted, 'upserted'
     );
     await client.close();
 }
