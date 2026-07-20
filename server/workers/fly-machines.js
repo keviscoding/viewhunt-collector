@@ -274,8 +274,8 @@ async function startScraperMachine(runId) {
         SCRAPE_ENHANCED_ANALYSIS: process.env.SCRAPE_ENHANCED_ANALYSIS || '1',
         SCRAPE_MIN_VIEW_THRESHOLD: process.env.SCRAPE_MIN_VIEW_THRESHOLD || '0',
         SCRAPE_ENHANCED_STRICT: process.env.SCRAPE_ENHANCED_STRICT || '0',
-        // Top N by scraped views to enrich (avoids OOM on 5k+ channel runs)
-        SCRAPE_ENRICH_MAX: process.env.SCRAPE_ENRICH_MAX || '800',
+        // Batch size only — every channel is enriched; never drop channels
+        SCRAPE_ENRICH_CHUNK: process.env.SCRAPE_ENRICH_CHUNK || '80',
         NODE_OPTIONS: process.env.SCRAPE_NODE_OPTIONS || '--max-old-space-size=3584'
     };
 

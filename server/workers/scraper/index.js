@@ -378,14 +378,10 @@ async function main() {
     const enhancedAnalysis = process.env.SCRAPE_ENHANCED_ANALYSIS !== '0';
     // Default OFF so Niche Finder Enhanced / Recent Avg / Active Recently have data
     const enhancedStrict = process.env.SCRAPE_ENHANCED_STRICT === '1';
-    // Cap enrichment — unlimited scrape + enrich OOMs a 2GB Fly machine (~6k channels crashed)
-    const enrichMax = parseInt(process.env.SCRAPE_ENRICH_MAX || '800', 10) || 800;
+    // Process ALL channels — batch size only limits memory, never drops channels
+    const CHUNK = Math.max(20, parseInt(process.env.SCRAPE_ENRICH_CHUNK || '80', 10) || 80);
     const scrapedTotal = unique.length;
     unique.sort(function(a, b) { return (b.view_count || 0) - (a.view_count || 0); });
-    if (enrichMax > 0 && unique.length > enrichMax) {
-        console.log('Capping enrich set', unique.length, '→', enrichMax, 'by scraped views');
-        unique = unique.slice(0, enrichMax);
-    }
 
     async function heartbeat(extra) {
         try {
@@ -395,7 +391,7 @@ async function main() {
                     $set: Object.assign({
                         lastHeartbeat: new Date(),
                         channelsFound: scrapedTotal,
-                        channelsEnriching: unique.length
+                        channelsEnriching: scrapedTotal
                     }, extra || {})
                 }
             );
@@ -408,14 +404,15 @@ async function main() {
         minViewThreshold: minViewThreshold,
         enhancedAnalysis: enhancedAnalysis,
         enhancedStrict: enhancedStrict,
-        enrichMax: enrichMax
+        enrichChunk: CHUNK
     });
 
-    // Enrich + upsert in chunks so progress survives crashes
-    const CHUNK = 100;
+    // Enrich + upsert EVERY channel in memory-safe chunks (no dropping)
     let upserted = 0;
     let enhancedSaved = 0;
-    const enrichedAll = [];
+    let qualifiedTotal = 0;
+    const sampleAcc = [];
+    const byKeywordAcc = {};
 
     for (let start = 0; start < unique.length; start += CHUNK) {
         const chunk = unique.slice(start, start + CHUNK);
@@ -426,7 +423,7 @@ async function main() {
             minViewThreshold: minViewThreshold,
             enhancedAnalysis: enhancedAnalysis,
             enhancedStrict: enhancedStrict,
-            maxChannels: 0, // already capped
+            maxChannels: 0, // never cap — process full chunk
             scrapeRunId: String(run._id),
             onProgress: async function(p) {
                 await heartbeat({
@@ -513,28 +510,55 @@ async function main() {
         }
 
         upserted += chunkUpserted;
-        enhancedSaved += enriched.filter(function(ch) {
-            return ch.enhanced && (ch.recent_average != null || ch.recentAverage != null);
-        }).length;
-        for (let e = 0; e < enriched.length; e++) enrichedAll.push(enriched[e]);
+        qualifiedTotal += enriched.length;
+        for (let e = 0; e < enriched.length; e++) {
+            const ch = enriched[e];
+            if (ch.enhanced && (ch.recent_average != null || ch.recentAverage != null)) {
+                enhancedSaved++;
+            }
+            const kw = ch.niche_keyword || 'unknown';
+            byKeywordAcc[kw] = (byKeywordAcc[kw] || 0) + 1;
+            if (sampleAcc.length < 500) {
+                sampleAcc.push({
+                    channel_name: ch.channel_name || ch.channelName,
+                    channel_url: ch.channel_url || ch.channelUrl,
+                    niche_keyword: kw,
+                    view_count: ch.view_count || ch.viewCount || 0,
+                    video_title: ch.video_title || ch.videoTitle || '',
+                    thumbnail_url: ch.thumbnail_url || ch.thumbnailUrl || ch.avatar_url || ch.avatarUrl || null,
+                    subscriber_count: ch.subscriber_count || ch.subscriberCount || 0,
+                    average_views: ch.average_views || ch.averageViews || 0,
+                    recent_average: ch.recent_average != null ? ch.recent_average : (ch.recentAverage != null ? ch.recentAverage : null),
+                    video_count: ch.video_count || ch.videoCount || 0,
+                    view_to_sub_ratio: ch.view_to_sub_ratio || ch.viewToSubRatio || 0,
+                    enhanced: !!ch.enhanced
+                });
+            }
+        }
 
         await heartbeat({
             enrichPhase: 'upserted',
             enrichProgress: Math.min(start + CHUNK, unique.length) + '/' + unique.length,
             channelsUpserted: upserted,
-            channelsQualified: enrichedAll.length,
+            channelsQualified: qualifiedTotal,
             channelsEnhanced: enhancedSaved
         });
+
+        // Drop chunk refs so GC can reclaim before next batch
+        chunk.length = 0;
     }
 
-    const summary = summarizeChannels(enrichedAll);
+    // Done with scrape list
+    unique.length = 0;
+
+    const summary = { byKeyword: byKeywordAcc, samples: sampleAcc };
 
     await db.collection('niche_rotations').insertOne({
         keywords: keywords,
         scrapeRunId: run._id,
         createdAt: new Date(),
         channelsFound: scrapedTotal,
-        channelsEnriched: unique.length,
+        channelsEnriched: scrapedTotal,
         channelsUpserted: upserted,
         byKeyword: summary.byKeyword
     });
@@ -554,8 +578,8 @@ async function main() {
                 lastHeartbeat: new Date(),
                 enrichPhase: 'done',
                 channelsFound: scrapedTotal,
-                channelsEnriching: unique.length,
-                channelsQualified: enrichedAll.length,
+                channelsEnriching: scrapedTotal,
+                channelsQualified: qualifiedTotal,
                 channelsEnhanced: enhancedSaved,
                 channelsUpserted: upserted,
                 byKeyword: summary.byKeyword,
@@ -566,7 +590,7 @@ async function main() {
 
     console.log(
         'Scrape complete:', scrapedTotal, 'scraped →',
-        unique.length, 'enriched →', enrichedAll.length, 'qualified →',
+        qualifiedTotal, 'qualified →',
         enhancedSaved, 'enhanced →', upserted, 'upserted'
     );
     await client.close();

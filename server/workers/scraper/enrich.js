@@ -163,9 +163,9 @@ async function processBatchStats(channels, apiKey) {
 /**
  * Enrich scraped video→channel rows with subscriber stats (extension processSubscriberData).
  * Input: [{ channel_name, channel_url, video_title, view_count, thumbnail_url, niche_keyword }]
- * Already-unique preferred. Caps to top maxChannels by scraped view_count to avoid OOM.
+ * Processes the full set passed in — callers batch for memory; we never drop channels here.
  */
-async function enrichSubscriberData(scraped, apiKey, onProgress, maxChannels) {
+async function enrichSubscriberData(scraped, apiKey, onProgress) {
     if (!apiKey) {
         throw new Error('YOUTUBE_API_KEY required for subscriber enrichment');
     }
@@ -199,14 +199,7 @@ async function enrichSubscriberData(scraped, apiKey, onProgress, maxChannels) {
     });
 
     var channelArray = Array.from(unique.values());
-    // Prioritize channels that already show strong Shorts views
-    channelArray.sort(function(a, b) { return (b.viewCount || 0) - (a.viewCount || 0); });
-    var scrapedTotal = channelArray.length;
-    if (maxChannels && maxChannels > 0 && channelArray.length > maxChannels) {
-        console.log('Enrich: capping', channelArray.length, '→ top', maxChannels, 'by scraped views');
-        channelArray = channelArray.slice(0, maxChannels);
-    }
-    console.log('Enrich: resolving stats for', channelArray.length, 'channels (from', scrapedTotal, 'unique)');
+    console.log('Enrich: resolving stats for', channelArray.length, 'channels');
 
     var batchSize = 10;
     for (var i = 0; i < channelArray.length; i += batchSize) {
@@ -215,8 +208,7 @@ async function enrichSubscriberData(scraped, apiKey, onProgress, maxChannels) {
             await onProgress({
                 phase: 'subscribers',
                 done: Math.min(i + batchSize, channelArray.length),
-                total: channelArray.length,
-                scrapedTotal: scrapedTotal
+                total: channelArray.length
             });
         }
         await processBatchStats(batch, apiKey);
@@ -432,12 +424,7 @@ async function enrichChannelsFull(scraped, options) {
         throw new Error('YOUTUBE_API_KEY required — enrichment cannot run without it');
     }
 
-    var enriched = await enrichSubscriberData(
-        scraped,
-        apiKey,
-        onProgress,
-        options.maxChannels || 0
-    );
+    var enriched = await enrichSubscriberData(scraped, apiKey, onProgress);
 
     if (enhancedEnabled) {
         await runEnhancedAnalysis(enriched, apiKey, minViewThreshold, onProgress, enhancedStrict);
