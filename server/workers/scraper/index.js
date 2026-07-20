@@ -351,15 +351,24 @@ async function main() {
         await browser.close();
     }
 
-    // Dedupe by channel_url
+    // Dedupe by channel_url, keep highest-view row
     const seen = {};
-    const unique = [];
+    let unique = [];
     for (let i = 0; i < all.length; i++) {
         const url = all[i].channel_url;
-        if (!url || seen[url]) continue;
-        seen[url] = true;
-        unique.push(all[i]);
+        if (!url) continue;
+        if (!seen[url]) {
+            seen[url] = unique.length;
+            unique.push(all[i]);
+            continue;
+        }
+        const idx = seen[url];
+        if ((all[i].view_count || 0) > (unique[idx].view_count || 0)) {
+            unique[idx] = all[i];
+        }
     }
+    // Free raw scrape array — can be huge (thousands of rows)
+    all.length = 0;
 
     if (!YOUTUBE_API_KEY) {
         throw new Error('YOUTUBE_API_KEY missing — cannot enrich channels (subs/ratio/enhanced)');
@@ -369,120 +378,163 @@ async function main() {
     const enhancedAnalysis = process.env.SCRAPE_ENHANCED_ANALYSIS !== '0';
     // Default OFF so Niche Finder Enhanced / Recent Avg / Active Recently have data
     const enhancedStrict = process.env.SCRAPE_ENHANCED_STRICT === '1';
+    // Cap enrichment — unlimited scrape + enrich OOMs a 2GB Fly machine (~6k channels crashed)
+    const enrichMax = parseInt(process.env.SCRAPE_ENRICH_MAX || '800', 10) || 800;
+    const scrapedTotal = unique.length;
+    unique.sort(function(a, b) { return (b.view_count || 0) - (a.view_count || 0); });
+    if (enrichMax > 0 && unique.length > enrichMax) {
+        console.log('Capping enrich set', unique.length, '→', enrichMax, 'by scraped views');
+        unique = unique.slice(0, enrichMax);
+    }
 
-    await db.collection('scrape_runs').updateOne(
-        { _id: run._id },
-        {
-            $set: {
-                enrichPhase: 'subscribers',
-                channelsScraped: unique.length,
-                minViewThreshold: minViewThreshold,
-                enhancedAnalysis: enhancedAnalysis,
-                enhancedStrict: enhancedStrict
-            }
-        }
-    );
+    async function heartbeat(extra) {
+        try {
+            await db.collection('scrape_runs').updateOne(
+                { _id: run._id },
+                {
+                    $set: Object.assign({
+                        lastHeartbeat: new Date(),
+                        channelsFound: scrapedTotal,
+                        channelsEnriching: unique.length
+                    }, extra || {})
+                }
+            );
+        } catch (e) { /* ignore */ }
+    }
 
-    // Full extension pipeline: subs → enhanced (recent_average + recent_shorts) → filter → bulk
-    const enriched = await enrichChannelsFull(unique, {
-        apiKey: YOUTUBE_API_KEY,
+    await heartbeat({
+        enrichPhase: 'subscribers',
+        channelsScraped: scrapedTotal,
         minViewThreshold: minViewThreshold,
         enhancedAnalysis: enhancedAnalysis,
         enhancedStrict: enhancedStrict,
-        scrapeRunId: String(run._id),
-        onProgress: async function(p) {
-            try {
-                await db.collection('scrape_runs').updateOne(
-                    { _id: run._id },
-                    {
-                        $set: {
-                            enrichPhase: p.phase,
-                            enrichProgress: p.done + '/' + p.total
-                        }
-                    }
-                );
-            } catch (e) { /* ignore */ }
-        }
+        enrichMax: enrichMax
     });
 
-    const summary = summarizeChannels(enriched);
-
+    // Enrich + upsert in chunks so progress survives crashes
+    const CHUNK = 100;
     let upserted = 0;
-    try {
-        const bulk = await postBulkChunked(enriched);
-        upserted = (bulk && bulk.inserted) || enriched.length;
-    } catch (bulkErr) {
-        console.warn('Bulk API failed, writing directly:', bulkErr.message);
-        for (let i = 0; i < enriched.length; i++) {
-            const ch = enriched[i];
-            const url = ch.channel_url || ch.channelUrl;
-            const existing = await db.collection('channels').findOne({ channel_url: url });
-            if (!existing) {
-                await db.collection('channels').insertOne({
-                    channel_name: ch.channel_name || ch.channelName,
-                    channel_url: url,
-                    video_title: ch.video_title || ch.videoTitle || '',
-                    view_count: ch.view_count || ch.viewCount || 0,
-                    subscriber_count: ch.subscriber_count || ch.subscriberCount || 0,
-                    view_to_sub_ratio: ch.view_to_sub_ratio || ch.viewToSubRatio || 0,
-                    avatar_url: ch.avatar_url || ch.avatarUrl || null,
-                    thumbnail_url: ch.thumbnail_url || ch.thumbnailUrl || null,
-                    video_url: ch.video_url || ch.videoUrl || null,
-                    total_views: ch.total_views || ch.totalViews || 0,
-                    video_count: ch.video_count || ch.videoCount || 0,
-                    average_views: ch.average_views || ch.averageViews || 0,
-                    enhanced: !!ch.enhanced,
-                    recent_average: ch.recent_average || ch.recentAverage || null,
-                    videos_analyzed: ch.videos_analyzed || ch.videosAnalyzed || null,
-                    recent_shorts: ch.recent_shorts || ch.recentShorts || null,
-                    last_enhanced_update: ch.last_enhanced_update || ch.lastUpdated || null,
-                    niche_keyword: ch.niche_keyword || null,
-                    scrape_run_id: String(run._id),
-                    source: 'fly-scraper',
-                    status: 'pending',
-                    created_at: new Date(),
-                    updated_at: new Date()
+    let enhancedSaved = 0;
+    const enrichedAll = [];
+
+    for (let start = 0; start < unique.length; start += CHUNK) {
+        const chunk = unique.slice(start, start + CHUNK);
+        console.log('Enrich chunk', start + 1, '-', Math.min(start + CHUNK, unique.length), '/', unique.length);
+
+        const enriched = await enrichChannelsFull(chunk, {
+            apiKey: YOUTUBE_API_KEY,
+            minViewThreshold: minViewThreshold,
+            enhancedAnalysis: enhancedAnalysis,
+            enhancedStrict: enhancedStrict,
+            maxChannels: 0, // already capped
+            scrapeRunId: String(run._id),
+            onProgress: async function(p) {
+                await heartbeat({
+                    enrichPhase: p.phase,
+                    enrichProgress: (start + p.done) + '/' + unique.length
                 });
-                upserted++;
-            } else {
-                var preserveStatus = existing.status === 'approved' || existing.status === 'rejected';
-                await db.collection('channels').updateOne(
-                    { _id: existing._id },
-                    {
-                        $set: {
-                            channel_name: ch.channel_name || ch.channelName || existing.channel_name,
-                            video_title: ch.video_title || ch.videoTitle || existing.video_title,
-                            view_count: ch.view_count || ch.viewCount || 0,
-                            subscriber_count: ch.subscriber_count || ch.subscriberCount || 0,
-                            view_to_sub_ratio: ch.view_to_sub_ratio || ch.viewToSubRatio || 0,
-                            avatar_url: ch.avatar_url || ch.avatarUrl || existing.avatar_url,
-                            thumbnail_url: ch.thumbnail_url || ch.thumbnailUrl || existing.thumbnail_url,
-                            total_views: ch.total_views || ch.totalViews || 0,
-                            video_count: ch.video_count || ch.videoCount || 0,
-                            average_views: ch.average_views || ch.averageViews || 0,
-                            enhanced: !!ch.enhanced,
-                            recent_average: ch.recent_average || ch.recentAverage || null,
-                            videos_analyzed: ch.videos_analyzed || ch.videosAnalyzed || null,
-                            recent_shorts: ch.recent_shorts || ch.recentShorts || null,
-                            last_enhanced_update: ch.last_enhanced_update || ch.lastUpdated || null,
-                            niche_keyword: ch.niche_keyword || existing.niche_keyword,
-                            scrape_run_id: String(run._id),
-                            source: 'fly-scraper',
-                            updated_at: new Date(),
-                            ...(preserveStatus ? {} : { status: 'pending' })
+            }
+        });
+
+        let chunkUpserted = 0;
+        try {
+            const bulk = await postBulkChunked(enriched);
+            chunkUpserted = (bulk && bulk.inserted) || enriched.length;
+        } catch (bulkErr) {
+            console.warn('Bulk API failed for chunk, writing directly:', bulkErr.message);
+            for (let i = 0; i < enriched.length; i++) {
+                const ch = enriched[i];
+                const url = ch.channel_url || ch.channelUrl;
+                const existing = await db.collection('channels').findOne({ channel_url: url });
+                if (!existing) {
+                    await db.collection('channels').insertOne({
+                        channel_name: ch.channel_name || ch.channelName,
+                        channel_url: url,
+                        video_title: ch.video_title || ch.videoTitle || '',
+                        view_count: ch.view_count || ch.viewCount || 0,
+                        subscriber_count: ch.subscriber_count || ch.subscriberCount || 0,
+                        view_to_sub_ratio: ch.view_to_sub_ratio || ch.viewToSubRatio || 0,
+                        avatar_url: ch.avatar_url || ch.avatarUrl || null,
+                        thumbnail_url: ch.thumbnail_url || ch.thumbnailUrl || null,
+                        video_url: ch.video_url || ch.videoUrl || null,
+                        total_views: ch.total_views || ch.totalViews || 0,
+                        video_count: ch.video_count || ch.videoCount || 0,
+                        average_views: ch.average_views || ch.averageViews || 0,
+                        enhanced: !!ch.enhanced,
+                        recent_average: ch.recent_average || ch.recentAverage || null,
+                        recent_mean: ch.recent_mean || ch.recentMean || null,
+                        recent_median: ch.recent_median || ch.recentMedian || null,
+                        recent_trimmed_mean: ch.recent_trimmed_mean || ch.recentTrimmedMean || null,
+                        consistency_score: ch.consistency_score || ch.consistencyScore || null,
+                        has_viral_outlier: ch.has_viral_outlier != null ? ch.has_viral_outlier : ch.hasViralOutlier,
+                        videos_analyzed: ch.videos_analyzed || ch.videosAnalyzed || null,
+                        recent_shorts: ch.recent_shorts || ch.recentShorts || null,
+                        last_enhanced_update: ch.last_enhanced_update || ch.lastUpdated || null,
+                        niche_keyword: ch.niche_keyword || null,
+                        scrape_run_id: String(run._id),
+                        source: 'fly-scraper',
+                        status: 'pending',
+                        created_at: new Date(),
+                        updated_at: new Date()
+                    });
+                    chunkUpserted++;
+                } else {
+                    var preserveStatus = existing.status === 'approved' || existing.status === 'rejected';
+                    await db.collection('channels').updateOne(
+                        { _id: existing._id },
+                        {
+                            $set: {
+                                channel_name: ch.channel_name || ch.channelName || existing.channel_name,
+                                video_title: ch.video_title || ch.videoTitle || existing.video_title,
+                                view_count: ch.view_count || ch.viewCount || 0,
+                                subscriber_count: ch.subscriber_count || ch.subscriberCount || 0,
+                                view_to_sub_ratio: ch.view_to_sub_ratio || ch.viewToSubRatio || 0,
+                                avatar_url: ch.avatar_url || ch.avatarUrl || existing.avatar_url,
+                                thumbnail_url: ch.thumbnail_url || ch.thumbnailUrl || existing.thumbnail_url,
+                                total_views: ch.total_views || ch.totalViews || 0,
+                                video_count: ch.video_count || ch.videoCount || 0,
+                                average_views: ch.average_views || ch.averageViews || 0,
+                                enhanced: !!ch.enhanced,
+                                recent_average: ch.recent_average || ch.recentAverage || null,
+                                videos_analyzed: ch.videos_analyzed || ch.videosAnalyzed || null,
+                                recent_shorts: ch.recent_shorts || ch.recentShorts || null,
+                                last_enhanced_update: ch.last_enhanced_update || ch.lastUpdated || null,
+                                niche_keyword: ch.niche_keyword || existing.niche_keyword,
+                                scrape_run_id: String(run._id),
+                                source: 'fly-scraper',
+                                updated_at: new Date(),
+                                ...(preserveStatus ? {} : { status: 'pending' })
+                            }
                         }
-                    }
-                );
-                upserted++;
+                    );
+                    chunkUpserted++;
+                }
             }
         }
+
+        upserted += chunkUpserted;
+        enhancedSaved += enriched.filter(function(ch) {
+            return ch.enhanced && (ch.recent_average != null || ch.recentAverage != null);
+        }).length;
+        for (let e = 0; e < enriched.length; e++) enrichedAll.push(enriched[e]);
+
+        await heartbeat({
+            enrichPhase: 'upserted',
+            enrichProgress: Math.min(start + CHUNK, unique.length) + '/' + unique.length,
+            channelsUpserted: upserted,
+            channelsQualified: enrichedAll.length,
+            channelsEnhanced: enhancedSaved
+        });
     }
+
+    const summary = summarizeChannels(enrichedAll);
 
     await db.collection('niche_rotations').insertOne({
         keywords: keywords,
         scrapeRunId: run._id,
         createdAt: new Date(),
-        channelsFound: unique.length,
+        channelsFound: scrapedTotal,
+        channelsEnriched: unique.length,
         channelsUpserted: upserted,
         byKeyword: summary.byKeyword
     });
@@ -493,19 +545,17 @@ async function main() {
         console.warn('New Niches feed update failed:', feedErr.message);
     }
 
-    const enhancedSaved = enriched.filter(function(ch) {
-        return ch.enhanced && (ch.recent_average != null || ch.recentAverage != null);
-    }).length;
-
     await db.collection('scrape_runs').updateOne(
         { _id: run._id },
         {
             $set: {
                 status: 'complete',
                 finishedAt: new Date(),
+                lastHeartbeat: new Date(),
                 enrichPhase: 'done',
-                channelsFound: unique.length,
-                channelsQualified: enriched.length,
+                channelsFound: scrapedTotal,
+                channelsEnriching: unique.length,
+                channelsQualified: enrichedAll.length,
                 channelsEnhanced: enhancedSaved,
                 channelsUpserted: upserted,
                 byKeyword: summary.byKeyword,
@@ -515,9 +565,9 @@ async function main() {
     );
 
     console.log(
-        'Scrape complete:', unique.length, 'scraped →',
-        enriched.length, 'qualified →', enhancedSaved, 'enhanced →',
-        upserted, 'upserted'
+        'Scrape complete:', scrapedTotal, 'scraped →',
+        unique.length, 'enriched →', enrichedAll.length, 'qualified →',
+        enhancedSaved, 'enhanced →', upserted, 'upserted'
     );
     await client.close();
 }

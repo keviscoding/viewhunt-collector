@@ -27,7 +27,26 @@ function parseDuration(duration) {
         parseInt(match[3] || 0, 10);
 }
 
-async function getChannelIdFromHandle(handleUrl) {
+async function getChannelIdFromHandle(handleUrl, apiKey) {
+    // Prefer YouTube forHandle (low memory) over downloading full channel HTML
+    try {
+        var handleMatch = String(handleUrl).match(/\/@([^/?#]+)/);
+        if (handleMatch && apiKey) {
+            var handle = decodeURIComponent(handleMatch[1]);
+            var apiRes = await fetch(
+                YOUTUBE_API_BASE + '/channels?part=id&forHandle=' + encodeURIComponent(handle) + '&key=' + apiKey
+            );
+            if (apiRes.ok) {
+                var apiData = await apiRes.json();
+                if (apiData.items && apiData.items[0] && apiData.items[0].id) {
+                    return apiData.items[0].id;
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('forHandle resolve failed:', e.message);
+    }
+
     try {
         const response = await fetch(handleUrl, {
             headers: {
@@ -59,13 +78,13 @@ async function getChannelIdFromHandle(handleUrl) {
     }
 }
 
-async function resolveChannelId(channelUrl) {
+async function resolveChannelId(channelUrl, apiKey) {
     if (!channelUrl) return null;
     if (channelUrl.indexOf('/channel/UC') >= 0) {
         return channelUrl.split('/channel/')[1].split('/')[0].split('?')[0];
     }
     if (channelUrl.indexOf('/@') >= 0) {
-        return getChannelIdFromHandle(channelUrl);
+        return getChannelIdFromHandle(channelUrl, apiKey);
     }
     return null;
 }
@@ -74,12 +93,12 @@ async function processBatchStats(channels, apiKey) {
     for (var i = 0; i < channels.length; i++) {
         var ch = channels[i];
         if (ch.channelUrl && ch.channelUrl.indexOf('/@') >= 0) {
-            ch.realChannelId = await getChannelIdFromHandle(ch.channelUrl);
+            ch.realChannelId = await getChannelIdFromHandle(ch.channelUrl, apiKey);
         } else if (ch.channelUrl && ch.channelUrl.indexOf('/channel/UC') >= 0) {
             var id = ch.channelUrl.split('/channel/')[1].split('/')[0].split('?')[0];
             if (id && id.indexOf('UC') === 0) ch.realChannelId = id;
         }
-        await delay(80);
+        await delay(50);
     }
 
     var withIds = channels.filter(function(c) { return c.realChannelId; });
@@ -128,7 +147,7 @@ async function processBatchStats(channels, apiKey) {
         } catch (e) {
             console.error('channels.list error:', e.message);
         }
-        await delay(400);
+        await delay(300);
     }
 
     channels.forEach(function(c) {
@@ -144,8 +163,9 @@ async function processBatchStats(channels, apiKey) {
 /**
  * Enrich scraped video→channel rows with subscriber stats (extension processSubscriberData).
  * Input: [{ channel_name, channel_url, video_title, view_count, thumbnail_url, niche_keyword }]
+ * Already-unique preferred. Caps to top maxChannels by scraped view_count to avoid OOM.
  */
-async function enrichSubscriberData(scraped, apiKey, onProgress) {
+async function enrichSubscriberData(scraped, apiKey, onProgress, maxChannels) {
     if (!apiKey) {
         throw new Error('YOUTUBE_API_KEY required for subscriber enrichment');
     }
@@ -162,12 +182,11 @@ async function enrichSubscriberData(scraped, apiKey, onProgress) {
                 videoTitle: video.video_title || video.videoTitle || '',
                 viewCount: video.view_count || video.viewCount || 0,
                 thumbnailUrl: video.thumbnail_url || video.thumbnailUrl || null,
-                videoUrl: video.video_url || video.videoUrl || null,
-                videos: []
+                videoUrl: video.video_url || video.videoUrl || null
             });
+            return;
         }
         var entry = unique.get(url);
-        entry.videos.push(video);
         // Keep highest-view short as the representative row
         var v = video.view_count || video.viewCount || 0;
         if (v >= (entry.viewCount || 0)) {
@@ -180,7 +199,14 @@ async function enrichSubscriberData(scraped, apiKey, onProgress) {
     });
 
     var channelArray = Array.from(unique.values());
-    console.log('Enrich: resolving stats for', channelArray.length, 'unique channels');
+    // Prioritize channels that already show strong Shorts views
+    channelArray.sort(function(a, b) { return (b.viewCount || 0) - (a.viewCount || 0); });
+    var scrapedTotal = channelArray.length;
+    if (maxChannels && maxChannels > 0 && channelArray.length > maxChannels) {
+        console.log('Enrich: capping', channelArray.length, '→ top', maxChannels, 'by scraped views');
+        channelArray = channelArray.slice(0, maxChannels);
+    }
+    console.log('Enrich: resolving stats for', channelArray.length, 'channels (from', scrapedTotal, 'unique)');
 
     var batchSize = 10;
     for (var i = 0; i < channelArray.length; i += batchSize) {
@@ -189,11 +215,12 @@ async function enrichSubscriberData(scraped, apiKey, onProgress) {
             await onProgress({
                 phase: 'subscribers',
                 done: Math.min(i + batchSize, channelArray.length),
-                total: channelArray.length
+                total: channelArray.length,
+                scrapedTotal: scrapedTotal
             });
         }
         await processBatchStats(batch, apiKey);
-        await delay(1000);
+        await delay(400);
     }
 
     var results = channelArray.map(function(info) {
@@ -257,7 +284,7 @@ function shouldRunEnhancedAnalysis(channel, minViewThreshold, strict) {
 
 async function getEnhancedChannelDataYouTube(channel, apiKey) {
     try {
-        var channelId = channel.realChannelId || await resolveChannelId(channel.channelUrl);
+        var channelId = channel.realChannelId || await resolveChannelId(channel.channelUrl, apiKey);
         if (!channelId) return null;
 
         var channelResponse = await fetch(
@@ -405,7 +432,12 @@ async function enrichChannelsFull(scraped, options) {
         throw new Error('YOUTUBE_API_KEY required — enrichment cannot run without it');
     }
 
-    var enriched = await enrichSubscriberData(scraped, apiKey, onProgress);
+    var enriched = await enrichSubscriberData(
+        scraped,
+        apiKey,
+        onProgress,
+        options.maxChannels || 0
+    );
 
     if (enhancedEnabled) {
         await runEnhancedAnalysis(enriched, apiKey, minViewThreshold, onProgress, enhancedStrict);

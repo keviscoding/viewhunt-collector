@@ -273,7 +273,10 @@ async function startScraperMachine(runId) {
         // (recent_average, recent_shorts → Niche Finder Enhanced / Active Recently / Recent Avg)
         SCRAPE_ENHANCED_ANALYSIS: process.env.SCRAPE_ENHANCED_ANALYSIS || '1',
         SCRAPE_MIN_VIEW_THRESHOLD: process.env.SCRAPE_MIN_VIEW_THRESHOLD || '0',
-        SCRAPE_ENHANCED_STRICT: process.env.SCRAPE_ENHANCED_STRICT || '0'
+        SCRAPE_ENHANCED_STRICT: process.env.SCRAPE_ENHANCED_STRICT || '0',
+        // Top N by scraped views to enrich (avoids OOM on 5k+ channel runs)
+        SCRAPE_ENRICH_MAX: process.env.SCRAPE_ENRICH_MAX || '800',
+        NODE_OPTIONS: process.env.SCRAPE_NODE_OPTIONS || '--max-old-space-size=3584'
     };
 
     const machine = await flyRequest('POST', '/apps/' + app + '/machines', {
@@ -284,7 +287,7 @@ async function startScraperMachine(runId) {
             guest: {
                 cpu_kind: 'shared',
                 cpus: 2,
-                memory_mb: 2048
+                memory_mb: parseInt(process.env.FLY_SCRAPER_MEMORY_MB || '4096', 10) || 4096
             },
             auto_destroy: true,
             restart: { policy: 'no' }
