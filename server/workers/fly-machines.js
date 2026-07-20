@@ -276,7 +276,12 @@ async function startScraperMachine(runId) {
         SCRAPE_ENHANCED_STRICT: process.env.SCRAPE_ENHANCED_STRICT || '0',
         // Batch size only — every channel is enriched; never drop channels
         SCRAPE_ENRICH_CHUNK: process.env.SCRAPE_ENRICH_CHUNK || '80',
-        NODE_OPTIONS: process.env.SCRAPE_NODE_OPTIONS || '--max-old-space-size=3584'
+        NODE_OPTIONS: process.env.SCRAPE_NODE_OPTIONS || '--max-old-space-size=3584',
+        // Completion email (same Resend key as DigitalOcean)
+        RESEND_API_KEY: (process.env.RESEND_API_KEY || '').trim(),
+        RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL || 'ViewHunt <noreply@viewhunt.app>',
+        SCRAPE_NOTIFY_EMAIL: process.env.SCRAPE_NOTIFY_EMAIL || process.env.ADMIN_EMAIL || 'nwalikelv@gmail.com',
+        ADMIN_EMAIL: process.env.ADMIN_EMAIL || 'nwalikelv@gmail.com'
     };
 
     const machine = await flyRequest('POST', '/apps/' + app + '/machines', {

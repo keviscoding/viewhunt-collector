@@ -1893,7 +1893,7 @@ app.post('/api/channels/auto-collect', authenticateToken, async (req, res) => {
     });
 });
 
-// Manually trigger 3-day niche scrape rotation (admin only) — Fly Puppeteer only
+// Manually trigger niche scrape (admin JWT) — Fly Puppeteer only
 app.post('/api/channels/niche-scrape', authenticateToken, async (req, res) => {
     if (!isAdminUser(req.user)) {
         return res.status(403).json({ error: 'Admin only' });
@@ -1904,9 +1904,33 @@ app.post('/api/channels/niche-scrape', authenticateToken, async (req, res) => {
             keywords: Array.isArray(req.body.keywords) ? req.body.keywords : undefined,
             limit: req.body.limit || undefined
         });
-        res.json({ message: 'Niche scrape started', ...result });
+        res.json({
+            message: 'Niche scrape started',
+            notifyEmail: process.env.SCRAPE_NOTIFY_EMAIL || process.env.ADMIN_EMAIL || 'nwalikelv@gmail.com',
+            ...result
+        });
     } catch (err) {
         console.error('Niche scrape trigger error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Internal kickoff (WORKER_SECRET) — for ops without browser login
+app.post('/api/internal/niche-scrape', async (req, res) => {
+    var workerSecret = (process.env.WORKER_SECRET || '').trim();
+    var incoming = String(req.headers['x-worker-secret'] || '');
+    if (!workerSecret || incoming !== workerSecret) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    try {
+        const result = await nicheScheduler.startScrapeRun(db, {
+            trigger: 'manual',
+            keywords: Array.isArray(req.body && req.body.keywords) ? req.body.keywords : undefined,
+            limit: (req.body && req.body.limit) || undefined
+        });
+        res.json({ message: 'Niche scrape started', ...result });
+    } catch (err) {
+        console.error('Internal niche scrape error:', err);
         res.status(500).json({ error: err.message });
     }
 });

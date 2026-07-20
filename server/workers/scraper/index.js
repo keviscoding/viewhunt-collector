@@ -8,6 +8,12 @@ const fs = require('fs');
 const { MongoClient, ObjectId } = require('mongodb');
 const puppeteer = require('puppeteer');
 const { enrichChannelsFull } = require('./enrich');
+var sendScrapeCompleteEmail;
+try {
+    sendScrapeCompleteEmail = require('./scrape-notify').sendScrapeCompleteEmail;
+} catch (e) {
+    sendScrapeCompleteEmail = require('../../lib/scrape-notify').sendScrapeCompleteEmail;
+}
 
 const RUN_ID = process.env.RUN_ID;
 const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
@@ -593,6 +599,24 @@ async function main() {
         qualifiedTotal, 'qualified →',
         enhancedSaved, 'enhanced →', upserted, 'upserted'
     );
+
+    try {
+        var mail = await sendScrapeCompleteEmail({
+            runId: String(run._id),
+            keywords: keywords,
+            channelsFound: scrapedTotal,
+            channelsQualified: qualifiedTotal,
+            channelsUpserted: upserted,
+            channelsEnhanced: enhancedSaved
+        });
+        await db.collection('scrape_runs').updateOne(
+            { _id: run._id },
+            { $set: { notifyEmail: mail } }
+        );
+    } catch (mailErr) {
+        console.warn('Scrape notify email failed:', mailErr.message);
+    }
+
     await client.close();
 }
 
