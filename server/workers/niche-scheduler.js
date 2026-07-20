@@ -1,8 +1,10 @@
 /**
- * Niche keyword rotation + scrape run scheduler (every 3 days).
+ * Niche keyword rotation + scrape run scheduler (daily).
  * Each run picks a spontaneous random set of ultra-common title words
  * (prepositions, auxiliaries, pronouns — the ChatGPT "batch" style).
  * Fly Puppeteer only — never YouTube Data API (quality is too poor).
+ * Large keyword lists (admin override) process every keyword; enrichment
+ * is batched for memory but never drops channels.
  */
 const { ObjectId } = require('mongodb');
 const { startScraperMachine } = require('./fly-machines');
@@ -66,11 +68,12 @@ const COMMON_WORD_POOL = [
 // Alias for smoke tests / older imports
 const DEFAULT_WORD_POOL = COMMON_WORD_POOL;
 
-const KEYWORDS_PER_RUN_MIN = 12;
-const KEYWORDS_PER_RUN_MAX = 18;
-const KEYWORDS_PER_RUN = 15;
-const INTERVAL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
-const RECENT_RUNS_TO_AVOID = 2; // don't immediately reuse words from last N runs when possible
+const KEYWORDS_PER_RUN_MIN = 15;
+const KEYWORDS_PER_RUN_MAX = 25;
+const KEYWORDS_PER_RUN = 20;
+const INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
+const RECENT_RUNS_TO_AVOID = 3; // avoid reusing words from last few daily runs
+const SCHEDULER_TICK_MS = 60 * 60 * 1000; // check hourly
 
 function shuffleInPlace(arr) {
     for (var i = arr.length - 1; i > 0; i--) {
@@ -338,6 +341,15 @@ async function upsertNewNichesFeed(db, keywords) {
 function scheduleNicheRotation(db) {
     async function tick() {
         try {
+            // Don't stack runs — wait until the current Fly scrape finishes
+            const active = await db.collection('scrape_runs').countDocuments({
+                status: { $in: ['queued', 'processing'] }
+            });
+            if (active > 0) {
+                console.log('🌱 Niche rotation skipped — ' + active + ' scrape run(s) still active');
+                return;
+            }
+
             const last = await db.collection('scrape_runs')
                 .find({ trigger: 'schedule' })
                 .sort({ createdAt: -1 })
@@ -348,11 +360,11 @@ function scheduleNicheRotation(db) {
             const due = !lastAt || (Date.now() - lastAt) >= INTERVAL_MS;
 
             if (due) {
-                console.log('🌱 Niche rotation due — starting spontaneous scrape run');
+                console.log('🌱 Daily niche rotation due — starting spontaneous common-keyword scrape');
                 await startScrapeRun(db, { trigger: 'schedule' });
             } else {
                 const nextIn = INTERVAL_MS - (Date.now() - lastAt);
-                console.log('🌱 Next niche rotation in ' + Math.round(nextIn / 3600000) + 'h');
+                console.log('🌱 Next daily niche rotation in ' + Math.round(nextIn / 3600000) + 'h');
             }
         } catch (err) {
             console.error('Niche rotation tick error:', err.message);
@@ -360,7 +372,7 @@ function scheduleNicheRotation(db) {
     }
 
     setTimeout(tick, 15000);
-    setInterval(tick, 6 * 60 * 60 * 1000);
+    setInterval(tick, SCHEDULER_TICK_MS);
 }
 
 module.exports = {

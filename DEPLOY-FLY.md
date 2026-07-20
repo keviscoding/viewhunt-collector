@@ -109,19 +109,12 @@ serves clip uploads. The Studio UI only picks in/out points; it does not trim on
 
 ## Niche keyword scraper (on Fly)
 
-Every **3 days** (checked every 6h on DO boot), ViewHunt picks **12–18 spontaneous
+Every **day** (checked hourly on DO boot), ViewHunt picks **15–25 spontaneous
 ultra-common keywords** (prepositions / auxiliaries / fillers — not niche nouns),
 then starts a `viewhunt-scraper` Fly Machine (Puppeteer YouTube Shorts search).
-Per-keyword channel cap is **off by default** (scroll until results dry up).
-After scrape, Fly runs the **full extension enrichment pipeline**:
-resolve handles → YouTube API subscriber/avg/ratio → enhanced recent-Shorts
-analysis → min-avg-views filter → `POST /api/channels/bulk`.
-
-Requires `YOUTUBE_API_KEY` on DO (passed into the Fly machine). Optional:
-`SCRAPE_MIN_VIEW_THRESHOLD` (default 0), `SCRAPE_ENHANCED_ANALYSIS=0` to skip
-enhanced step.
-
-**YouTube search API “fallback scrape” is disabled** — discovery is Puppeteer only.
+Every keyword in the run is scraped; every unique channel is enriched in memory-safe
+batches (nothing dropped). Manual admin runs can pass larger keyword lists (e.g. 50)
+and those are also processed in full.
 
 Also (admin JWT / Admin Panel in the app):
 - `POST /api/channels/niche-scrape` — run now

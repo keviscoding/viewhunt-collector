@@ -49,7 +49,7 @@ function testTrial() {
 function testNicheExports() {
     assert.ok(Array.isArray(niche.DEFAULT_WORD_POOL));
     assert.ok(niche.DEFAULT_WORD_POOL.length > 100);
-    assert.strictEqual(niche.INTERVAL_MS, 3 * 24 * 60 * 60 * 1000);
+    assert.strictEqual(niche.INTERVAL_MS, 24 * 60 * 60 * 1000);
     assert.strictEqual(typeof niche.startScrapeRun, 'function');
     assert.strictEqual(typeof niche.scheduleNicheRotation, 'function');
     console.log('✓ niche scheduler exports + spontaneous keywords');
