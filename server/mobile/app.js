@@ -1067,18 +1067,8 @@ class ViewHuntApp {
             `<img src="${avatarUrl}" alt="${this.escapeHtml(channelName)}" class="channel-avatar-img">` :
             `<div class="channel-avatar-letter">${avatarLetter}</div>`;
 
-        // Create thumbnail HTML
-        const thumbnailUrl = channel.thumbnail_url || channel.thumbnailUrl;
-        const thumbnailHtml = thumbnailUrl ? 
-            `<div class="video-thumbnail">
-                <img src="${thumbnailUrl}" alt="Video thumbnail" class="thumbnail-img" loading="lazy">
-                <div class="thumbnail-overlay">
-                    <span class="play-icon">▶</span>
-                </div>
-            </div>` : '';
-
+        // No large hero/play thumbnail — Recent Shorts strip is the visual focus
         card.innerHTML = `
-            ${thumbnailHtml}
             <div class="channel-header">
                 <div class="channel-avatar">${avatarHtml}</div>
                 <div class="channel-info">
