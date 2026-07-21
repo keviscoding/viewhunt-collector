@@ -492,8 +492,9 @@
 
     function promptTrialExhausted() {
         showUpgradeModal({
-            message: 'Your free trial ranking videos are used up (3 videos or 7 days). End your free trial early to start billing on your plan and keep cooking — or pick a plan below.',
-            showEndStripeTrial: true
+            message: 'Your free ranking videos are used up. End your Stripe trial now to start billing on your plan today — you will be charged the plan price (not $0).',
+            showEndStripeTrial: true,
+            billingNow: true
         });
     }
 
@@ -544,9 +545,10 @@
         if (!modal) return;
         var title = document.getElementById('upgrade-modal-title');
         var sub = document.getElementById('upgrade-modal-sub');
+        var billingNow = !!(opts.billingNow || opts.showEndStripeTrial || window._stripeTrialing);
         if (title) {
-            title.textContent = (opts.showEndStripeTrial || window._stripeTrialing)
-                ? 'End trial to keep cooking'
+            title.textContent = billingNow
+                ? 'Start your plan today'
                 : 'Keep the Shorts Challenge going';
         }
         if (sub && opts.message) sub.textContent = opts.message;
@@ -556,8 +558,36 @@
             endBtn.style.display = showEnd ? '' : 'none';
             if (showEnd) {
                 endBtn.className = 'btn btn-green';
-                endBtn.textContent = 'End free trial early & start plan now';
+                endBtn.textContent = 'End free trial & charge my plan now';
             }
+        }
+        // Plan buttons: pay today when ending trial / exhausted — never another 7-day $0 checkout
+        modal.querySelectorAll('.upgrade-plan-btn').forEach(function(btn) {
+            btn.dataset.billingNow = billingNow ? '1' : '0';
+            var plan = btn.getAttribute('data-plan');
+            var strong = btn.querySelector('strong');
+            var span = btn.querySelector('span');
+            if (billingNow) {
+                if (plan === 'starter' && strong) strong.textContent = 'Starter · $29/mo — pay today';
+                if (plan === 'creator' && strong) strong.textContent = 'Creator · $59/mo — pay today';
+                if (span) span.textContent = 'No free trial — billing starts immediately';
+                // If already on Stripe trial, hide plan pickers — ending trial is the path
+                btn.style.display = window._stripeTrialing ? 'none' : '';
+            } else {
+                if (plan === 'starter' && strong) strong.textContent = 'Starter · $29/mo';
+                if (plan === 'creator' && strong) strong.textContent = 'Creator · $59/mo';
+                if (plan === 'starter' && span) span.textContent = '30 videos/mo — post every day';
+                if (plan === 'creator' && span) span.textContent = 'Post 2× a day or on 2 channels';
+                btn.style.display = '';
+            }
+        });
+        var note = modal.querySelector('.upgrade-modal-note');
+        if (note) {
+            note.textContent = billingNow
+                ? (window._stripeTrialing
+                    ? 'This ends your current Stripe trial and starts charging your saved card today.'
+                    : 'Checkout will charge your card today — no 7-day free trial on this step.')
+                : 'Stripe saves your card and charges after the 7-day plan trial unless you cancel.';
         }
         modal.classList.remove('hidden');
     }
@@ -567,16 +597,30 @@
         if (modal) modal.classList.add('hidden');
     }
 
-    async function startPlanCheckout(plan) {
+    async function startPlanCheckout(plan, opts) {
+        opts = opts || {};
+        // Already on Stripe trial — ending it bills the current plan; don't open another trial checkout
+        if (window._stripeTrialing && !opts.forceNewCheckout) {
+            await endStripeTrialEarly();
+            return;
+        }
         try {
-            // Persist project so return from Stripe lands back on the same ranking draft
             await saveDraftNow();
+            var billingNow = !!opts.startBillingNow || opts.billingNow === true;
             var res = await apiFetch('/api/subscription/create-plan-checkout', {
                 method: 'POST',
                 headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
-                body: JSON.stringify({ plan: plan, returnTo: '/studio/ranking' })
+                body: JSON.stringify({
+                    plan: plan,
+                    returnTo: '/studio/ranking',
+                    startBillingNow: billingNow
+                })
             });
             var data = await res.json();
+            if (res.status === 409 && data.useEndTrialEarly) {
+                await endStripeTrialEarly();
+                return;
+            }
             if (data.url) {
                 window.location.href = data.url;
                 return;
@@ -591,7 +635,7 @@
         var endBtn = document.getElementById('btn-end-stripe-trial');
         if (endBtn) {
             endBtn.disabled = true;
-            endBtn.textContent = 'Starting plan…';
+            endBtn.textContent = 'Starting billing…';
         }
         try {
             var res = await apiFetch('/api/subscription/end-trial-early', {
@@ -600,10 +644,12 @@
                 body: '{}'
             });
             var data = await res.json();
-            if (data.needsCheckout) {
+            if (data.needsCheckout || data.startBillingNow) {
+                // No existing Stripe trial sub — open paid checkout (no free trial)
                 showUpgradeModal({
-                    message: 'Start a plan first — we will save your card for the 7-day trial.',
-                    showEndStripeTrial: false
+                    message: 'Choose a plan to start billing today. This is not another free trial — you will be charged now.',
+                    showEndStripeTrial: false,
+                    billingNow: true
                 });
                 return;
             }
@@ -611,7 +657,7 @@
                 alert(data.error || 'Could not end trial');
                 return;
             }
-            alert(data.message || 'Trial ended — your plan is now active. You can cook with credits.');
+            alert(data.message || 'Trial ended — your plan is now billing. You can cook with credits.');
             hideUpgradeModal();
             window._stripeTrialing = false;
             window._stripePaidActive = true;
@@ -623,7 +669,7 @@
         } finally {
             if (endBtn) {
                 endBtn.disabled = false;
-                endBtn.textContent = 'End free trial early & start plan now';
+                endBtn.textContent = 'End free trial & charge my plan now';
                 endBtn.className = 'btn btn-green';
             }
         }
@@ -640,7 +686,8 @@
         }
         document.querySelectorAll('.upgrade-plan-btn').forEach(function(btn) {
             btn.addEventListener('click', function() {
-                startPlanCheckout(btn.getAttribute('data-plan'));
+                var billingNow = btn.dataset.billingNow === '1';
+                startPlanCheckout(btn.getAttribute('data-plan'), { startBillingNow: billingNow });
             });
         });
         var endBtn = document.getElementById('btn-end-stripe-trial');

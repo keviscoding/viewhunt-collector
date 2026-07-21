@@ -4004,7 +4004,7 @@ app.post('/api/subscription/create-plan-checkout', authenticateToken, async (req
     try {
         if (!stripe) return res.status(500).json({ error: 'Payment system not configured' });
 
-        const { plan, returnTo } = req.body;
+        const { plan, returnTo, startBillingNow } = req.body;
         const validPlans = {
             starter: process.env.STRIPE_PRICE_STARTER,
             creator: process.env.STRIPE_PRICE_CREATOR,
@@ -4027,6 +4027,23 @@ app.post('/api/subscription/create-plan-checkout', authenticateToken, async (req
         const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
         if (!user) return res.status(404).json({ error: 'User not found' });
 
+        // Already on a Stripe trial — ending it starts billing; do not open another 7-day checkout
+        var existingSubId = user.subscription && user.subscription.stripeSubscriptionId;
+        if (existingSubId) {
+            try {
+                var existingSub = await stripe.subscriptions.retrieve(existingSubId);
+                if (existingSub.status === 'trialing') {
+                    return res.status(409).json({
+                        error: 'You already have a free trial subscription. End it early to start billing now.',
+                        useEndTrialEarly: true,
+                        status: existingSub.status
+                    });
+                }
+            } catch (subLookupErr) {
+                console.warn('Existing sub lookup for checkout:', subLookupErr.message);
+            }
+        }
+
         // Get or create Stripe customer
         var customerId = user.subscription?.stripeCustomerId;
         if (!customerId) {
@@ -4042,7 +4059,26 @@ app.post('/api/subscription/create-plan-checkout', authenticateToken, async (req
             );
         }
 
+        // Skip Stripe trial if client asks to pay today, or user already used free ranking allotment
+        var trialStatus = trialHelper.getTrialStatus(user);
+        var usedFreeRanking = !!(trialStatus && (
+            trialStatus.rankingVideosUsed >= (trialStatus.rankingVideosLimit || 3) ||
+            trialStatus.reason === 'videos_exhausted' ||
+            trialStatus.reason === 'exhausted' ||
+            trialStatus.reason === 'expired' ||
+            trialStatus.status === 'exhausted'
+        ));
+        var billNow = !!startBillingNow || usedFreeRanking;
+
         var appBase = process.env.APP_URL || 'https://viewhunt.app';
+        var subscriptionData = {
+            metadata: { userId: user._id.toString(), plan: plan, returnTo: safeReturn }
+        };
+        if (!billNow) {
+            // First-time card collect — 7-day plan trial
+            subscriptionData.trial_period_days = trialHelper.STRIPE_TRIAL_DAYS || 7;
+        }
+
         const session = await stripe.checkout.sessions.create({
             customer: customerId,
             payment_method_types: ['card'],
@@ -4053,15 +4089,12 @@ app.post('/api/subscription/create-plan-checkout', authenticateToken, async (req
             metadata: {
                 userId: user._id.toString(),
                 plan: plan,
-                returnTo: safeReturn
+                returnTo: safeReturn,
+                startBillingNow: billNow ? '1' : '0'
             },
             allow_promotion_codes: true,
             billing_address_collection: 'auto',
-            // 7-day free trial on Starter / Creator / Studio (card collected, charged after trial)
-            subscription_data: {
-                trial_period_days: trialHelper.STRIPE_TRIAL_DAYS || 7,
-                metadata: { userId: user._id.toString(), plan: plan, returnTo: safeReturn }
-            }
+            subscription_data: subscriptionData
         });
 
         // Update user's plan in DB
@@ -4070,7 +4103,12 @@ app.post('/api/subscription/create-plan-checkout', authenticateToken, async (req
             { $set: { 'subscription.plan': plan, updated_at: new Date() } }
         );
 
-        res.json({ success: true, url: session.url, sessionId: session.id });
+        res.json({
+            success: true,
+            url: session.url,
+            sessionId: session.id,
+            billingNow: billNow
+        });
     } catch (error) {
         console.error('Plan checkout error:', error);
         res.status(500).json({ error: 'Failed to create checkout session' });
@@ -4085,28 +4123,107 @@ app.post('/api/subscription/end-trial-early', authenticateToken, async (req, res
         const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
         if (!user) return res.status(404).json({ error: 'User not found' });
 
-        const subId = user.subscription && user.subscription.stripeSubscriptionId;
+        var subId = user.subscription && user.subscription.stripeSubscriptionId;
+        var customerId = user.subscription && user.subscription.stripeCustomerId;
+
+        // Recover subscription id from Stripe customer if DB is missing it
+        if (!subId && customerId) {
+            try {
+                var listed = await stripe.subscriptions.list({
+                    customer: customerId,
+                    status: 'trialing',
+                    limit: 5
+                });
+                if (listed.data && listed.data.length) {
+                    subId = listed.data[0].id;
+                    await db.collection('users').updateOne(
+                        { _id: user._id },
+                        { $set: { 'subscription.stripeSubscriptionId': subId, updated_at: new Date() } }
+                    );
+                }
+            } catch (listErr) {
+                console.warn('Trial sub list by customer failed:', listErr.message);
+            }
+        }
+
+        if (!subId && user.email) {
+            try {
+                var customers = await stripe.customers.list({ email: user.email, limit: 3 });
+                for (var ci = 0; ci < customers.data.length && !subId; ci++) {
+                    var cust = customers.data[ci];
+                    var custSubs = await stripe.subscriptions.list({
+                        customer: cust.id,
+                        status: 'trialing',
+                        limit: 5
+                    });
+                    if (custSubs.data && custSubs.data.length) {
+                        subId = custSubs.data[0].id;
+                        customerId = cust.id;
+                        await db.collection('users').updateOne(
+                            { _id: user._id },
+                            {
+                                $set: {
+                                    'subscription.stripeSubscriptionId': subId,
+                                    'subscription.stripeCustomerId': customerId,
+                                    updated_at: new Date()
+                                }
+                            }
+                        );
+                    }
+                }
+            } catch (emailLookupErr) {
+                console.warn('Trial sub lookup by email failed:', emailLookupErr.message);
+            }
+        }
+
         if (!subId) {
             return res.status(400).json({
-                error: 'No Stripe subscription on file. Start a plan checkout first.',
-                needsCheckout: true
+                error: 'No Stripe trial subscription on file. Choose a plan to start billing today (no free trial).',
+                needsCheckout: true,
+                startBillingNow: true
             });
         }
 
         const subscription = await stripe.subscriptions.retrieve(subId);
         if (subscription.status !== 'trialing') {
+            if (subscription.status === 'active') {
+                await db.collection('users').updateOne(
+                    { _id: user._id },
+                    {
+                        $set: {
+                            'subscription.status': 'active',
+                            'subscription.hasAccess': true,
+                            'subscription.trialEnd': null,
+                            updated_at: new Date()
+                        }
+                    }
+                );
+                try { await trialHelper.convertTrial(db, user._id); } catch (e) {}
+                return res.json({
+                    success: true,
+                    status: 'active',
+                    message: 'Your plan is already active — you can cook with credits.'
+                });
+            }
             return res.status(400).json({
                 error: 'Subscription is not in a free trial.',
                 status: subscription.status
             });
         }
 
-        const updated = await stripe.subscriptions.update(subId, { trial_end: 'now' });
+        // End trial immediately — Stripe invoices and moves status to active
+        const updated = await stripe.subscriptions.update(subId, {
+            trial_end: 'now',
+            proration_behavior: 'none'
+        });
         await db.collection('users').updateOne(
             { _id: user._id },
             {
                 $set: {
-                    'subscription.status': updated.status,
+                    'subscription.status': updated.status || 'active',
+                    'subscription.hasAccess': true,
+                    'subscription.type': 'stripe',
+                    'subscription.stripeSubscriptionId': subId,
                     'subscription.trialEnd': null,
                     updated_at: new Date()
                 }
@@ -4117,11 +4234,14 @@ app.post('/api/subscription/end-trial-early', authenticateToken, async (req, res
         res.json({
             success: true,
             status: updated.status,
-            message: 'Trial ended — your plan is now billing.'
+            message: 'Trial ended — your plan is now billing. You can keep cooking with credits.'
         });
     } catch (error) {
         console.error('End trial early error:', error);
-        res.status(500).json({ error: 'Failed to end trial early' });
+        res.status(500).json({
+            error: error.message || 'Failed to end trial early',
+            stripeCode: error.code || null
+        });
     }
 });
 
