@@ -19,7 +19,7 @@ APP_URL=https://your-app.ondigitalocean.app
 FLY_API_TOKEN=<fly deploy token or org token>
 FLY_ASSEMBLY_APP=viewhunt-assembly
 FLY_SCRAPER_APP=viewhunt-scraper
-FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXX8NGPQ02CZ2VBBYW9VB1TB
+FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KY2CEK83QDWSMC5F7YQD1ETJ
 # Fly is ON by default. Set FLY_ASSEMBLY_ENABLED=0 to force DigitalOcean-only assembly.
 # If Fly is silent ~30s, DO still falls back locally.
 # SPACES_* must be set or finishes show MIME errors (broken local URL).
@@ -85,7 +85,7 @@ Set `FLY_ASSEMBLY_IMAGE` / `FLY_SCRAPER_IMAGE` to the image refs printed by Fly
 3. `APP_INTERNAL_URL=https://YOUR-APP.ondigitalocean.app` — **critical**  
    Copy from DigitalOcean App → Overview (default ingress). Fly callbacks/downloads
    should use this so Cloudflare on the custom domain does not hang Fly POSTs.
-4. `FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KXX8NGPQ02CZ2VBBYW9VB1TB…` (full registry tag)
+4. `FLY_ASSEMBLY_IMAGE=registry.fly.io/viewhunt-assembly:deployment-01KY2CEK83QDWSMC5F7YQD1ETJ` (full registry tag)
 5. **Mongo Atlas → Network Access → allow `0.0.0.0/0`** (or Fly egress IPs).  
    If Atlas blocks Fly, the worker cannot load the job or write heartbeats.
 

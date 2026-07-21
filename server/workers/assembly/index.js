@@ -357,22 +357,40 @@ async function main() {
     const localPath = path.join(assembler.outputDir, localName);
     let videoUrl = result.videoUrl;
     let durableUpload = false;
+    let spacesFailReason = null;
+    let appFailReason = null;
 
-    if (fs.existsSync(localPath) && storage.isConfigured()) {
+    if (!fs.existsSync(localPath)) {
+        throw new Error('Assembled file missing on Fly disk: ' + localPath);
+    }
+
+    if (!storage.isConfigured()) {
+        spacesFailReason = 'Spaces not configured on Fly (missing SPACES_KEY/SECRET/BUCKET or AWS_* equivalents)';
+        console.error(spacesFailReason, {
+            hasKey: !!(process.env.SPACES_KEY || process.env.AWS_ACCESS_KEY_ID),
+            hasSecret: !!(process.env.SPACES_SECRET || process.env.AWS_SECRET_ACCESS_KEY),
+            bucket: process.env.SPACES_BUCKET || process.env.AWS_S3_BUCKET_NAME || '(none)',
+            endpoint: process.env.SPACES_ENDPOINT || '(none)'
+        });
+    } else {
         try {
             const uploaded = await storage.uploadFile(localPath, 'studio/ranking-final');
             if (uploaded) {
                 videoUrl = uploaded;
                 durableUpload = true;
                 console.log('Uploaded result to object storage:', uploaded);
+            } else {
+                spacesFailReason = 'Spaces upload returned empty URL (check SPACES_ENDPOINT/BUCKET and public ACL)';
+                console.error(spacesFailReason);
             }
         } catch (spacesErr) {
-            console.error(
-                'Object storage upload failed:',
-                storage.formatS3Error ? storage.formatS3Error(spacesErr) : (spacesErr && spacesErr.message)
-            );
+            spacesFailReason = storage.formatS3Error
+                ? storage.formatS3Error(spacesErr)
+                : ((spacesErr && spacesErr.message) || String(spacesErr));
+            console.error('Object storage upload failed:', spacesFailReason);
         }
     }
+
     // Fallback: POST finished MP4 to DigitalOcean as raw binary (avoids base64 413)
     const localBytes = fs.existsSync(localPath) ? fs.statSync(localPath).size : 0;
     if (!durableUpload && fs.existsSync(localPath) && localBytes > 0 && (APP_INTERNAL_URL || APP_URL)) {
@@ -396,23 +414,33 @@ async function main() {
                 if (data.videoUrl) {
                     videoUrl = data.videoUrl;
                     durableUpload = true;
+                } else {
+                    appFailReason = 'App binary upload OK but no videoUrl in response';
                 }
                 console.log('Uploaded result via app:', videoUrl);
             } else {
                 const errText = await uploadRes.text().catch(function() { return ''; });
-                console.error('App binary upload HTTP', uploadRes.status, errText.slice(0, 300));
+                appFailReason = 'App binary upload HTTP ' + uploadRes.status + ': ' + errText.slice(0, 200);
+                console.error(appFailReason);
             }
         } catch (uploadErr) {
-            console.warn('Could not upload result to app:', uploadErr.message);
+            appFailReason = 'App binary upload error: ' + (uploadErr && uploadErr.message);
+            console.warn(appFailReason);
         }
+    } else if (!durableUpload && !(APP_INTERNAL_URL || APP_URL)) {
+        appFailReason = 'APP_INTERNAL_URL/APP_URL missing — cannot fall back to DO binary upload';
+        console.error(appFailReason);
     }
 
     // Fly disk is ephemeral — never report complete without a durable URL
     if (!durableUpload || !videoUrl) {
-        throw new Error(
-            'Finished video could not be uploaded to Spaces (check SPACES_KEY/SECRET/BUCKET/ENDPOINT on DigitalOcean). ' +
-            'Local path is not downloadable after the Fly machine exits.'
-        );
+        const parts = [
+            'Finished video could not be uploaded to durable storage.',
+            spacesFailReason ? ('Spaces: ' + spacesFailReason) : null,
+            appFailReason ? ('App fallback: ' + appFailReason) : null,
+            'Set SPACES_KEY/SECRET/BUCKET/ENDPOINT on DigitalOcean (passed to Fly). Local path is not downloadable after the Fly machine exits.'
+        ].filter(Boolean);
+        throw new Error(parts.join(' '));
     }
 
     const hasCommentary = commentaryData.length > 0;

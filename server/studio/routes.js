@@ -872,7 +872,7 @@ router.post('/storytelling/generate-video', requireAuth, studioGenerateLimiter, 
 
 // === RANKING FORMAT ENDPOINTS ===
 
-// Multer for ranking video uploads (up to 50MB per clip)
+// Multer for ranking video uploads (up to 100MB per clip)
 const rankingUploadDir = path.join(__dirname, '../public/studio/ranking-uploads');
 if (!fs.existsSync(rankingUploadDir)) {
     fs.mkdirSync(rankingUploadDir, { recursive: true });
@@ -885,7 +885,7 @@ const rankingUpload = multer({
             cb(null, `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
         }
     }),
-    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+    limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
     fileFilter: (req, file, cb) => {
         if (file.mimetype.startsWith('video/')) cb(null, true);
         else cb(new Error('Only video files allowed'));
@@ -897,7 +897,7 @@ router.post('/ranking/upload', requireAuth, function(req, res) {
     rankingUpload.single('clip')(req, res, async function(err) {
         if (err) {
             if (err.code === 'LIMIT_FILE_SIZE') {
-                return res.status(413).json({ error: 'File too large. Maximum 50MB per clip.' });
+                return res.status(413).json({ error: 'File too large. Maximum 100MB per clip.' });
             }
             return res.status(400).json({ error: err.message });
         }
@@ -1545,9 +1545,9 @@ router.post('/ranking/import-url', requireAuth, urlImportLimiter, async (req, re
         }
 
         var stat = fs.statSync(outPath);
-        if (stat.size > 50 * 1024 * 1024) {
+        if (stat.size > 100 * 1024 * 1024) {
             fs.unlinkSync(outPath);
-            return res.status(413).json({ error: 'Downloaded video too large (over 50MB). Try a shorter clip.' });
+            return res.status(413).json({ error: 'Downloaded video too large (over 100MB). Try a shorter clip.' });
         }
         if (stat.size < 1000) {
             try { fs.unlinkSync(outPath); } catch (e) {}
@@ -2067,6 +2067,9 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                         { _id: user._id },
                         { $set: { 'subscription.status': liveSub.status, updated_at: new Date() } }
                     );
+                    if (!user.subscription) user.subscription = {};
+                    user.subscription.status = liveSub.status;
+                    subStatus = liveSub.status;
                 }
             } catch (stripeErr) {
                 console.warn('Stripe sub check for assemble:', stripeErr.message);
@@ -2084,10 +2087,24 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
         var trialActive = trialHelper.canUseRankingTrial(user);
         var usingTrial = false;
         var rankingCreditsCharged = 0;
+        // Refresh sub status after possible Stripe live sync above
+        subStatus = user && user.subscription && user.subscription.status;
 
         if (trialActive) {
             usingTrial = true;
             console.log('🏆 Ranking assemble via trial for user ' + userId);
+        } else if (subStatus === 'trialing') {
+            // App free ranking allotment used up while still on Stripe trial —
+            // do not silently burn credits; prompt end-trial-early / start paid
+            var trialStatusBlock = trialHelper.getTrialStatus(user);
+            return res.status(402).json({
+                error: 'Free trial ranking videos used',
+                trialExhausted: true,
+                upgradeRequired: true,
+                showEndStripeTrial: true,
+                trial: trialStatusBlock,
+                message: 'Your free trial ranking videos are used up (3 videos or 7 days). End your free trial early to start your plan and keep cooking.'
+            });
         } else {
             var check = await credits.checkCredits(userId, 'ranking_assembly', 1);
             if (!check.allowed) {
@@ -2515,7 +2532,7 @@ router.post('/internal/ranking-result', express.json({ limit: '200mb' }), async 
 });
 
 // Internal: Fly worker uploads assembled MP4 as raw binary (avoids base64 413 on DO)
-router.post('/internal/ranking-result-bin', express.raw({ type: 'application/octet-stream', limit: '80mb' }), async (req, res) => {
+router.post('/internal/ranking-result-bin', express.raw({ type: 'application/octet-stream', limit: '200mb' }), async (req, res) => {
     try {
         var secret = req.headers['x-worker-secret'];
         if (!process.env.WORKER_SECRET || secret !== process.env.WORKER_SECRET) {

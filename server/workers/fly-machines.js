@@ -135,13 +135,16 @@ async function startAssemblyMachine(jobId, payload) {
         return { started: false, reason: 'WORKER_SECRET missing on DigitalOcean' };
     }
 
+    const hasSpacesCreds = !!(env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY && env.AWS_S3_BUCKET_NAME);
+    const hasSpacesEndpoint = !!env.SPACES_ENDPOINT;
     console.log('Starting Fly assembly machine', {
         app,
         image: image.slice(0, 100),
         jobId: String(jobId),
         hasGemini: !!env.GEMINI_API_KEY,
         hasOpenAI: !!env.OPENAI_API_KEY,
-        hasSpaces: !!(env.AWS_ACCESS_KEY_ID && env.AWS_S3_BUCKET_NAME),
+        hasSpaces: hasSpacesCreds,
+        hasSpacesEndpoint: hasSpacesEndpoint,
         spacesEndpoint: env.SPACES_ENDPOINT || '(auto/none)',
         spacesRegion: env.AWS_REGION || '',
         hasWorkerSecret: true,
@@ -149,8 +152,16 @@ async function startAssemblyMachine(jobId, payload) {
         appInternal: appInternal || '(none — set APP_INTERNAL_URL to *.ondigitalocean.app)',
         mongoHost: mongoUri ? ((mongoUri.match(/@([^/]+)/) || [])[1] || '(local)') : '(none)'
     });
-    if (env.AWS_ACCESS_KEY_ID && env.AWS_S3_BUCKET_NAME && !env.SPACES_ENDPOINT) {
+    if (!hasSpacesCreds) {
+        console.error(
+            'WARNING: Spaces credentials missing on DO — Fly finish upload will fail unless APP_INTERNAL_URL binary fallback works. ' +
+            'Set SPACES_KEY, SPACES_SECRET, SPACES_BUCKET, SPACES_ENDPOINT=https://REGION.digitaloceanspaces.com'
+        );
+    } else if (!hasSpacesEndpoint) {
         console.warn('SPACES_ENDPOINT missing — Fly worker may fail Spaces upload (set https://REGION.digitaloceanspaces.com)');
+    }
+    if (!hasSpacesCreds && !appInternal && !appUrl) {
+        console.error('WARNING: No Spaces and no APP_URL/APP_INTERNAL_URL — finished videos cannot be stored durably');
     }
 
     const machine = await flyRequest('POST', '/apps/' + app + '/machines', {

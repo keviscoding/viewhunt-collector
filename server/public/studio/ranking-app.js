@@ -332,6 +332,7 @@
                     pf.style.width = '100%'; pt.textContent = 'Done!';
                     activeJobId = null;
                     try { localStorage.removeItem('viewhunt_ranking_active_job'); } catch (e) {}
+                    if (btn) delete btn.dataset.busy;
                     setTimeout(function() { showResult(pollData.result); }, 400);
                     loadCredits();
                     return;
@@ -502,19 +503,27 @@
         } else if (trialInfo && trialInfo.reason && trialInfo.reason !== 'converted') {
             badge.style.display = '';
             badge.style.color = '#f87171';
-            el.textContent = 'Start free challenge';
+            el.textContent = (trialInfo.reason === 'videos_exhausted' || trialInfo.rankingVideosLeft === 0)
+                ? '0 ranking left — end trial to continue'
+                : 'Start free challenge';
             if (upgradeBtn) {
                 upgradeBtn.style.display = '';
-                upgradeBtn.textContent = 'Start free challenge';
+                upgradeBtn.textContent = window._stripeTrialing ? 'End trial early' : 'Start free challenge';
             }
         } else {
             badge.style.display = 'none';
             if (upgradeBtn) upgradeBtn.style.display = 'none';
         }
         var btn = document.getElementById('btn-assemble');
-        if (btn && !btn.disabled) {
+        if (btn) {
             var enableCommentary = document.getElementById('commentary-toggle') && document.getElementById('commentary-toggle').checked;
-            btn.textContent = assembleButtonLabel(enableCommentary);
+            var trialBlocked = !!(trialInfo && !trialInfo.active && window._stripeTrialing && !window._stripePaidActive);
+            if (!btn.dataset.busy) {
+                btn.disabled = trialBlocked;
+                btn.textContent = trialBlocked
+                    ? 'End trial to cook more'
+                    : assembleButtonLabel(enableCommentary);
+            }
         }
     }
 
@@ -603,7 +612,10 @@
                 showUpgradeModal({
                     message: (trialInfo && trialInfo.active)
                         ? 'You still have trial videos left — or start Creator now with a 7-day Stripe trial (card saved).'
-                        : 'Your free trial has ended. Pick a plan to keep posting ranking Shorts.'
+                        : (window._stripeTrialing
+                            ? 'Your free trial ranking videos are used up. End your free trial early to start your plan and keep cooking.'
+                            : 'Your free trial has ended. Pick a plan to keep posting ranking Shorts.'),
+                    showEndStripeTrial: !!window._stripeTrialing
                 });
             });
         }
@@ -611,7 +623,10 @@
         if (upgradeBtn) {
             upgradeBtn.addEventListener('click', function() {
                 showUpgradeModal({
-                    message: 'Start Creator to post every day. Card collected at checkout — 7-day plan trial, then billed.'
+                    message: window._stripeTrialing && trialInfo && !trialInfo.active
+                        ? 'Your free trial ranking videos are used up. End your free trial early to start your plan and keep cooking.'
+                        : 'Start Creator to post every day. Card collected at checkout — 7-day plan trial, then billed.',
+                    showEndStripeTrial: !!window._stripeTrialing
                 });
             });
         }
@@ -643,13 +658,20 @@
                         reason: t.reason
                     };
                     if (me.subscription && me.subscription.type === 'trial') trialInfo.active = true;
+                    window._stripeTrialing = !!(me.subscription && me.subscription.status === 'trialing');
+                    window._stripePaidActive = !!(me.subscription && me.subscription.status === 'active' && me.subscription.hasAccess);
                     if (me.subscription && me.subscription.type === 'stripe' && me.subscription.hasAccess) {
-                        // Keep stripeTrialing flag for "end trial early" even when app trial is converted
-                        window._stripeTrialing = me.subscription.status === 'trialing';
-                        trialInfo = null;
-                    } else {
-                        window._stripeTrialing = me.subscription && me.subscription.status === 'trialing';
+                        if (me.subscription.status === 'active') {
+                            // Paid plan — clear app-trial badge; credits path applies
+                            trialInfo = null;
+                        } else if (me.subscription.status === 'trialing' && trialInfo && !trialInfo.active) {
+                            // Stripe still trialing but app ranking allotment exhausted
+                            trialInfo.reason = trialInfo.reason || 'videos_exhausted';
+                        }
                     }
+                } else {
+                    window._stripeTrialing = !!(me.subscription && me.subscription.status === 'trialing');
+                    window._stripePaidActive = !!(me.subscription && me.subscription.status === 'active' && me.subscription.hasAccess);
                 }
                 updateTrialBadge();
             }
@@ -690,7 +712,7 @@
     }
 
     async function uploadFile(file) {
-        if (file.size > 50 * 1024 * 1024) { alert('File too large: ' + file.name + '. Maximum 50MB per clip.'); return; }
+        if (file.size > 100 * 1024 * 1024) { alert('File too large: ' + file.name + '. Maximum 100MB per clip.'); return; }
         var tempId = 'up-' + Date.now() + Math.random();
         clips.push({ _tempId: tempId, uploading: true, uploadPct: 0, originalName: file.name, filename: null, url: null, duration: 0, originalDuration: 0, label: '', startTime: 0, endTime: 0 });
         renderClipList();
@@ -721,7 +743,7 @@
             };
             xhr.onerror = function() { clips = clips.filter(function(c) { return c._tempId !== tempId; }); alert('Upload failed: Network error.'); renderClipList(); updateNextButton(); resolve(); };
             xhr.ontimeout = function() { clips = clips.filter(function(c) { return c._tempId !== tempId; }); alert('Upload timed out.'); renderClipList(); updateNextButton(); resolve(); };
-            xhr.timeout = 120000; xhr.send(fd);
+            xhr.timeout = 300000; xhr.send(fd);
         });
     }
 
@@ -1553,6 +1575,14 @@
     async function assembleVideo() {
         var btn = document.getElementById('btn-assemble');
         var enableCommentary = document.getElementById('commentary-toggle').checked;
+        if (trialInfo && !trialInfo.active && window._stripeTrialing && !window._stripePaidActive) {
+            showUpgradeModal({
+                message: 'Your free trial ranking videos are used up. End your free trial early to start your plan and keep cooking.',
+                showEndStripeTrial: true
+            });
+            return;
+        }
+        btn.dataset.busy = '1';
         btn.disabled = true; btn.textContent = 'Starting...';
         goToStep(4);
         var pf = document.getElementById('progress-fill'), pt = document.getElementById('progress-text');
@@ -1596,11 +1626,12 @@
             });
             var aData = await aRes.json();
             if (aRes.status === 402 || !aData.success) {
-                if (aRes.status === 402 && (aData.needsCard || aData.upgradeRequired || (aData.trial && !aData.trial.active))) {
+                if (aRes.status === 402 && (aData.needsCard || aData.upgradeRequired || aData.trialExhausted || (aData.trial && !aData.trial.active))) {
                     showUpgradeModal({
                         message: aData.message || (aData.needsCard
                             ? 'Add a card to start your free challenge and cook this video. You will not be charged today.'
-                            : 'Your free trial has ended. Upgrade to continue.')
+                            : 'Your free trial ranking videos are used up. End your free trial early to start your plan and keep cooking.'),
+                        showEndStripeTrial: !!(aData.showEndStripeTrial || aData.trialExhausted || window._stripeTrialing)
                     });
                 }
                 throw new Error(aData.message || aData.error || 'Assembly failed');
@@ -1624,7 +1655,10 @@
             await pollJobUntilDone(jobId, pf, pt, btn, enableCommentary);
         } catch (err) {
             pf.style.width = '0%'; pt.textContent = 'Error: ' + err.message;
-            btn.disabled = false; btn.textContent = assembleButtonLabel(enableCommentary); loadCredits();
+            delete btn.dataset.busy;
+            btn.disabled = false;
+            btn.textContent = assembleButtonLabel(enableCommentary);
+            loadCredits();
         }
     }
 
