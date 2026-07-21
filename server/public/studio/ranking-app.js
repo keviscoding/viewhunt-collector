@@ -475,12 +475,26 @@
     }
 
     function assembleButtonLabel(enableCommentary) {
+        if (isTrialCookBlocked()) {
+            return 'End trial to cook more';
+        }
         if (trialInfo && trialInfo.active) {
             var left = trialInfo.rankingVideosLeft;
             return 'Assemble Video (Trial · ' + left + ' left)';
         }
         var cost = enableCommentary ? 7 : 2;
         return 'Assemble Video (' + cost + ' 💎)';
+    }
+
+    function isTrialCookBlocked() {
+        return !!(trialInfo && !trialInfo.active && window._stripeTrialing && !window._stripePaidActive);
+    }
+
+    function promptTrialExhausted() {
+        showUpgradeModal({
+            message: 'Your free trial ranking videos are used up (3 videos or 7 days). End your free trial early to start billing on your plan and keep cooking — or pick a plan below.',
+            showEndStripeTrial: true
+        });
     }
 
     function updateTrialBadge() {
@@ -493,10 +507,6 @@
             badge.style.color = '';
             el.textContent = trialInfo.rankingVideosLeft + ' ranking left · ' + trialInfo.daysLeft + 'd';
             if (upgradeBtn) {
-                var used = trialInfo.rankingVideosUsed != null
-                    ? trialInfo.rankingVideosUsed
-                    : Math.max(0, 3 - (trialInfo.rankingVideosLeft || 0));
-                upgradeBtn.style.display = used >= 1 ? '' : 'none';
                 upgradeBtn.style.display = '';
                 upgradeBtn.textContent = 'Start free challenge';
             }
@@ -515,14 +525,15 @@
             if (upgradeBtn) upgradeBtn.style.display = 'none';
         }
         var btn = document.getElementById('btn-assemble');
-        if (btn) {
+        if (btn && !btn.dataset.busy) {
             var enableCommentary = document.getElementById('commentary-toggle') && document.getElementById('commentary-toggle').checked;
-            var trialBlocked = !!(trialInfo && !trialInfo.active && window._stripeTrialing && !window._stripePaidActive);
-            if (!btn.dataset.busy) {
-                btn.disabled = trialBlocked;
-                btn.textContent = trialBlocked
-                    ? 'End trial to cook more'
-                    : assembleButtonLabel(enableCommentary);
+            // Keep clickable so it opens the upgrade / end-trial modal (disabled buttons swallow clicks)
+            btn.disabled = false;
+            btn.textContent = assembleButtonLabel(enableCommentary);
+            if (isTrialCookBlocked()) {
+                btn.classList.add('btn-trial-blocked');
+            } else {
+                btn.classList.remove('btn-trial-blocked');
             }
         }
     }
@@ -531,12 +542,22 @@
         opts = opts || {};
         var modal = document.getElementById('upgrade-modal');
         if (!modal) return;
+        var title = document.getElementById('upgrade-modal-title');
         var sub = document.getElementById('upgrade-modal-sub');
+        if (title) {
+            title.textContent = (opts.showEndStripeTrial || window._stripeTrialing)
+                ? 'End trial to keep cooking'
+                : 'Keep the Shorts Challenge going';
+        }
         if (sub && opts.message) sub.textContent = opts.message;
         var endBtn = document.getElementById('btn-end-stripe-trial');
         if (endBtn) {
             var showEnd = opts.showEndStripeTrial != null ? opts.showEndStripeTrial : !!window._stripeTrialing;
             endBtn.style.display = showEnd ? '' : 'none';
+            if (showEnd) {
+                endBtn.className = 'btn btn-green';
+                endBtn.textContent = 'End free trial early & start plan now';
+            }
         }
         modal.classList.remove('hidden');
     }
@@ -567,6 +588,11 @@
     }
 
     async function endStripeTrialEarly() {
+        var endBtn = document.getElementById('btn-end-stripe-trial');
+        if (endBtn) {
+            endBtn.disabled = true;
+            endBtn.textContent = 'Starting plan…';
+        }
         try {
             var res = await apiFetch('/api/subscription/end-trial-early', {
                 method: 'POST',
@@ -575,18 +601,31 @@
             });
             var data = await res.json();
             if (data.needsCheckout) {
-                showUpgradeModal({ message: 'Start a plan first — we will save your card for the 7-day trial.' });
+                showUpgradeModal({
+                    message: 'Start a plan first — we will save your card for the 7-day trial.',
+                    showEndStripeTrial: false
+                });
                 return;
             }
             if (!res.ok) {
                 alert(data.error || 'Could not end trial');
                 return;
             }
-            alert(data.message || 'Trial ended — billing started.');
+            alert(data.message || 'Trial ended — your plan is now active. You can cook with credits.');
             hideUpgradeModal();
-            loadCredits();
+            window._stripeTrialing = false;
+            window._stripePaidActive = true;
+            trialInfo = null;
+            updateTrialBadge();
+            await loadCredits();
         } catch (e) {
             alert('Error: ' + e.message);
+        } finally {
+            if (endBtn) {
+                endBtn.disabled = false;
+                endBtn.textContent = 'End free trial early & start plan now';
+                endBtn.className = 'btn btn-green';
+            }
         }
     }
 
@@ -609,12 +648,14 @@
         var badge = document.getElementById('trial-badge');
         if (badge) {
             badge.addEventListener('click', function() {
+                if (isTrialCookBlocked() || (trialInfo && !trialInfo.active && window._stripeTrialing)) {
+                    promptTrialExhausted();
+                    return;
+                }
                 showUpgradeModal({
                     message: (trialInfo && trialInfo.active)
                         ? 'You still have trial videos left — or start Creator now with a 7-day Stripe trial (card saved).'
-                        : (window._stripeTrialing
-                            ? 'Your free trial ranking videos are used up. End your free trial early to start your plan and keep cooking.'
-                            : 'Your free trial has ended. Pick a plan to keep posting ranking Shorts.'),
+                        : 'Your free trial has ended. Pick a plan to keep posting ranking Shorts.',
                     showEndStripeTrial: !!window._stripeTrialing
                 });
             });
@@ -622,11 +663,13 @@
         var upgradeBtn = document.getElementById('btn-upgrade-trial');
         if (upgradeBtn) {
             upgradeBtn.addEventListener('click', function() {
+                if (isTrialCookBlocked() || window._stripeTrialing) {
+                    promptTrialExhausted();
+                    return;
+                }
                 showUpgradeModal({
-                    message: window._stripeTrialing && trialInfo && !trialInfo.active
-                        ? 'Your free trial ranking videos are used up. End your free trial early to start your plan and keep cooking.'
-                        : 'Start Creator to post every day. Card collected at checkout — 7-day plan trial, then billed.',
-                    showEndStripeTrial: !!window._stripeTrialing
+                    message: 'Start Creator to post every day. Card collected at checkout — 7-day plan trial, then billed.',
+                    showEndStripeTrial: false
                 });
             });
         }
@@ -1304,7 +1347,10 @@
         // Commentary toggle — update assemble button cost + show/hide voice picker + subtitle settings
         document.getElementById('commentary-toggle').addEventListener('change', function() {
             var enableCommentary = this.checked;
-            document.getElementById('btn-assemble').textContent = assembleButtonLabel(enableCommentary);
+            var assembleBtn = document.getElementById('btn-assemble');
+            if (assembleBtn && !assembleBtn.dataset.busy) {
+                assembleBtn.textContent = assembleButtonLabel(enableCommentary);
+            }
             document.getElementById('voice-picker').style.display = this.checked ? '' : 'none';
             document.getElementById('subtitle-settings').style.display = this.checked ? '' : 'none';
             renderPreview('preview-dash');
@@ -1575,11 +1621,8 @@
     async function assembleVideo() {
         var btn = document.getElementById('btn-assemble');
         var enableCommentary = document.getElementById('commentary-toggle').checked;
-        if (trialInfo && !trialInfo.active && window._stripeTrialing && !window._stripePaidActive) {
-            showUpgradeModal({
-                message: 'Your free trial ranking videos are used up. End your free trial early to start your plan and keep cooking.',
-                showEndStripeTrial: true
-            });
+        if (isTrialCookBlocked()) {
+            promptTrialExhausted();
             return;
         }
         btn.dataset.busy = '1';
