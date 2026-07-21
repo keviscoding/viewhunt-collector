@@ -647,10 +647,12 @@
             if (data.needsCheckout || data.startBillingNow) {
                 // No existing Stripe trial sub — open paid checkout (no free trial)
                 showUpgradeModal({
-                    message: 'Choose a plan to start billing today. This is not another free trial — you will be charged now.',
+                    message: 'Choose a plan to start billing today. Checkout will charge your card now — not another 7-day free trial.',
                     showEndStripeTrial: false,
                     billingNow: true
                 });
+                // Auto-start Creator pay-today checkout so they don't click a stale free-trial button
+                await startPlanCheckout('creator', { startBillingNow: true, forceNewCheckout: true });
                 return;
             }
             if (!res.ok) {
@@ -1717,11 +1719,17 @@
             var aData = await aRes.json();
             if (aRes.status === 402 || !aData.success) {
                 if (aRes.status === 402 && (aData.needsCard || aData.upgradeRequired || aData.trialExhausted || (aData.trial && !aData.trial.active))) {
+                    var payNow = !!(aData.startBillingNow || aData.billingNow || aData.trialExhausted || aData.showEndStripeTrial);
+                    // If Stripe already has a trial but DB was missing it, end-trial path after reload
+                    if (aData.showEndStripeTrial || aData.trialExhausted) {
+                        window._stripeTrialing = true;
+                    }
                     showUpgradeModal({
-                        message: aData.message || (aData.needsCard
-                            ? 'Add a card to start your free challenge and cook this video. You will not be charged today.'
-                            : 'Your free trial ranking videos are used up. End your free trial early to start your plan and keep cooking.'),
-                        showEndStripeTrial: !!(aData.showEndStripeTrial || aData.trialExhausted || window._stripeTrialing)
+                        message: aData.message || (payNow
+                            ? 'Start billing today to keep cooking — this is not another free trial.'
+                            : 'Add a card to start your free challenge and cook this video. You will not be charged today.'),
+                        showEndStripeTrial: !!(aData.showEndStripeTrial || aData.trialExhausted || window._stripeTrialing),
+                        billingNow: payNow
                     });
                 }
                 throw new Error(aData.message || aData.error || 'Assembly failed');

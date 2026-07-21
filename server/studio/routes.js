@@ -19,6 +19,83 @@ const trialHelper = require('./trial');
 const taskManager = require('./task-manager');
 const TimelapseGenerator = require('./formats/timelapse/generator');
 const rateLimit = require('express-rate-limit');
+
+/**
+ * Attach an existing Stripe subscription onto the user doc when DB is missing it.
+ * Prevents the needsCard → another 7-day free checkout loop.
+ */
+async function syncStripeSubscriptionToUser(db, user) {
+    if (!user || !process.env.STRIPE_SECRET_KEY) return user;
+    var stripeLive = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    var subId = user.subscription && user.subscription.stripeSubscriptionId;
+    var customerId = user.subscription && user.subscription.stripeCustomerId;
+    var found = null;
+
+    if (subId) {
+        try {
+            found = await stripeLive.subscriptions.retrieve(subId);
+        } catch (e) {
+            console.warn('syncStripe: retrieve sub failed:', e.message);
+        }
+    }
+
+    if (!found && customerId) {
+        try {
+            var byCust = await stripeLive.subscriptions.list({ customer: customerId, limit: 10 });
+            found = (byCust.data || []).find(function(s) {
+                return s.status === 'active' || s.status === 'trialing';
+            }) || null;
+        } catch (e) {
+            console.warn('syncStripe: list by customer failed:', e.message);
+        }
+    }
+
+    if (!found && user.email) {
+        try {
+            var customers = await stripeLive.customers.list({ email: user.email, limit: 5 });
+            for (var i = 0; i < customers.data.length && !found; i++) {
+                var cust = customers.data[i];
+                var listed = await stripeLive.subscriptions.list({ customer: cust.id, limit: 10 });
+                found = (listed.data || []).find(function(s) {
+                    return s.status === 'active' || s.status === 'trialing';
+                }) || null;
+                if (found) customerId = cust.id;
+            }
+        } catch (e) {
+            console.warn('syncStripe: list by email failed:', e.message);
+        }
+    }
+
+    if (!found) return user;
+
+    if (!user.subscription) user.subscription = {};
+    user.subscription.status = found.status;
+    user.subscription.hasAccess = found.status === 'active' || found.status === 'trialing';
+    user.subscription.type = 'stripe';
+    user.subscription.stripeSubscriptionId = found.id;
+    if (customerId || found.customer) {
+        user.subscription.stripeCustomerId = customerId || found.customer;
+    }
+    user.subscription.trialEnd = found.trial_end ? new Date(found.trial_end * 1000) : null;
+
+    await db.collection('users').updateOne(
+        { _id: user._id },
+        {
+            $set: {
+                'subscription.status': user.subscription.status,
+                'subscription.hasAccess': user.subscription.hasAccess,
+                'subscription.type': 'stripe',
+                'subscription.stripeSubscriptionId': user.subscription.stripeSubscriptionId,
+                'subscription.stripeCustomerId': user.subscription.stripeCustomerId,
+                'subscription.trialEnd': user.subscription.trialEnd,
+                updated_at: new Date()
+            }
+        }
+    );
+    console.log('syncStripe: linked', found.id, found.status, 'to user', String(user._id));
+    return user;
+}
+
 let startAssemblyMachine = async function() { return false; };
 let countActiveFlyAssemblyJobs = async function() { return 0; };
 let drainFlyAssemblyQueue = async function() { return 0; };
@@ -2057,7 +2134,20 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
         var subId = user && user.subscription && user.subscription.stripeSubscriptionId;
         if (subId && (subStatus === 'trialing' || subStatus === 'active')) {
             hasCardTrial = true;
-        } else if (subId && process.env.STRIPE_SECRET_KEY) {
+        } else {
+            // DB often missing sub id after checkout — recover from Stripe by email/customer
+            try {
+                user = await syncStripeSubscriptionToUser(db, user);
+                subStatus = user && user.subscription && user.subscription.status;
+                subId = user && user.subscription && user.subscription.stripeSubscriptionId;
+                if (subId && (subStatus === 'trialing' || subStatus === 'active')) {
+                    hasCardTrial = true;
+                }
+            } catch (syncErr) {
+                console.warn('Assemble Stripe sync failed:', syncErr.message);
+            }
+        }
+        if (!hasCardTrial && subId && process.env.STRIPE_SECRET_KEY) {
             try {
                 var stripeLive = require('stripe')(process.env.STRIPE_SECRET_KEY);
                 var liveSub = await stripeLive.subscriptions.retrieve(subId);
@@ -2075,12 +2165,26 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
                 console.warn('Stripe sub check for assemble:', stripeErr.message);
             }
         }
+
+        var rankingTrialStatus = trialHelper.getTrialStatus(user);
+        var rankingFreeUsed = !!(rankingTrialStatus && (
+            !rankingTrialStatus.active ||
+            rankingTrialStatus.rankingVideosLeft === 0 ||
+            (rankingTrialStatus.rankingVideosUsed || 0) >= (rankingTrialStatus.rankingVideosLimit || 3)
+        ));
+
         if (!hasCardTrial) {
+            // No Stripe sub yet — if they already burned free ranking, charge today (no 7-day loop)
             return res.status(402).json({
                 error: 'Card required to cook video',
                 needsCard: true,
                 upgradeRequired: true,
-                message: 'Add a card to start your free challenge and cook this video. You will not be charged today — 7-day trial.'
+                startBillingNow: rankingFreeUsed,
+                billingNow: rankingFreeUsed,
+                trial: rankingTrialStatus,
+                message: rankingFreeUsed
+                    ? 'Your free ranking videos are used up. Choose a plan to start billing today — you will be charged now (not a free trial).'
+                    : 'Add a card to start your free challenge and cook this video. You will not be charged today — 7-day trial.'
             });
         }
 
@@ -2096,25 +2200,27 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
         } else if (subStatus === 'trialing') {
             // App free ranking allotment used up while still on Stripe trial —
             // do not silently burn credits; prompt end-trial-early / start paid
-            var trialStatusBlock = trialHelper.getTrialStatus(user);
             return res.status(402).json({
                 error: 'Free trial ranking videos used',
                 trialExhausted: true,
                 upgradeRequired: true,
                 showEndStripeTrial: true,
-                trial: trialStatusBlock,
-                message: 'Your free trial ranking videos are used up (3 videos or 7 days). End your free trial early to start your plan and keep cooking.'
+                startBillingNow: true,
+                billingNow: true,
+                trial: rankingTrialStatus,
+                message: 'Your free ranking videos are used up. End your Stripe trial now to start charging your saved card today (not $0).'
             });
         } else {
             var check = await credits.checkCredits(userId, 'ranking_assembly', 1);
             if (!check.allowed) {
-                var trialStatus = trialHelper.getTrialStatus(user);
                 return res.status(402).json({
                     error: 'Not enough credits',
                     upgradeRequired: true,
-                    trial: trialStatus,
-                    message: (trialStatus && !trialStatus.active)
-                        ? 'Your free trial has ended (7 days or 3 ranking videos). Upgrade to continue.'
+                    startBillingNow: true,
+                    billingNow: true,
+                    trial: rankingTrialStatus,
+                    message: (rankingTrialStatus && !rankingTrialStatus.active)
+                        ? 'Your free trial has ended (7 days or 3 ranking videos). Upgrade to continue — billing starts today.'
                         : 'Not enough credits for ranking assembly.',
                     ...check
                 });
