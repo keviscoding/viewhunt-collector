@@ -1899,13 +1899,20 @@ app.post('/api/channels/niche-scrape', authenticateToken, async (req, res) => {
         return res.status(403).json({ error: 'Admin only' });
     }
     try {
+        var keywords = req.body && req.body.keywords;
+        if (typeof keywords === 'string') {
+            keywords = keywords.split(/[\n,]+/).map(function(w) { return w.trim(); }).filter(Boolean);
+        }
+        if (!Array.isArray(keywords)) keywords = undefined;
+        else if (!keywords.length) keywords = undefined;
+
         const result = await nicheScheduler.startScrapeRun(db, {
             trigger: 'manual',
-            keywords: Array.isArray(req.body.keywords) ? req.body.keywords : undefined,
+            keywords: keywords,
             limit: req.body.limit || undefined
         });
         res.json({
-            message: 'Niche scrape started',
+            message: result.custom ? 'Custom niche scrape started' : 'Niche scrape started',
             notifyEmail: process.env.SCRAPE_NOTIFY_EMAIL || process.env.ADMIN_EMAIL || 'nwalikelv@gmail.com',
             ...result
         });
@@ -1923,12 +1930,19 @@ app.post('/api/internal/niche-scrape', async (req, res) => {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     try {
+        var keywords = req.body && req.body.keywords;
+        if (typeof keywords === 'string') {
+            keywords = keywords.split(/[\n,]+/).map(function(w) { return w.trim(); }).filter(Boolean);
+        }
+        if (!Array.isArray(keywords)) keywords = undefined;
+        else if (!keywords.length) keywords = undefined;
+
         const result = await nicheScheduler.startScrapeRun(db, {
             trigger: 'manual',
-            keywords: Array.isArray(req.body && req.body.keywords) ? req.body.keywords : undefined,
+            keywords: keywords,
             limit: (req.body && req.body.limit) || undefined
         });
-        res.json({ message: 'Niche scrape started', ...result });
+        res.json({ message: result.custom ? 'Custom niche scrape started' : 'Niche scrape started', ...result });
     } catch (err) {
         console.error('Internal niche scrape error:', err);
         res.status(500).json({ error: err.message });

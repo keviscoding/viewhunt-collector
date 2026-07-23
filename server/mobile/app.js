@@ -2080,7 +2080,7 @@ class ViewHuntApp {
                             <span class="scrape-status ${this.escapeHtml(status)}">${this.escapeHtml(status)}</span>
                             <span style="font-size:11px;color:#94a3b8;">${this.escapeHtml(when)}</span>
                         </div>
-                        <div style="font-size:12px;margin-top:4px;color:#334155;">${this.escapeHtml(counts)} · ${this.escapeHtml(run.worker || '—')}${this.escapeHtml(enrich)}</div>
+                        <div style="font-size:12px;margin-top:4px;color:#334155;">${this.escapeHtml(counts)} · ${this.escapeHtml(run.worker || '—')}${this.escapeHtml(enrich)}${run.custom ? ' · <span style="color:#7c5cfc;">custom</span>' : ''}</div>
                         <div style="font-size:11px;color:#64748b;margin-top:2px;">${this.escapeHtml(kws + more)}</div>
                         ${run.error ? `<div style="font-size:11px;color:#dc2626;margin-top:4px;">${this.escapeHtml(run.error)}</div>` : ''}
                     </div>
@@ -2100,24 +2100,59 @@ class ViewHuntApp {
         }
     }
 
+    parseCustomScrapeKeywords(raw) {
+        if (!raw || !String(raw).trim()) return [];
+        const seen = new Set();
+        const out = [];
+        String(raw).split(/[\n,]+/).forEach((part) => {
+            let w = String(part || '').trim().toLowerCase();
+            if (!w) return;
+            // Strip wrapping asterisks if user already typed them — we re-apply optionally
+            w = w.replace(/^\*+/, '').replace(/\*+$/, '').trim();
+            if (!w || w.length > 80) return;
+            if (seen.has(w)) return;
+            seen.add(w);
+            out.push(w);
+        });
+        return out.slice(0, 40);
+    }
+
     async startNicheScrape() {
         const btn = document.getElementById('scrape-run-btn');
+        const kwEl = document.getElementById('scrape-custom-keywords');
+        const wrapEl = document.getElementById('scrape-wrap-asterisks');
+        const custom = this.parseCustomScrapeKeywords(kwEl ? kwEl.value : '');
+        const wrapAsterisks = !wrapEl || wrapEl.checked;
+
+        let keywordsPayload = undefined;
+        if (custom.length) {
+            keywordsPayload = wrapAsterisks
+                ? custom.map((w) => (w.startsWith('*') ? w : ('*' + w + '*')))
+                : custom;
+            const confirmMsg = 'Start custom scrape with ' + custom.length + ' keyword(s)?\n\n' +
+                custom.slice(0, 15).join(', ') + (custom.length > 15 ? '…' : '');
+            if (!window.confirm(confirmMsg)) return;
+        }
+
         if (btn) {
             btn.disabled = true;
             btn.textContent = 'Starting…';
         }
         try {
-            // Full spontaneous run (12–18 ultra-common keywords)
+            const body = custom.length
+                ? { keywords: keywordsPayload }
+                : {};
             const response = await this.fetchWithAuth(`${this.apiBase}/channels/niche-scrape`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
+                body: JSON.stringify(body)
             });
             const data = await response.json();
             if (!response.ok) {
                 this.showToast(data.error || 'Failed to start scrape ❌');
             } else {
-                this.showToast(`Scrape started (${(data.keywords || []).join(', ')})`);
+                const mode = custom.length ? 'custom' : 'spontaneous';
+                this.showToast(`Scrape started (${mode}: ${(data.keywords || []).slice(0, 6).join(', ')}${(data.keywords || []).length > 6 ? '…' : ''})`);
                 this._selectedScrapeRunId = data.runId;
                 await this.loadScrapeRuns();
                 if (data.runId) this.viewScrapeRun(data.runId);

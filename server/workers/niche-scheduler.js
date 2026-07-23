@@ -219,14 +219,16 @@ async function pickKeywords(db, limit) {
     return docs;
 }
 
-async function createScrapeRun(db, keywords, trigger) {
+async function createScrapeRun(db, keywords, trigger, meta) {
+    meta = meta || {};
     const words = keywords.map(function(k) { return k.word || k; });
     const doc = {
         status: 'queued',
         keywords: words,
         keywordIds: keywords.map(function(k) { return k._id; }).filter(Boolean),
         trigger: trigger || 'schedule',
-        spontaneous: true,
+        spontaneous: !meta.custom,
+        custom: !!meta.custom,
         createdAt: new Date(),
         startedAt: null,
         finishedAt: null,
@@ -259,10 +261,21 @@ async function startScrapeRun(db, options) {
     await seedNicheKeywords(db);
 
     let keywords;
+    let custom = false;
     if (options.keywords && options.keywords.length) {
-        // Explicit admin override still allowed; normalize to docs
-        keywords = options.keywords.map(function(w) { return { word: String(w).toLowerCase().trim() }; });
-        shuffleInPlace(keywords);
+        // Explicit admin override — keep order-ish but shuffle lightly is fine
+        const seen = new Set();
+        keywords = [];
+        options.keywords.forEach(function(w) {
+            var word = String(w).trim();
+            if (!word) return;
+            var key = word.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            keywords.push({ word: word });
+        });
+        if (keywords.length > 40) keywords = keywords.slice(0, 40);
+        custom = true;
     } else {
         keywords = await pickKeywords(db, options.limit || null);
     }
@@ -271,7 +284,7 @@ async function startScrapeRun(db, options) {
         throw new Error('No niche keywords available');
     }
 
-    const run = await createScrapeRun(db, keywords, options.trigger || 'schedule');
+    const run = await createScrapeRun(db, keywords, options.trigger || 'schedule', { custom: custom });
 
     let flyStarted = false;
     let flyError = null;
@@ -288,7 +301,12 @@ async function startScrapeRun(db, options) {
             { $set: { status: 'processing', worker: 'fly', startedAt: new Date() } }
         );
         await markKeywordsUsed(db, keywords.map(function(k) { return k._id; }).filter(Boolean));
-        return { runId: String(run._id), worker: 'fly', keywords: run.keywords };
+        return {
+            runId: String(run._id),
+            worker: 'fly',
+            keywords: run.keywords,
+            custom: custom
+        };
     }
 
     const errMsg = flyError

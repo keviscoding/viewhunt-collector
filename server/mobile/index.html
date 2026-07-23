@@ -438,9 +438,18 @@
                     <div class="admin-section" style="margin-bottom: 28px;">
                         <h3 style="margin-bottom: 8px;">Niche Scraper</h3>
                         <p style="font-size: 13px; color: #64748b; margin-bottom: 12px;">
-                            Daily Fly Puppeteer rotation with ultra-common keywords. Run a scrape and inspect channels it added — every keyword and channel is processed in batches.
+                            Daily Fly Puppeteer rotation with ultra-common keywords — or run a <strong>custom scrape</strong> with your own keyword list below.
                         </p>
                         <div id="scrape-fly-status" style="font-size: 12px; margin-bottom: 10px; color: #64748b;">Checking Fly…</div>
+                        <div class="form-group" style="margin-bottom: 10px;">
+                            <label for="scrape-custom-keywords" style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:#334155;">Custom keywords (optional)</label>
+                            <textarea id="scrape-custom-keywords" rows="3" placeholder="Leave empty for spontaneous ultra-common words.&#10;Or enter keywords separated by commas or new lines, e.g.&#10;cooking, gym, podcast, explained" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;resize:vertical;min-height:72px;"></textarea>
+                            <small style="display:block;margin-top:4px;color:#64748b;font-size:11px;">Custom runs use exactly these keywords (wrapped as *keyword* for YouTube search). Max 40.</small>
+                        </div>
+                        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569;margin-bottom:12px;cursor:pointer;">
+                            <input type="checkbox" id="scrape-wrap-asterisks" checked>
+                            Wrap keywords with *asterisks* (broader YouTube matches)
+                        </label>
                         <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
                             <button type="button" class="auth-btn auth-btn-primary" id="scrape-run-btn" onclick="window.app.startNicheScrape()">Run scrape now</button>
                             <button type="button" class="auth-btn" id="scrape-refresh-btn" onclick="window.app.loadScrapeRuns()" style="background:#e2e8f0;color:#0f172a;">Refresh</button>
