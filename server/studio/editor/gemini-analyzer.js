@@ -8,16 +8,24 @@
  * 
  * Skips scene 1 (hook line) from body since it's already covered by hook clips.
  */
-const { GoogleGenAI } = require('@google/genai');
 const OpenAI = require('openai');
 const fs = require('fs');
+const { createGoogleGenAI } = require('../lib/google-genai');
 
 class GeminiAnalyzer {
     constructor() {
-        this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        this.ai = null;
+        this._aiInit = null;
         if (process.env.OPENAI_API_KEY) {
             this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
         }
+    }
+
+    async _ensureAi() {
+        if (this.ai) return this.ai;
+        if (!this._aiInit) this._aiInit = createGoogleGenAI();
+        this.ai = await this._aiInit;
+        return this.ai;
     }
 
     /**
@@ -26,6 +34,7 @@ class GeminiAnalyzer {
      */
     async analyze(script, scenes, voiceoverPath) {
         console.log('🧠 Gemini: Selecting hook clips...');
+        var ai = await this._ensureAi();
 
         var sceneList = scenes.map(function(s, i) {
             return 'Scene ' + (s.sceneNumber || i + 1) + ': "' + (s.scriptLine || '') + '" [' + (s.shotType || 'medium') + ']';
@@ -53,7 +62,8 @@ class GeminiAnalyzer {
 
         var hookResult;
         try {
-            var response = await this.ai.models.generateContent({
+            if (!ai) throw new Error('Gemini SDK unavailable');
+            var response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: prompt,
                 config: { responseMimeType: 'application/json' }

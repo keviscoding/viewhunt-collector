@@ -1,18 +1,28 @@
 /**
  * Gemini TTS — Generates voiceover audio from script using Gemini 2.5 Flash TTS
  * Returns a WAV file path with the narration
+ *
+ * @google/genai is ESM-only — load via dynamic import (see lib/google-genai.js).
  */
-const { GoogleGenAI } = require('@google/genai');
 const fs = require('fs');
 const path = require('path');
+const { createGoogleGenAI } = require('../lib/google-genai');
 
 class GeminiTTS {
     constructor() {
-        this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        this.ai = null;
+        this._aiInit = null;
         this.outputDir = path.join(__dirname, '../../public/studio/generated/audio');
         if (!fs.existsSync(this.outputDir)) {
             fs.mkdirSync(this.outputDir, { recursive: true });
         }
+    }
+
+    async _ensureAi() {
+        if (this.ai) return this.ai;
+        if (!this._aiInit) this._aiInit = createGoogleGenAI();
+        this.ai = await this._aiInit;
+        return this.ai;
     }
 
     /**
@@ -23,13 +33,15 @@ class GeminiTTS {
      */
     async generateVoiceover(script, voiceName = 'Charon') {
         console.log(`🎙️ Gemini TTS: Generating voiceover with voice "${voiceName}"...`);
+        const ai = await this._ensureAi();
+        if (!ai) throw new Error('Gemini SDK unavailable');
 
         const ttsPrompt = `Read in a faster pace, engaging and humorous way:
 
 ${script}`;
 
         try {
-            const response = await this.ai.models.generateContent({
+            const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash-preview-tts',
                 contents: [{ parts: [{ text: ttsPrompt }] }],
                 config: {

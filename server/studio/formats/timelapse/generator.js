@@ -11,19 +11,28 @@
  * Seedance cost: 720p 5s with audio = ~35 Kie.ai credits ($0.175)
  */
 const axios = require('axios');
-const { GoogleGenAI } = require('@google/genai');
 const path = require('path');
 const fs = require('fs');
 const { execFile } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
+const { createGoogleGenAI } = require('../../lib/google-genai');
 
 class TimelapseGenerator {
     constructor() {
-        this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        this.ai = null;
+        this._aiInit = null;
         this.kieApiKey = process.env.KIEAI_API_KEY;
         this.kieBaseUrl = 'https://api.kie.ai';
         this.outputDir = path.join(__dirname, '../../../public/studio/generated/timelapse');
         if (!fs.existsSync(this.outputDir)) fs.mkdirSync(this.outputDir, { recursive: true });
+    }
+
+    async _ensureAi() {
+        if (this.ai) return this.ai;
+        if (!this._aiInit) this._aiInit = createGoogleGenAI();
+        this.ai = await this._aiInit;
+        if (!this.ai) throw new Error('Gemini SDK unavailable');
+        return this.ai;
     }
 
     /**
@@ -158,7 +167,8 @@ Remember:
 - All video prompts must end with: "No music. No talking. No dialogue. Only construction sounds and foley."`;
 
         try {
-            const response = await this.ai.models.generateContent({
+            const ai = await this._ensureAi();
+            const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: [{ parts: [{ text: systemPrompt + '\n\n' + userPrompt }] }],
                 config: { responseMimeType: 'application/json' }
@@ -540,7 +550,8 @@ The video is ${videoDuration} seconds of continuous time-lapse construction foot
 Return ONLY the script text, nothing else. No stage markers, no timestamps, no formatting — just the words the narrator says.`;
 
         try {
-            var response = await this.ai.models.generateContent({
+            var ai = await this._ensureAi();
+            var response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: [{ parts: [{ text: systemPrompt + '\n\n' + userPrompt }] }]
             });
@@ -569,7 +580,8 @@ Return ONLY the script text, nothing else. No stage markers, no timestamps, no f
 
         var ttsPrompt = 'Read in a faster pace, engaging and storytelling way:\n\n' + script;
 
-        var response = await this.ai.models.generateContent({
+        var ai = await this._ensureAi();
+        var response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-preview-tts',
             contents: [{ parts: [{ text: ttsPrompt }] }],
             config: {
