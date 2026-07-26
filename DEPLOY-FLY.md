@@ -166,22 +166,32 @@ Stripe checkout / `customer.subscription.created` converts app `trial.status` �
 
 URL: `https://viewhunt.app/admin/dashboard` (admin JWT only).
 
-Uses existing `STRIPE_SECRET_KEY` for trials / sales / conversions.
-For visits, add on DigitalOcean (then redeploy):
+**Partner-safe ViewHunt metrics** (excludes Channel Recipe):
+
+```
+ANALYTICS_PARTNER_START_DATE=2026-07-26
+STRIPE_SECRET_KEY=...   # existing
+# ViewHunt price/product IDs (see server/.env.fly.example for full list)
+STRIPE_PRICE_STARTER=price_1Szdm8GphjFbfwFXzPRyaWZh
+STRIPE_PRICE_CREATOR=price_1Szdo9GphjFbfwFXJgRiuK9J
+STRIPE_PRICE_CREDITS_200=...
+STRIPE_PRICE_CREDITS_500=...
+STRIPE_PRICE_CREDITS_1200=...
+```
+
+**Payout figure:** `netSales` = ViewHunt invoice `amount_paid` − `amount_refunded` in the
+selected range (clamped so it never starts before `ANALYTICS_PARTNER_START_DATE`).
+$0 trial invoices are ignored. Cancellations are shown separately and do **not**
+reduce already-collected cash.
+
+For visits:
 
 ```
 CLOUDFLARE_API_TOKEN=<token with Zone Analytics Read>
 CLOUDFLARE_ZONE_ID=<zone id for viewhunt.app>
-# optional:
-CLOUDFLARE_ACCOUNT_ID=
 ```
 
-Cloudflare Dashboard → viewhunt.app → Overview (right sidebar) has Zone ID.
-API token: My Profile → API Tokens → Create Token → permissions
-`Account.Account Analytics:Read` and/or `Zone.Analytics:Read` for that zone.
-
-Responses are cached 5 minutes (`admin_analytics_cache`). Use **Refresh** on the
-dashboard for `?refresh=1`. This path is never called from niche/studio browsing.
+Responses are cached 5 minutes. Use **Refresh** for `?refresh=1`. Never called from niche/studio browsing.
 
 ## Admin triggers
 
