@@ -19,6 +19,7 @@ const trialHelper = require('./studio/trial');
 // Auto channel collector (daily cron)
 const { scheduleDailyCollection, runDailyCollection } = require('./auto-collector');
 const nicheScheduler = require('./workers/niche-scheduler');
+const adminAnalytics = require('./lib/admin-analytics');
 
 // Initialize Stripe only if secret key is available
 let stripe;
@@ -227,6 +228,14 @@ app.get('/studio/transcript', (req, res) => {
 // Studio Seedance 2.0 page route
 app.get('/studio/seedance', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'studio', 'seedance.html'));
+});
+
+// Admin analytics dashboard (client-side JWT gate; API is admin-only)
+app.get('/admin/dashboard', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin', 'dashboard.html'));
+});
+app.get('/admin/dashboard.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin', 'dashboard.html'));
 });
 
 // Serve generated video files explicitly (fallback if static middleware misses them)
@@ -1871,12 +1880,13 @@ app.get('/api/user/subscription-status', authenticateToken, async (req, res) => 
 // Old pending endpoint removed - using user-specific endpoint below
 
 function isAdminUser(user) {
-    if (!user || !user.email || !process.env.ADMIN_EMAIL) return false;
+    if (!user || !user.email) return false;
     var email = String(user.email).toLowerCase();
-    var admin = String(process.env.ADMIN_EMAIL).toLowerCase();
-    return email === admin ||
+    var admin = process.env.ADMIN_EMAIL ? String(process.env.ADMIN_EMAIL).toLowerCase() : '';
+    return (admin && email === admin) ||
         email === 'nwalikelv@gmail.com' ||
-        email === 'kevis@viewhunt.com';
+        email === 'kevis@viewhunt.com' ||
+        email === 'kevis@keviscoding.com';
 }
 
 // Manually trigger auto-collector (admin only)
@@ -3544,6 +3554,27 @@ app.get('/api/health', (req, res) => {
             videoSearch: true
         }
     });
+});
+
+// Admin analytics dashboard data (Stripe + Cloudflare + Mongo product trials)
+app.get('/api/admin/analytics', authenticateToken, async (req, res) => {
+    try {
+        if (!isAdminUser(req.user)) {
+            return res.status(403).json({ error: 'Admin only' });
+        }
+        var range = String(req.query.range || '30d');
+        var refresh = req.query.refresh === '1' || req.query.refresh === 'true';
+        var data = await adminAnalytics.getAdminAnalytics({
+            db: db,
+            stripe: stripe || null,
+            range: range,
+            refresh: refresh
+        });
+        res.json(data);
+    } catch (err) {
+        console.error('Admin analytics error:', err);
+        res.status(500).json({ error: err.message || 'Failed to load analytics' });
+    }
 });
 
 // INVITE CODE MANAGEMENT (Admin only)

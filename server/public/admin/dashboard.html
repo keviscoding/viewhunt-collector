@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ViewHunt Admin Analytics</title>
+    <style>
+        :root {
+            --bg: #0b0b10;
+            --surface: #14141c;
+            --border: #2a2a38;
+            --text: #f3f3f7;
+            --dim: #9a9aaf;
+            --accent: #7c5cfc;
+            --green: #34d399;
+            --amber: #fbbf24;
+            --red: #f87171;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        h1 { font-size: 1.15rem; margin: 0; font-weight: 700; }
+        h1 span { color: var(--accent); }
+        .meta { font-size: 0.78rem; color: var(--dim); }
+        .controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+        .range-btn, .btn {
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text);
+            padding: 0.45rem 0.85rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .range-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .btn:disabled { opacity: 0.5; cursor: wait; }
+        main { padding: 1.25rem 1.5rem 3rem; max-width: 1200px; margin: 0 auto; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 1rem;
+        }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.1rem 1.15rem;
+            min-height: 120px;
+        }
+        .card h2 {
+            margin: 0 0 0.35rem;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--dim);
+            font-weight: 600;
+        }
+        .value {
+            font-size: 1.85rem;
+            font-weight: 750;
+            line-height: 1.15;
+            margin: 0.35rem 0;
+        }
+        .sub { font-size: 0.78rem; color: var(--dim); line-height: 1.45; }
+        .source {
+            display: inline-block;
+            margin-top: 0.65rem;
+            font-size: 0.68rem;
+            padding: 0.15rem 0.45rem;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            color: var(--dim);
+        }
+        .source.stripe { border-color: rgba(124,92,252,0.45); color: #c4b5fd; }
+        .source.cloudflare { border-color: rgba(251,191,36,0.45); color: #fcd34d; }
+        .source.mongo { border-color: rgba(52,211,153,0.45); color: #6ee7b7; }
+        .warn { color: var(--amber); font-size: 0.8rem; }
+        .err { color: var(--red); font-size: 0.8rem; }
+        .section { margin-top: 1.75rem; }
+        .section h3 { font-size: 0.95rem; margin: 0 0 0.75rem; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        th, td { text-align: left; padding: 0.65rem 0.85rem; border-bottom: 1px solid var(--border); }
+        th { color: var(--dim); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; }
+        tr:last-child td { border-bottom: none; }
+        #gate, #loading { padding: 3rem 1.5rem; text-align: center; color: var(--dim); }
+        a.link { color: var(--accent); }
+        .spark {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 40px;
+            margin-top: 0.75rem;
+        }
+        .spark i {
+            flex: 1;
+            background: rgba(124,92,252,0.55);
+            border-radius: 2px 2px 0 0;
+            min-width: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gate" style="display:none;">
+        <p>Sign in as an admin to view analytics.</p>
+        <p><a class="link" href="/app">Go to app login</a></p>
+    </div>
+
+    <div id="app" style="display:none;">
+        <header>
+            <div>
+                <h1>ViewHunt <span>Analytics</span></h1>
+                <div class="meta" id="meta-line">Loading…</div>
+            </div>
+            <div class="controls">
+                <button type="button" class="range-btn" data-range="7d">7d</button>
+                <button type="button" class="range-btn active" data-range="30d">30d</button>
+                <button type="button" class="range-btn" data-range="90d">90d</button>
+                <button type="button" class="btn btn-primary" id="btn-refresh">Refresh</button>
+                <a class="btn" href="/app" style="text-decoration:none;">App</a>
+            </div>
+        </header>
+
+        <main>
+            <div id="banner"></div>
+            <div class="grid" id="cards"></div>
+
+            <div class="section">
+                <h3>Sales by plan (range)</h3>
+                <table>
+                    <thead><tr><th>Plan</th><th>Net sales</th></tr></thead>
+                    <tbody id="plan-rows"><tr><td colspan="2">—</td></tr></tbody>
+                </table>
+            </div>
+
+            <div class="section">
+                <h3>Definitions</h3>
+                <div class="sub">
+                    <p><strong>Stripe trials</strong> = subscriptions with status <code>trialing</code> (card on file).</p>
+                    <p><strong>Product trials</strong> = app free challenge (7 days or 3 ranking videos) from Mongo — not Stripe.</p>
+                    <p><strong>Gross / net sales</strong> = sum of Stripe paid invoices in range (net subtracts refunds).</p>
+                    <p><strong>Conversions</strong> = Stripe subscriptions whose <code>trial_end</code> fell in range and are no longer trialing.</p>
+                    <p><strong>Unique visitors</strong> = sum of Cloudflare daily uniques (not period-deduped).</p>
+                    <p>Numbers are never invented. Missing config shows a configure message, not fake zeros.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="loading">Checking access…</div>
+
+    <script>
+    (function() {
+        var token = localStorage.getItem('viewhunt_token') || localStorage.getItem('token');
+        var range = '30d';
+        var ADMINS = ['nwalikelv@gmail.com', 'kevis@viewhunt.com', 'kevis@keviscoding.com'];
+
+        function $(id) { return document.getElementById(id); }
+        function fmt(n) {
+            if (n == null || n !== n) return '—';
+            return Number(n).toLocaleString();
+        }
+        function money(m) {
+            if (!m || m.formatted == null) return '—';
+            return m.formatted;
+        }
+
+        function showGate() {
+            $('loading').style.display = 'none';
+            $('app').style.display = 'none';
+            $('gate').style.display = '';
+        }
+
+        async function checkAdmin() {
+            if (!token) { showGate(); return false; }
+            try {
+                var res = await fetch('/api/auth/me', {
+                    headers: { Authorization: 'Bearer ' + token }
+                });
+                if (!res.ok) { showGate(); return false; }
+                var me = await res.json();
+                var email = (me.email || '').toLowerCase();
+                var ok = ADMINS.indexOf(email) !== -1 ||
+                    (me.subscription && me.subscription.type === 'admin');
+                if (!ok) { showGate(); return false; }
+                $('loading').style.display = 'none';
+                $('gate').style.display = 'none';
+                $('app').style.display = '';
+                return true;
+            } catch (e) {
+                showGate();
+                return false;
+            }
+        }
+
+        function card(title, value, sub, sourceClass, sourceLabel) {
+            return '<div class="card">' +
+                '<h2>' + title + '</h2>' +
+                '<div class="value">' + value + '</div>' +
+                (sub ? '<div class="sub">' + sub + '</div>' : '') +
+                '<span class="source ' + sourceClass + '">Source: ' + sourceLabel + '</span>' +
+                '</div>';
+        }
+
+        function spark(series) {
+            if (!series || !series.length) return '';
+            var max = 1;
+            series.forEach(function(p) { if ((p.pageViews || 0) > max) max = p.pageViews; });
+            return '<div class="spark" title="Daily page views">' +
+                series.map(function(p) {
+                    var h = Math.max(2, Math.round(((p.pageViews || 0) / max) * 40));
+                    return '<i style="height:' + h + 'px"></i>';
+                }).join('') + '</div>';
+        }
+
+        function render(data) {
+            var v = data.visits || {};
+            var s = data.stripe || {};
+            var p = data.productTrials || {};
+            var banner = '';
+            if (v.error) banner += '<p class="warn">Visits: ' + escapeHtml(v.error) + '</p>';
+            if (s.error) banner += '<p class="err">Stripe: ' + escapeHtml(s.error) + '</p>';
+            if (p.error) banner += '<p class="err">Mongo: ' + escapeHtml(p.error) + '</p>';
+            $('banner').innerHTML = banner;
+
+            $('meta-line').textContent =
+                'Range ' + data.range + ' · ' +
+                new Date(data.rangeStart).toLocaleDateString() + ' – ' +
+                new Date(data.rangeEnd).toLocaleDateString() +
+                ' · Updated ' + new Date(data.asOf).toLocaleString() +
+                (data.cached ? ' (cached)' : ' (fresh)');
+
+            var visitsVal = v.configured === false || v.pageViews == null ? '—' : fmt(v.pageViews);
+            var visitsSub = v.configured === false
+                ? 'Configure CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID'
+                : (fmt(v.uniqueVisitors) + ' daily-unique sum · ' + fmt(v.requests) + ' requests') +
+                  spark(v.series);
+
+            var html = '';
+            html += card('Page views (range)', visitsVal, visitsSub, 'cloudflare', 'Cloudflare');
+            html += card(
+                'Stripe trials now',
+                s.stripeTrialsNow == null ? '—' : fmt(s.stripeTrialsNow),
+                'Subscriptions with status trialing',
+                'stripe', 'Stripe'
+            );
+            html += card(
+                'Product trials active',
+                p.productTrialsActive == null ? '—' : fmt(p.productTrialsActive),
+                'App free challenge still open (7d / 3 ranking videos)',
+                'mongo', 'Mongo'
+            );
+            html += card(
+                'Active paid subs now',
+                s.activePaidNow == null ? '—' : fmt(s.activePaidNow),
+                'Stripe status = active',
+                'stripe', 'Stripe'
+            );
+            html += card(
+                'Gross sales (range)',
+                money(s.grossSales),
+                'Net ' + money(s.netSales) + ' · ' + fmt(s.paidInvoices) + ' paid invoices · refunds ' + money(s.refunds),
+                'stripe', 'Stripe'
+            );
+            html += card(
+                'New paid customers (range)',
+                s.newPaidCustomers == null ? '—' : fmt(s.newPaidCustomers),
+                'Invoices with billing_reason = subscription_create',
+                'stripe', 'Stripe'
+            );
+            html += card(
+                'Conversions (range)',
+                s.conversionsInRange == null ? '—' : fmt(s.conversionsInRange),
+                (s.conversionRate != null ? s.conversionRate + '% rate · ' : '') +
+                    fmt(s.trialsStartedInRange) + ' trials started · ' +
+                    (s.conversionRateNote || ''),
+                'stripe', 'Stripe'
+            );
+            html += card(
+                'MRR estimate (now)',
+                money(s.mrrEstimate),
+                s.mrrNote || 'From active recurring items',
+                'stripe', 'Stripe'
+            );
+            html += card(
+                'Product trials converted (all time)',
+                p.productTrialsConverted == null ? '—' : fmt(p.productTrialsConverted),
+                'Exhausted/expired: ' + fmt(p.productTrialsExhausted) + ' / ' + fmt(p.productTrialsExpired),
+                'mongo', 'Mongo'
+            );
+            $('cards').innerHTML = html;
+
+            var bp = s.byPlan || {};
+            var rows = ['starter', 'creator', 'studio', 'other'].map(function(k) {
+                return '<tr><td>' + k + '</td><td>' + money(bp[k]) + '</td></tr>';
+            }).join('');
+            $('plan-rows').innerHTML = rows || '<tr><td colspan="2">—</td></tr>';
+        }
+
+        function escapeHtml(str) {
+            return String(str == null ? '' : str)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        async function load(refresh) {
+            var btn = $('btn-refresh');
+            btn.disabled = true;
+            btn.textContent = 'Loading…';
+            try {
+                var url = '/api/admin/analytics?range=' + encodeURIComponent(range) +
+                    (refresh ? '&refresh=1' : '');
+                var res = await fetch(url, {
+                    headers: { Authorization: 'Bearer ' + token }
+                });
+                var data = await res.json();
+                if (res.status === 403) { showGate(); return; }
+                if (!res.ok) throw new Error(data.error || 'Failed to load');
+                render(data);
+            } catch (e) {
+                $('banner').innerHTML = '<p class="err">' + escapeHtml(e.message) + '</p>';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Refresh';
+            }
+        }
+
+        document.querySelectorAll('.range-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                range = btn.getAttribute('data-range');
+                document.querySelectorAll('.range-btn').forEach(function(b) {
+                    b.classList.toggle('active', b === btn);
+                });
+                load(false);
+            });
+        });
+        $('btn-refresh').addEventListener('click', function() { load(true); });
+
+        checkAdmin().then(function(ok) { if (ok) load(false); });
+    })();
+    </script>
+</body>
+</html>

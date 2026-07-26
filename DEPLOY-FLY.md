@@ -162,8 +162,30 @@ Other Studio formats still use the credit wallet.
 Starter / Creator / Studio Stripe checkout uses a 7-day `trial_period_days`.
 Stripe checkout / `customer.subscription.created` converts app `trial.status` → `converted`.
 
+## Admin analytics dashboard
+
+URL: `https://viewhunt.app/admin/dashboard` (admin JWT only).
+
+Uses existing `STRIPE_SECRET_KEY` for trials / sales / conversions.
+For visits, add on DigitalOcean (then redeploy):
+
+```
+CLOUDFLARE_API_TOKEN=<token with Zone Analytics Read>
+CLOUDFLARE_ZONE_ID=<zone id for viewhunt.app>
+# optional:
+CLOUDFLARE_ACCOUNT_ID=
+```
+
+Cloudflare Dashboard → viewhunt.app → Overview (right sidebar) has Zone ID.
+API token: My Profile → API Tokens → Create Token → permissions
+`Account.Account Analytics:Read` and/or `Zone.Analytics:Read` for that zone.
+
+Responses are cached 5 minutes (`admin_analytics_cache`). Use **Refresh** on the
+dashboard for `?refresh=1`. This path is never called from niche/studio browsing.
+
 ## Admin triggers
 
 ```
 POST /api/channels/niche-scrape          # start a scrape/rotation run
+GET  /api/admin/analytics?range=30d      # admin analytics (cached)
 ```
