@@ -712,8 +712,16 @@
         var upgradeBtn = document.getElementById('btn-upgrade-trial');
         if (upgradeBtn) {
             upgradeBtn.addEventListener('click', function() {
-                if (isTrialCookBlocked() || window._stripeTrialing) {
+                if (isTrialCookBlocked()) {
                     promptTrialExhausted();
+                    return;
+                }
+                if (window._stripeTrialing && trialInfo && trialInfo.active) {
+                    showUpgradeModal({
+                        message: 'You still have free ranking videos left. Keep cooking, or end the Stripe trial early to start billing on your plan today.',
+                        showEndStripeTrial: true,
+                        billingNow: true
+                    });
                     return;
                 }
                 showUpgradeModal({
@@ -735,35 +743,26 @@
             if (meRes.ok) {
                 var me = await meRes.json();
                 var t = me.trial || (me.subscription && me.subscription.trial) || null;
-                if (t) {
+                window._stripeTrialing = !!(me.subscription && me.subscription.status === 'trialing');
+                window._stripePaidActive = !!(me.subscription && me.subscription.status === 'active' && me.subscription.hasAccess);
+
+                if (window._stripePaidActive) {
+                    // Paying plan — credits path; hide app-trial badge
+                    trialInfo = null;
+                } else if (t) {
+                    // Trust server trial.active (includes Stripe-trialing + free ranking left)
                     trialInfo = {
-                        active: !!(me.trialRemaining && me.trialRemaining.daysLeft != null
-                            ? (me.subscription && me.subscription.type === 'trial')
-                            : t.active),
-                        daysLeft: (me.trialRemaining && me.trialRemaining.daysLeft != null)
-                            ? me.trialRemaining.daysLeft
-                            : (t.daysLeft || 0),
-                        rankingVideosLeft: (me.trialRemaining && me.trialRemaining.rankingVideosLeft != null)
-                            ? me.trialRemaining.rankingVideosLeft
-                            : (t.rankingVideosLeft != null ? t.rankingVideosLeft : 0),
+                        active: !!t.active,
+                        daysLeft: t.daysLeft || 0,
+                        rankingVideosLeft: t.rankingVideosLeft != null ? t.rankingVideosLeft : 0,
                         rankingVideosUsed: t.rankingVideosUsed != null ? t.rankingVideosUsed : 0,
                         reason: t.reason
                     };
-                    if (me.subscription && me.subscription.type === 'trial') trialInfo.active = true;
-                    window._stripeTrialing = !!(me.subscription && me.subscription.status === 'trialing');
-                    window._stripePaidActive = !!(me.subscription && me.subscription.status === 'active' && me.subscription.hasAccess);
-                    if (me.subscription && me.subscription.type === 'stripe' && me.subscription.hasAccess) {
-                        if (me.subscription.status === 'active') {
-                            // Paid plan — clear app-trial badge; credits path applies
-                            trialInfo = null;
-                        } else if (me.subscription.status === 'trialing' && trialInfo && !trialInfo.active) {
-                            // Stripe still trialing but app ranking allotment exhausted
-                            trialInfo.reason = trialInfo.reason || 'videos_exhausted';
-                        }
+                    if (!trialInfo.active && window._stripeTrialing) {
+                        trialInfo.reason = trialInfo.reason || 'videos_exhausted';
                     }
                 } else {
-                    window._stripeTrialing = !!(me.subscription && me.subscription.status === 'trialing');
-                    window._stripePaidActive = !!(me.subscription && me.subscription.status === 'active' && me.subscription.hasAccess);
+                    trialInfo = null;
                 }
                 updateTrialBadge();
             }

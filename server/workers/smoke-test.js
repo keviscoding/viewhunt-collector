@@ -43,6 +43,23 @@ function testTrial() {
     assert.strictEqual(converted.active, false);
     assert.strictEqual(converted.reason, 'converted');
 
+    // Card-collect used to set converted while Stripe was still trialing —
+    // free ranking allotment must remain usable
+    const convertedButStripeTrialing = trial.getTrialStatus({
+        trial: { ...fields, status: 'converted', rankingVideosUsed: 0 },
+        subscription: { status: 'trialing' }
+    }, new Date('2026-07-18T12:00:00Z'));
+    assert.strictEqual(convertedButStripeTrialing.active, true);
+    assert.strictEqual(convertedButStripeTrialing.rankingVideosLeft, 3);
+    assert.strictEqual(convertedButStripeTrialing.healedFromConverted, true);
+
+    const convertedPaid = trial.getTrialStatus({
+        trial: { ...fields, status: 'converted' },
+        subscription: { status: 'active' }
+    });
+    assert.strictEqual(convertedPaid.active, false);
+    assert.strictEqual(convertedPaid.reason, 'converted');
+
     console.log('✓ trial helper (7 days / 3 videos)');
 }
 

@@ -20,9 +20,23 @@ function createTrialFields(now) {
     };
 }
 
+function hasRemainingRankingAllotment(trial, at) {
+    if (!trial) return false;
+    const videosUsed = trial.rankingVideosUsed || 0;
+    const videosLimit = trial.rankingVideosLimit || TRIAL_RANKING_LIMIT;
+    const endsAt = trial.endsAt ? new Date(trial.endsAt) : null;
+    if (videosUsed >= videosLimit) return false;
+    if (endsAt && at > endsAt) return false;
+    return true;
+}
+
 /**
  * Normalize trial state for a user document.
  * Returns null if the user has no trial object.
+ *
+ * Note: Stripe card-collect used to set trial.status=converted immediately.
+ * While Stripe is still trialing and the 3-video / 7-day allotment remains,
+ * treat the app trial as active so they can cook.
  */
 function getTrialStatus(user, now) {
     if (!user || !user.trial) return null;
@@ -36,6 +50,7 @@ function getTrialStatus(user, now) {
     const daysLeft = endsAt
         ? Math.max(0, Math.ceil((endsAt.getTime() - at.getTime()) / (24 * 60 * 60 * 1000)))
         : 0;
+    const subStatus = user.subscription && user.subscription.status;
 
     const base = {
         startedAt: trial.startedAt,
@@ -48,6 +63,17 @@ function getTrialStatus(user, now) {
     };
 
     if (trial.status === 'converted') {
+        // Legacy: converted on card collect. Keep free ranking cooks during Stripe trial.
+        if (subStatus === 'trialing' && hasRemainingRankingAllotment(trial, at)) {
+            return {
+                ...base,
+                active: true,
+                status: 'active',
+                reason: 'active',
+                rankingVideosLeft,
+                healedFromConverted: true
+            };
+        }
         return { ...base, active: false, reason: 'converted' };
     }
 
@@ -64,6 +90,23 @@ function getTrialStatus(user, now) {
     }
 
     return { ...base, active: true, reason: 'active' };
+}
+
+/**
+ * Persist reopen when card-collect wrongly marked trial converted during Stripe trial.
+ */
+async function reopenTrialIfNeeded(db, user) {
+    if (!user || !user._id || !user.trial) return user;
+    const status = getTrialStatus(user);
+    if (!(status && status.healedFromConverted) || user.trial.status !== 'converted') {
+        return user;
+    }
+    await db.collection('users').updateOne(
+        { _id: user._id },
+        { $set: { 'trial.status': 'active', updated_at: new Date() } }
+    );
+    user.trial.status = 'active';
+    return user;
 }
 
 function isTrialActive(user, now) {
@@ -85,29 +128,42 @@ async function convertTrial(db, userId) {
  */
 async function recordRankingVideoComplete(db, userId) {
     const id = typeof userId === 'string' ? new ObjectId(userId) : userId;
-    const user = await db.collection('users').findOne({ _id: id }, { projection: { trial: 1 } });
-    if (!user || !user.trial || user.trial.status === 'converted') {
+    const user = await db.collection('users').findOne(
+        { _id: id },
+        { projection: { trial: 1, subscription: 1 } }
+    );
+    if (!user || !user.trial) {
         return getTrialStatus(user);
+    }
+
+    // Skip only when truly converted (paid). During Stripe trial, still count free cooks.
+    const live = getTrialStatus(user);
+    if (user.trial.status === 'converted' && !(live && live.active)) {
+        return live;
     }
 
     const used = (user.trial.rankingVideosUsed || 0) + 1;
     const limit = user.trial.rankingVideosLimit || TRIAL_RANKING_LIMIT;
     const update = {
         'trial.rankingVideosUsed': used,
+        'trial.status': 'active',
         updated_at: new Date()
     };
 
-    if (used >= limit && user.trial.status === 'active') {
+    if (used >= limit) {
         update['trial.status'] = 'exhausted';
     }
 
     // Also expire by time if already past endsAt
-    if (user.trial.endsAt && new Date() > new Date(user.trial.endsAt) && user.trial.status === 'active') {
+    if (user.trial.endsAt && new Date() > new Date(user.trial.endsAt)) {
         update['trial.status'] = 'exhausted';
     }
 
     await db.collection('users').updateOne({ _id: id }, { $set: update });
-    const refreshed = await db.collection('users').findOne({ _id: id }, { projection: { trial: 1 } });
+    const refreshed = await db.collection('users').findOne(
+        { _id: id },
+        { projection: { trial: 1, subscription: 1 } }
+    );
     return getTrialStatus(refreshed);
 }
 
@@ -127,5 +183,6 @@ module.exports = {
     isTrialActive,
     canUseRankingTrial,
     convertTrial,
+    reopenTrialIfNeeded,
     recordRankingVideoComplete
 };

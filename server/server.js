@@ -296,28 +296,32 @@ app.get('/subscription-success', async (req, res) => {
                 if (!okStatuses[subStatus]) {
                     console.warn('Unexpected subscription status after checkout:', subStatus);
                 }
+
+                // Keep app free-ranking allotment during Stripe trial.
+                // Only mark trial converted once they are actually paying (active).
+                var setFields = {
+                    'subscription.status': subStatus,
+                    'subscription.hasAccess': !!okStatuses[subStatus],
+                    'subscription.type': 'stripe',
+                    'subscription.plan': planFromMeta,
+                    'subscription.stripeSubscriptionId': subscription.id,
+                    'subscription.stripeCustomerId': customer.id,
+                    'subscription.startDate': new Date((subscription.current_period_start || Date.now() / 1000) * 1000),
+                    'subscription.endDate': subscription.current_period_end
+                        ? new Date(subscription.current_period_end * 1000)
+                        : null,
+                    'subscription.trialEnd': subscription.trial_end
+                        ? new Date(subscription.trial_end * 1000)
+                        : null,
+                    updated_at: new Date()
+                };
+                if (subStatus === 'active') {
+                    setFields['trial.status'] = 'converted';
+                }
                 
                 await db.collection('users').updateOne(
                     { _id: user._id },
-                    {
-                        $set: {
-                            'subscription.status': subStatus,
-                            'subscription.hasAccess': !!okStatuses[subStatus],
-                            'subscription.type': 'stripe',
-                            'subscription.plan': planFromMeta,
-                            'subscription.stripeSubscriptionId': subscription.id,
-                            'subscription.stripeCustomerId': customer.id,
-                            'subscription.startDate': new Date((subscription.current_period_start || Date.now() / 1000) * 1000),
-                            'subscription.endDate': subscription.current_period_end
-                                ? new Date(subscription.current_period_end * 1000)
-                                : null,
-                            'subscription.trialEnd': subscription.trial_end
-                                ? new Date(subscription.trial_end * 1000)
-                                : null,
-                            'trial.status': 'converted',
-                            updated_at: new Date()
-                        }
-                    }
+                    { $set: setFields }
                 );
                 
                 console.log('Subscription updated successfully for:', user.email, subStatus);
@@ -1804,6 +1808,9 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
         }
 
         const trialRemaining = trialHelper.getTrialStatus(user);
+        if (trialRemaining && trialRemaining.healedFromConverted) {
+            try { await trialHelper.reopenTrialIfNeeded(db, user); } catch (healMeErr) {}
+        }
 
         res.json({
             id: user._id,
@@ -4431,7 +4438,17 @@ app.post('/api/subscription/webhook', async (req, res) => {
             // Handle new subscription — grant monthly credits
             if (meta.plan && meta.userId && session.mode === 'subscription') {
                 await studioCredits.grantMonthlyCredits(meta.userId, meta.plan);
-                await trialHelper.convertTrial(db, meta.userId);
+                // Convert app trial only when billing has started (active), not on Stripe trial card-collect
+                if (session.subscription && stripe) {
+                    try {
+                        var paidSub = await stripe.subscriptions.retrieve(session.subscription);
+                        if (paidSub.status === 'active') {
+                            await trialHelper.convertTrial(db, meta.userId);
+                        }
+                    } catch (convErr) {
+                        console.warn('Webhook convertTrial check:', convErr.message);
+                    }
+                }
                 console.log('💳 Webhook: granted monthly credits for ' + meta.plan + ' plan to user ' + meta.userId);
             }
             break;
@@ -4473,7 +4490,8 @@ app.post('/api/subscription/webhook', async (req, res) => {
                 };
 
             await db.collection('users').updateOne(subFilter, { $set: subUpdate });
-            if (subMeta.userId && (subscription.status === 'active' || subscription.status === 'trialing')) {
+            // Convert app free-ranking trial only once Stripe is billing (active)
+            if (subMeta.userId && subscription.status === 'active') {
                 await trialHelper.convertTrial(db, subMeta.userId);
             }
             console.log('Webhook:', event.type, 'status=' + subscription.status, 'customer=' + subscription.customer);

@@ -2167,6 +2167,14 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
         }
 
         var rankingTrialStatus = trialHelper.getTrialStatus(user);
+        if (rankingTrialStatus && rankingTrialStatus.healedFromConverted) {
+            try {
+                user = await trialHelper.reopenTrialIfNeeded(db, user);
+                rankingTrialStatus = trialHelper.getTrialStatus(user);
+            } catch (healErr) {
+                console.warn('Trial heal on assemble:', healErr.message);
+            }
+        }
         var rankingFreeUsed = !!(rankingTrialStatus && (
             !rankingTrialStatus.active ||
             rankingTrialStatus.rankingVideosLeft === 0 ||
