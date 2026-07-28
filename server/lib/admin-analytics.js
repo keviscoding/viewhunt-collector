@@ -1,75 +1,17 @@
 /**
- * Admin analytics — ViewHunt-only Stripe + Cloudflare + Mongo product trials.
+ * Admin analytics — site visits + trial context only.
  *
- * Partner-safe rules:
- * - Only ViewHunt price/product IDs (excludes Channel Recipe)
- * - Window starts at ANALYTICS_PARTNER_START_DATE (no pre-partnership revenue)
- * - Primary money metric = net cash (paid − refunds) on ViewHunt invoices
- * - Cancellations are counted separately (do not reduce already-collected cash)
+ * Sources:
+ * - Cloudflare GraphQL Analytics (page views / requests for viewhunt.app)
+ * - Mongo users (app free challenge + Stripe subscription.status=trialing)
  *
- * Cached 5 minutes. Never call from hot request paths.
+ * No revenue / invoice / MRR metrics. Cached 5 minutes.
  */
 const trialHelper = require('../studio/trial');
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const memoryCache = new Map();
 const RANGE_DAYS = { '7d': 7, '30d': 30, '90d': 90 };
-
-/** Default ViewHunt Stripe catalog (override with env). */
-const DEFAULT_VH_PRICES = {
-    starter: 'price_1Szdm8GphjFbfwFXzPRyaWZh',
-    creator: 'price_1Szdo9GphjFbfwFXJgRiuK9J',
-    credits_200: 'price_1Sze6EGphjFbfwFXvRXmeaVm',
-    credits_500: 'price_1Sze9BGphjFbfwFXZs9Es5Gp',
-    credits_1200: 'price_1SzeAWGphjFbfwFXHse4ozDj'
-};
-
-const DEFAULT_VH_PRODUCTS = {
-    starter: 'prod_TxYtQnPnJtu4jx',
-    creator: 'prod_TxYwRJjGDlhbU2',
-    credits_200: 'prod_TxZEiXMtiSj9h4',
-    credits_500: 'prod_TxZHzra36nqr8P',
-    credits_1200: 'prod_TxZJ6aumDUcFG8'
-};
-
-function getViewHuntCatalog() {
-    const prices = {
-        starter: process.env.STRIPE_PRICE_STARTER || DEFAULT_VH_PRICES.starter,
-        creator: process.env.STRIPE_PRICE_CREATOR || DEFAULT_VH_PRICES.creator,
-        studio: process.env.STRIPE_PRICE_STUDIO || null,
-        credits_200: process.env.STRIPE_PRICE_CREDITS_200 || DEFAULT_VH_PRICES.credits_200,
-        credits_500: process.env.STRIPE_PRICE_CREDITS_500 || DEFAULT_VH_PRICES.credits_500,
-        credits_1200: process.env.STRIPE_PRICE_CREDITS_1200 || DEFAULT_VH_PRICES.credits_1200
-    };
-    const products = {
-        starter: process.env.STRIPE_PRODUCT_STARTER || DEFAULT_VH_PRODUCTS.starter,
-        creator: process.env.STRIPE_PRODUCT_CREATOR || DEFAULT_VH_PRODUCTS.creator,
-        studio: process.env.STRIPE_PRODUCT_STUDIO || null,
-        credits_200: process.env.STRIPE_PRODUCT_CREDITS_200 || DEFAULT_VH_PRODUCTS.credits_200,
-        credits_500: process.env.STRIPE_PRODUCT_CREDITS_500 || DEFAULT_VH_PRODUCTS.credits_500,
-        credits_1200: process.env.STRIPE_PRODUCT_CREDITS_1200 || DEFAULT_VH_PRODUCTS.credits_1200
-    };
-
-    const priceToKey = {};
-    const productToKey = {};
-    const priceIds = new Set();
-    const productIds = new Set();
-
-    Object.keys(prices).forEach(function(key) {
-        if (prices[key]) {
-            priceToKey[prices[key]] = key;
-            priceIds.add(prices[key]);
-        }
-    });
-    Object.keys(products).forEach(function(key) {
-        if (products[key]) {
-            productToKey[products[key]] = key;
-            productIds.add(products[key]);
-        }
-    });
-
-    return { prices: prices, products: products, priceToKey: priceToKey, productToKey: productToKey, priceIds: priceIds, productIds: productIds };
-}
 
 function getPartnerStartDate() {
     const raw = (process.env.ANALYTICS_PARTNER_START_DATE || '2026-07-26').trim();
@@ -85,6 +27,7 @@ function parseRange(range) {
     const end = new Date();
     let start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
     const partnerStart = getPartnerStartDate();
+    // Visits + trial "started in range" never include pre-partnership history
     if (start < partnerStart) start = new Date(partnerStart.getTime());
     if (start > end) start = new Date(end.getTime());
     return {
@@ -94,310 +37,6 @@ function parseRange(range) {
         end: end,
         partnerStart: partnerStart,
         clampedToPartnerStart: start.getTime() === partnerStart.getTime()
-    };
-}
-
-function moneyFromCents(cents, currency) {
-    const amount = (Number(cents) || 0) / 100;
-    return {
-        cents: Number(cents) || 0,
-        amount: amount,
-        currency: (currency || 'usd').toLowerCase(),
-        formatted: formatMoney(amount, currency)
-    };
-}
-
-function formatMoney(amount, currency) {
-    const cur = (currency || 'usd').toUpperCase();
-    try {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: cur }).format(amount);
-    } catch (e) {
-        return cur + ' ' + amount.toFixed(2);
-    }
-}
-
-async function listAll(stripe, method, params) {
-    const out = [];
-    let startingAfter = undefined;
-    for (let i = 0; i < 80; i++) {
-        const page = await stripe[method].list(Object.assign({}, params, {
-            limit: 100,
-            starting_after: startingAfter
-        }));
-        out.push.apply(out, page.data || []);
-        if (!page.has_more || !page.data || !page.data.length) break;
-        startingAfter = page.data[page.data.length - 1].id;
-    }
-    return out;
-}
-
-function linePriceId(line) {
-    if (!line) return null;
-    if (line.price && line.price.id) return line.price.id;
-    if (typeof line.price === 'string') return line.price;
-    if (line.pricing && line.pricing.price_details && line.pricing.price_details.price) {
-        return line.pricing.price_details.price;
-    }
-    return null;
-}
-
-function lineProductId(line) {
-    if (!line) return null;
-    if (line.price && line.price.product) {
-        return typeof line.price.product === 'string' ? line.price.product : line.price.product.id;
-    }
-    if (line.plan && line.plan.product) {
-        return typeof line.plan.product === 'string' ? line.plan.product : line.plan.product.id;
-    }
-    return null;
-}
-
-function classifyViewHuntLine(line, catalog) {
-    const priceId = linePriceId(line);
-    if (priceId && catalog.priceToKey[priceId]) return catalog.priceToKey[priceId];
-    const productId = lineProductId(line);
-    if (productId && catalog.productToKey[productId]) return catalog.productToKey[productId];
-    return null;
-}
-
-function invoiceIsViewHunt(inv, catalog) {
-    const lines = (inv.lines && inv.lines.data) || [];
-    for (let i = 0; i < lines.length; i++) {
-        if (classifyViewHuntLine(lines[i], catalog)) return true;
-    }
-    return false;
-}
-
-function invoicePrimaryKey(inv, catalog) {
-    const lines = (inv.lines && inv.lines.data) || [];
-    let first = null;
-    for (let i = 0; i < lines.length; i++) {
-        const key = classifyViewHuntLine(lines[i], catalog);
-        if (!key) continue;
-        if (!first) first = key;
-        if (key === 'starter' || key === 'creator' || key === 'studio') return key;
-    }
-    return first || 'other_viewhunt';
-}
-
-function subscriptionIsViewHunt(sub, catalog) {
-    const items = (sub.items && sub.items.data) || [];
-    for (let i = 0; i < items.length; i++) {
-        const price = items[i].price;
-        if (!price) continue;
-        if (price.id && catalog.priceIds.has(price.id)) return true;
-        const productId = typeof price.product === 'string' ? price.product : (price.product && price.product.id);
-        if (productId && catalog.productIds.has(productId)) return true;
-    }
-    return false;
-}
-
-function subscriptionPlanKey(sub, catalog) {
-    const items = (sub.items && sub.items.data) || [];
-    for (let i = 0; i < items.length; i++) {
-        const price = items[i].price;
-        if (!price) continue;
-        if (price.id && catalog.priceToKey[price.id]) return catalog.priceToKey[price.id];
-        const productId = typeof price.product === 'string' ? price.product : (price.product && price.product.id);
-        if (productId && catalog.productToKey[productId]) return catalog.productToKey[productId];
-    }
-    return null;
-}
-
-async function expandInvoiceLines(stripe, inv) {
-    if (inv.lines && inv.lines.data && inv.lines.data.length && !inv.lines.has_more) {
-        return inv;
-    }
-    try {
-        const full = await stripe.invoices.retrieve(inv.id, { expand: ['lines.data.price'] });
-        return full;
-    } catch (e) {
-        return inv;
-    }
-}
-
-async function fetchStripeMetrics(stripe, rangeInfo) {
-    const catalog = getViewHuntCatalog();
-    if (!stripe) {
-        return {
-            scope: 'viewhunt_only',
-            source: 'Stripe',
-            configured: false,
-            error: 'STRIPE_SECRET_KEY not configured',
-            partnerStart: rangeInfo.partnerStart.toISOString(),
-            catalogPriceIds: Array.from(catalog.priceIds)
-        };
-    }
-
-    const startUnix = Math.floor(rangeInfo.start.getTime() / 1000);
-    const endUnix = Math.floor(rangeInfo.end.getTime() / 1000);
-    const partnerUnix = Math.floor(rangeInfo.partnerStart.getTime() / 1000);
-
-    const [trialingAll, activeAll, pastDueAll, canceledRecent, paidInvoicesRaw, createdInRangeAll] = await Promise.all([
-        listAll(stripe, 'subscriptions', { status: 'trialing' }),
-        listAll(stripe, 'subscriptions', { status: 'active' }),
-        listAll(stripe, 'subscriptions', { status: 'past_due' }),
-        listAll(stripe, 'subscriptions', {
-            status: 'canceled',
-            created: { gte: partnerUnix }
-        }),
-        listAll(stripe, 'invoices', {
-            status: 'paid',
-            created: { gte: startUnix, lte: endUnix },
-            expand: ['data.lines.data.price']
-        }),
-        listAll(stripe, 'subscriptions', {
-            status: 'all',
-            created: { gte: startUnix, lte: endUnix }
-        })
-    ]);
-
-    const trialing = trialingAll.filter(function(s) { return subscriptionIsViewHunt(s, catalog); });
-    const active = activeAll.filter(function(s) { return subscriptionIsViewHunt(s, catalog); });
-    const pastDue = pastDueAll.filter(function(s) { return subscriptionIsViewHunt(s, catalog); });
-    const createdInRange = createdInRangeAll.filter(function(s) { return subscriptionIsViewHunt(s, catalog); });
-
-    // Expand lines when needed, then keep ViewHunt invoices only
-    const expanded = [];
-    for (let i = 0; i < paidInvoicesRaw.length; i++) {
-        expanded.push(await expandInvoiceLines(stripe, paidInvoicesRaw[i]));
-    }
-    const vhInvoices = expanded.filter(function(inv) { return invoiceIsViewHunt(inv, catalog); });
-
-    let grossCents = 0;
-    let refundCents = 0;
-    let currency = 'usd';
-    const byPlan = {
-        starter: 0,
-        creator: 0,
-        studio: 0,
-        credits_200: 0,
-        credits_500: 0,
-        credits_1200: 0,
-        other_viewhunt: 0
-    };
-    let paidInvoiceCount = 0;
-    let zeroDollarInvoiceCount = 0;
-    const firstPaidCustomers = new Set();
-
-    vhInvoices.forEach(function(inv) {
-        const paid = Number(inv.amount_paid) || 0;
-        const refunded = Number(inv.amount_refunded) || 0;
-        if (inv.currency) currency = inv.currency;
-
-        if (paid <= 0) {
-            zeroDollarInvoiceCount += 1;
-            return; // ignore $0 trial invoices for partner money metrics
-        }
-
-        paidInvoiceCount += 1;
-        grossCents += paid;
-        refundCents += refunded;
-
-        const key = invoicePrimaryKey(inv, catalog);
-        byPlan[key] = (byPlan[key] || 0) + (paid - refunded);
-
-        if (inv.billing_reason === 'subscription_create' && inv.customer) {
-            firstPaidCustomers.add(String(inv.customer));
-        }
-    });
-
-    let trialsStartedInRange = 0;
-    createdInRange.forEach(function(sub) {
-        if (sub.trial_start && sub.trial_start >= startUnix && sub.trial_start <= endUnix) {
-            trialsStartedInRange += 1;
-        }
-    });
-
-    // Conversion = left Stripe trial and is now paying (active/past_due), trial_end in window
-    let conversionsInRange = 0;
-    active.concat(pastDue).forEach(function(sub) {
-        if (!sub.trial_end) return;
-        if (sub.trial_end >= startUnix && sub.trial_end <= endUnix) conversionsInRange += 1;
-    });
-
-    // Cancellations in window (ViewHunt only). Does NOT reduce collected cash.
-    let canceledInRange = 0;
-    let cancelAtPeriodEndNow = 0;
-    active.forEach(function(sub) {
-        if (sub.cancel_at_period_end) cancelAtPeriodEndNow += 1;
-    });
-    canceledRecent.forEach(function(sub) {
-        if (!subscriptionIsViewHunt(sub, catalog)) return;
-        const canceledAt = sub.canceled_at || sub.ended_at;
-        if (canceledAt && canceledAt >= startUnix && canceledAt <= endUnix) {
-            canceledInRange += 1;
-        }
-    });
-
-    // Partner MRR: only ViewHunt active subs that started on/after partner start
-    // (avoids paying partner on legacy Channel Recipe / pre-deal ViewHunt base)
-    let mrrCents = 0;
-    let activePaidPartnerWindow = 0;
-    active.forEach(function(sub) {
-        const started = sub.start_date || sub.created;
-        if (!started || started < partnerUnix) return;
-        activePaidPartnerWindow += 1;
-        const items = (sub.items && sub.items.data) || [];
-        items.forEach(function(item) {
-            const price = item.price;
-            if (!price || !catalog.priceIds.has(price.id)) return;
-            if (price.type !== 'recurring') return;
-            const unit = Number(price.unit_amount) || 0;
-            const qty = Number(item.quantity) || 1;
-            const interval = price.recurring && price.recurring.interval;
-            const count = (price.recurring && price.recurring.interval_count) || 1;
-            let monthly = unit * qty;
-            if (interval === 'year') monthly = monthly / (12 * count);
-            else if (interval === 'week') monthly = (monthly * 52) / (12 * count);
-            else if (interval === 'day') monthly = (monthly * 30) / count;
-            else monthly = monthly / count;
-            mrrCents += monthly;
-        });
-    });
-
-    const netCents = grossCents - refundCents;
-    const conversionRate = trialsStartedInRange > 0
-        ? Math.round((conversionsInRange / trialsStartedInRange) * 1000) / 10
-        : null;
-
-    return {
-        scope: 'viewhunt_only',
-        source: 'Stripe',
-        configured: true,
-        error: null,
-        partnerStart: rangeInfo.partnerStart.toISOString(),
-        partnerNote: 'All money metrics exclude Channel Recipe and anything before ANALYTICS_PARTNER_START_DATE. Primary payout figure is netSales (gross − refunds). Cancellations are informational only.',
-        catalogPriceIds: Array.from(catalog.priceIds),
-        stripeTrialsNow: trialing.length,
-        activePaidNow: active.length,
-        activePaidSincePartnerStart: activePaidPartnerWindow,
-        cancelAtPeriodEndNow: cancelAtPeriodEndNow,
-        canceledInRange: canceledInRange,
-        grossSales: moneyFromCents(grossCents, currency),
-        netSales: moneyFromCents(netCents, currency),
-        refunds: moneyFromCents(refundCents, currency),
-        paidInvoices: paidInvoiceCount,
-        zeroDollarInvoicesIgnored: zeroDollarInvoiceCount,
-        newPaidCustomers: firstPaidCustomers.size,
-        newPaidCustomersNote: 'Customers with a ViewHunt subscription_create invoice amount_paid > 0 in range',
-        trialsStartedInRange: trialsStartedInRange,
-        conversionsInRange: conversionsInRange,
-        conversionRate: conversionRate,
-        conversionRateNote: trialsStartedInRange > 0
-            ? 'ViewHunt active/past_due with trial_end in range ÷ ViewHunt trials started in range'
-            : 'No ViewHunt Stripe trials started in this range',
-        mrrEstimate: moneyFromCents(Math.round(mrrCents), currency),
-        mrrNote: 'ViewHunt recurring items on active subs that started on/after partner start only',
-        byPlan: {
-            starter: moneyFromCents(byPlan.starter, currency),
-            creator: moneyFromCents(byPlan.creator, currency),
-            studio: moneyFromCents(byPlan.studio, currency),
-            credits_200: moneyFromCents(byPlan.credits_200, currency),
-            credits_500: moneyFromCents(byPlan.credits_500, currency),
-            credits_1200: moneyFromCents(byPlan.credits_1200, currency),
-            other_viewhunt: moneyFromCents(byPlan.other_viewhunt, currency)
-        }
     };
 }
 
@@ -411,7 +50,7 @@ async function fetchCloudflareVisits(rangeInfo) {
             error: 'Configure CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID on DigitalOcean',
             pageViews: null,
             requests: null,
-            uniqueVisitors: null,
+            uniqueVisitorsSum: null,
             series: []
         };
     }
@@ -420,6 +59,7 @@ async function fetchCloudflareVisits(rangeInfo) {
         return d.toISOString().slice(0, 10);
     }
     const startDate = ymd(rangeInfo.start);
+    // Cloudflare date_lt is exclusive — include today
     const endDate = ymd(new Date(rangeInfo.end.getTime() + 24 * 60 * 60 * 1000));
 
     const query = `
@@ -462,7 +102,7 @@ async function fetchCloudflareVisits(rangeInfo) {
             error: msg,
             pageViews: null,
             requests: null,
-            uniqueVisitors: null,
+            uniqueVisitorsSum: null,
             series: []
         };
     }
@@ -470,14 +110,14 @@ async function fetchCloudflareVisits(rangeInfo) {
     const groups = ((((body.data || {}).viewer || {}).zones || [])[0] || {}).httpRequests1dGroups || [];
     let pageViews = 0;
     let requests = 0;
-    let uniqueVisitors = 0;
+    let uniqueVisitorsSum = 0;
     const series = groups.map(function(g) {
         const pv = (g.sum && g.sum.pageViews) || 0;
         const req = (g.sum && g.sum.requests) || 0;
         const u = (g.uniq && g.uniq.uniques) || 0;
         pageViews += pv;
         requests += req;
-        uniqueVisitors += u;
+        uniqueVisitorsSum += u;
         return {
             date: g.dimensions && g.dimensions.date,
             pageViews: pv,
@@ -492,57 +132,128 @@ async function fetchCloudflareVisits(rangeInfo) {
         error: null,
         pageViews: pageViews,
         requests: requests,
-        uniqueVisitors: uniqueVisitors,
-        uniqueVisitorsNote: 'Sum of daily unique visitors from Cloudflare (not a deduped period unique)',
+        // Cloudflare only exposes daily uniques — summing days double-counts return visitors
+        uniqueVisitorsSum: uniqueVisitorsSum,
+        uniqueVisitorsNote: 'Sum of daily Cloudflare uniques (return visitors counted each day). Use page views for trend.',
         series: series,
         zoneId: zoneId
     };
 }
 
-async function fetchProductTrialMetrics(db) {
+/**
+ * Trial context from ViewHunt users collection.
+ * - App free challenge: trial.active (7 days OR 3 ranking videos)
+ * - Stripe card trial: subscription.status === trialing
+ */
+async function fetchTrialMetrics(db, rangeInfo) {
     if (!db) {
         return {
             source: 'Mongo',
             configured: false,
-            error: 'Database unavailable',
-            productTrialsActive: null,
-            productTrialsConverted: null,
-            productTrialsExhausted: null
+            error: 'Database unavailable'
         };
     }
 
     const cursor = db.collection('users').find(
-        { trial: { $exists: true } },
-        { projection: { trial: 1, email: 1 } }
-    ).limit(20000);
+        {
+            $or: [
+                { trial: { $exists: true } },
+                { 'subscription.status': 'trialing' }
+            ]
+        },
+        {
+            projection: {
+                trial: 1,
+                subscription: 1,
+                email: 1,
+                created_at: 1
+            }
+        }
+    ).limit(50000);
 
-    let active = 0;
+    let appTrialActive = 0;
+    let stripeTrialing = 0;
+    let bothActive = 0;
+    let appStartedInRange = 0;
+    let stripeTrialStartedInRange = 0;
     let converted = 0;
     let exhausted = 0;
     let expired = 0;
-    let totalWithTrial = 0;
+    let rankingVideosLeftBuckets = { '3': 0, '2': 0, '1': 0, '0': 0 };
+    let usersScanned = 0;
+
+    const rangeStartMs = rangeInfo.start.getTime();
+    const rangeEndMs = rangeInfo.end.getTime();
 
     while (await cursor.hasNext()) {
         const user = await cursor.next();
-        totalWithTrial += 1;
+        usersScanned += 1;
+
+        const subStatus = user.subscription && user.subscription.status;
+        const isStripeTrialing = subStatus === 'trialing';
+        if (isStripeTrialing) {
+            stripeTrialing += 1;
+            const trialEnd = user.subscription && user.subscription.trialEnd
+                ? new Date(user.subscription.trialEnd).getTime()
+                : null;
+            const startDate = user.subscription && user.subscription.startDate
+                ? new Date(user.subscription.startDate).getTime()
+                : (user.trial && user.trial.startedAt ? new Date(user.trial.startedAt).getTime() : null);
+            // Approximate "started Stripe trial in range" from subscription.startDate
+            if (startDate != null && startDate >= rangeStartMs && startDate <= rangeEndMs) {
+                stripeTrialStartedInRange += 1;
+            }
+            void trialEnd;
+        }
+
         const status = trialHelper.getTrialStatus(user);
-        if (!status) continue;
-        if (status.active) active += 1;
-        else if (status.reason === 'converted' || status.status === 'converted') converted += 1;
-        else if (status.reason === 'videos_exhausted' || status.reason === 'exhausted') exhausted += 1;
-        else if (status.reason === 'expired') expired += 1;
+        if (status) {
+            if (user.trial && user.trial.startedAt) {
+                const startedMs = new Date(user.trial.startedAt).getTime();
+                if (startedMs >= rangeStartMs && startedMs <= rangeEndMs) {
+                    appStartedInRange += 1;
+                }
+            }
+
+            if (status.active) {
+                appTrialActive += 1;
+                if (isStripeTrialing) bothActive += 1;
+                const left = String(Math.min(3, Math.max(0, status.rankingVideosLeft || 0)));
+                if (rankingVideosLeftBuckets[left] != null) rankingVideosLeftBuckets[left] += 1;
+            } else if (status.reason === 'converted' || status.status === 'converted') {
+                converted += 1;
+            } else if (status.reason === 'videos_exhausted' || status.reason === 'exhausted') {
+                exhausted += 1;
+            } else if (status.reason === 'expired') {
+                expired += 1;
+            }
+        }
     }
 
     return {
         source: 'Mongo',
         configured: true,
         error: null,
-        productTrialsActive: active,
-        productTrialsConverted: converted,
-        productTrialsExhausted: exhausted,
-        productTrialsExpired: expired,
-        usersWithTrialField: totalWithTrial,
-        note: 'Product free trial = 7 days OR 3 ranking videos (ViewHunt app only — not Stripe, not Channel Recipe)'
+        usersScanned: usersScanned,
+        // Snapshot (right now)
+        appTrialActiveNow: appTrialActive,
+        stripeCardTrialNow: stripeTrialing,
+        bothNow: bothActive,
+        rankingVideosLeftAmongActive: rankingVideosLeftBuckets,
+        // Ended states (lifetime on user docs)
+        appTrialConverted: converted,
+        appTrialExhausted: exhausted,
+        appTrialExpired: expired,
+        // In selected range
+        appTrialsStartedInRange: appStartedInRange,
+        stripeCardTrialsStartedInRange: stripeTrialStartedInRange,
+        definitions: {
+            appTrialActiveNow: 'Users who can still cook free ranking videos (7 days OR 3 videos left)',
+            stripeCardTrialNow: 'Users with Stripe subscription.status = trialing (card on file, not billed yet)',
+            bothNow: 'Has Stripe card trial AND still has free ranking allotment',
+            appTrialsStartedInRange: 'Users whose app trial.startedAt falls in the selected range',
+            pageViews: 'Cloudflare page views for viewhunt.app in range'
+        }
     };
 }
 
@@ -582,7 +293,9 @@ async function writeCache(db, key, payload) {
 
 async function getAdminAnalytics(opts) {
     const rangeInfo = parseRange(opts.range);
-    const cacheKey = 'analytics:vh:' + rangeInfo.range + ':' + rangeInfo.partnerStart.toISOString().slice(0, 10);
+    // v2 cache key — do not reuse old revenue payloads
+    const cacheKey = 'analytics:v2:visits-trials:' + rangeInfo.range + ':' +
+        rangeInfo.partnerStart.toISOString().slice(0, 10);
 
     if (!opts.refresh) {
         const cached = await readCache(opts.db, cacheKey);
@@ -591,17 +304,7 @@ async function getAdminAnalytics(opts) {
         }
     }
 
-    const [stripeMetrics, visits, productTrials] = await Promise.all([
-        fetchStripeMetrics(opts.stripe, rangeInfo).catch(function(err) {
-            console.error('Stripe analytics error:', err);
-            return {
-                scope: 'viewhunt_only',
-                source: 'Stripe',
-                configured: !!opts.stripe,
-                error: err.message || String(err),
-                partnerStart: rangeInfo.partnerStart.toISOString()
-            };
-        }),
+    const [visits, trials] = await Promise.all([
         fetchCloudflareVisits(rangeInfo).catch(function(err) {
             console.error('Cloudflare analytics error:', err);
             return {
@@ -610,12 +313,12 @@ async function getAdminAnalytics(opts) {
                 error: err.message || String(err),
                 pageViews: null,
                 requests: null,
-                uniqueVisitors: null,
+                uniqueVisitorsSum: null,
                 series: []
             };
         }),
-        fetchProductTrialMetrics(opts.db).catch(function(err) {
-            console.error('Mongo trial analytics error:', err);
+        fetchTrialMetrics(opts.db, rangeInfo).catch(function(err) {
+            console.error('Trial analytics error:', err);
             return {
                 source: 'Mongo',
                 configured: true,
@@ -633,9 +336,9 @@ async function getAdminAnalytics(opts) {
         clampedToPartnerStart: rangeInfo.clampedToPartnerStart,
         cached: false,
         cacheTtlSeconds: Math.floor(CACHE_TTL_MS / 1000),
+        focus: 'visits_and_trials',
         visits: visits,
-        stripe: stripeMetrics,
-        productTrials: productTrials
+        trials: trials
     };
 
     await writeCache(opts.db, cacheKey, payload);
@@ -645,7 +348,6 @@ async function getAdminAnalytics(opts) {
 module.exports = {
     getAdminAnalytics,
     parseRange,
-    getViewHuntCatalog,
     getPartnerStartDate,
     CACHE_TTL_MS
 };

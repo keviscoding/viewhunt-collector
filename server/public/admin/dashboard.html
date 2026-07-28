@@ -53,7 +53,7 @@
         .range-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
         .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
         .btn:disabled { opacity: 0.5; cursor: wait; }
-        main { padding: 1.25rem 1.5rem 3rem; max-width: 1200px; margin: 0 auto; }
+        main { padding: 1.25rem 1.5rem 3rem; max-width: 960px; margin: 0 auto; }
         .callout {
             background: rgba(124,92,252,0.12);
             border: 1px solid rgba(124,92,252,0.35);
@@ -102,7 +102,6 @@
             border: 1px solid var(--border);
             color: var(--dim);
         }
-        .source.stripe { border-color: rgba(124,92,252,0.45); color: #c4b5fd; }
         .source.cloudflare { border-color: rgba(251,191,36,0.45); color: #fcd34d; }
         .source.mongo { border-color: rgba(52,211,153,0.45); color: #6ee7b7; }
         .warn { color: var(--amber); font-size: 0.8rem; }
@@ -127,7 +126,7 @@
             display: flex;
             align-items: flex-end;
             gap: 2px;
-            height: 40px;
+            height: 48px;
             margin-top: 0.75rem;
         }
         .spark i {
@@ -165,21 +164,11 @@
             <div class="grid" id="cards"></div>
 
             <div class="section">
-                <h3>ViewHunt sales breakdown (range)</h3>
+                <h3>What these numbers mean</h3>
                 <table>
-                    <thead><tr><th>Item</th><th>Net sales</th></tr></thead>
-                    <tbody id="plan-rows"><tr><td colspan="2">—</td></tr></tbody>
+                    <thead><tr><th>Metric</th><th>Definition</th></tr></thead>
+                    <tbody id="def-rows"><tr><td colspan="2">—</td></tr></tbody>
                 </table>
-            </div>
-
-            <div class="section">
-                <h3>Partner payout rules (read this)</h3>
-                <div class="sub">
-                    <p><strong>Pay on:</strong> <em>Net ViewHunt sales</em> = cash collected on ViewHunt prices minus refunds in the window.</p>
-                    <p><strong>Do not pay on:</strong> Channel Recipe, $0 trial invoices, pre-partner history, or cancellations (cancels stop future billing; they don’t claw back cash already collected unless refunded).</p>
-                    <p><strong>Scope:</strong> Starter, Creator, and Studio credit packs only (price/product allowlist).</p>
-                    <p><strong>Window:</strong> Selected range is clamped so it never starts before the partner start date.</p>
-                </div>
             </div>
         </main>
     </div>
@@ -196,10 +185,6 @@
         function fmt(n) {
             if (n == null || n !== n) return '—';
             return Number(n).toLocaleString();
-        }
-        function money(m) {
-            if (!m || m.formatted == null) return '—';
-            return m.formatted;
         }
         function escapeHtml(str) {
             return String(str == null ? '' : str)
@@ -250,116 +235,95 @@
             series.forEach(function(p) { if ((p.pageViews || 0) > max) max = p.pageViews; });
             return '<div class="spark" title="Daily page views">' +
                 series.map(function(p) {
-                    var h = Math.max(2, Math.round(((p.pageViews || 0) / max) * 40));
-                    return '<i style="height:' + h + 'px"></i>';
+                    var h = Math.max(2, Math.round(((p.pageViews || 0) / max) * 48));
+                    var tip = (p.date || '') + ': ' + (p.pageViews || 0) + ' views';
+                    return '<i style="height:' + h + 'px" title="' + tip + '"></i>';
                 }).join('') + '</div>';
         }
 
         function render(data) {
             var v = data.visits || {};
-            var s = data.stripe || {};
-            var p = data.productTrials || {};
+            var t = data.trials || {};
 
             $('partner-callout').innerHTML =
-                '<strong>ViewHunt only · Partner window from ' +
-                new Date(data.partnerStart).toLocaleDateString() +
-                '</strong><br>Channel Recipe excluded. Use <strong>Net ViewHunt sales</strong> for payouts. ' +
-                'Cancellations are tracked but do not reduce cash already collected.';
+                '<strong>Visits + trials only</strong><br>' +
+                'Window from ' + new Date(data.partnerStart).toLocaleDateString() +
+                ' · No revenue numbers on this page. Use page views for traffic trend, and the trial cards for free-challenge / card-trial status.';
 
             var banner = '';
             if (v.error) banner += '<p class="warn">Visits: ' + escapeHtml(v.error) + '</p>';
-            if (s.error) banner += '<p class="err">Stripe: ' + escapeHtml(s.error) + '</p>';
-            if (p.error) banner += '<p class="err">Mongo: ' + escapeHtml(p.error) + '</p>';
+            if (t.error) banner += '<p class="err">Trials: ' + escapeHtml(t.error) + '</p>';
             $('banner').innerHTML = banner;
 
             $('meta-line').textContent =
                 'Range ' + data.range + ' · ' +
                 new Date(data.rangeStart).toLocaleDateString() + ' – ' +
                 new Date(data.rangeEnd).toLocaleDateString() +
-                (data.clampedToPartnerStart ? ' (clamped to partner start)' : '') +
+                (data.clampedToPartnerStart ? ' (from partnership start)' : '') +
                 ' · Updated ' + new Date(data.asOf).toLocaleString() +
                 (data.cached ? ' (cached)' : ' (fresh)');
 
             var visitsVal = v.configured === false || v.pageViews == null ? '—' : fmt(v.pageViews);
             var visitsSub = v.configured === false
-                ? 'Configure CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID'
-                : (fmt(v.uniqueVisitors) + ' daily-unique sum · ' + fmt(v.requests) + ' requests') +
+                ? 'Add CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID on DigitalOcean'
+                : (fmt(v.requests) + ' requests · daily-uniques sum ' + fmt(v.uniqueVisitorsSum) +
+                    ' (not period-unique)') +
                   spark(v.series);
+
+            var buckets = t.rankingVideosLeftAmongActive || {};
+            var bucketSub = 'Among active: ' +
+                fmt(buckets['3']) + ' with 3 left · ' +
+                fmt(buckets['2']) + ' with 2 · ' +
+                fmt(buckets['1']) + ' with 1 · ' +
+                fmt(buckets['0']) + ' with 0';
 
             var html = '';
             html += card(
-                'Net ViewHunt sales (payout figure)',
-                money(s.netSales),
-                'Gross ' + money(s.grossSales) + ' − refunds ' + money(s.refunds) +
-                    ' · ' + fmt(s.paidInvoices) + ' paid invoices (ignored ' +
-                    fmt(s.zeroDollarInvoicesIgnored) + ' × $0 trial invoices)',
-                'stripe', 'Stripe · ViewHunt', true
+                'Page views (range)',
+                visitsVal,
+                visitsSub,
+                'cloudflare', 'Cloudflare', true
             );
             html += card(
-                'Refunds (range)',
-                money(s.refunds),
-                'Already subtracted from net sales above',
-                'stripe', 'Stripe · ViewHunt'
+                'App free challenge active now',
+                t.appTrialActiveNow == null ? '—' : fmt(t.appTrialActiveNow),
+                bucketSub,
+                'mongo', 'ViewHunt users'
             );
             html += card(
-                'Canceled in range',
-                s.canceledInRange == null ? '—' : fmt(s.canceledInRange),
-                fmt(s.cancelAtPeriodEndNow) + ' active subs set to cancel at period end · cancels do not reduce collected cash',
-                'stripe', 'Stripe · ViewHunt'
+                'Stripe card trials now',
+                t.stripeCardTrialNow == null ? '—' : fmt(t.stripeCardTrialNow),
+                fmt(t.bothNow) + ' also still have free ranking left',
+                'mongo', 'ViewHunt users'
             );
             html += card(
-                'New paying customers',
-                s.newPaidCustomers == null ? '—' : fmt(s.newPaidCustomers),
-                s.newPaidCustomersNote || 'subscription_create with amount_paid > 0',
-                'stripe', 'Stripe · ViewHunt'
+                'App trials started (range)',
+                t.appTrialsStartedInRange == null ? '—' : fmt(t.appTrialsStartedInRange),
+                'Card trials started in range: ' + fmt(t.stripeCardTrialsStartedInRange),
+                'mongo', 'ViewHunt users'
             );
             html += card(
-                'Stripe trials now',
-                s.stripeTrialsNow == null ? '—' : fmt(s.stripeTrialsNow),
-                'ViewHunt subscriptions status=trialing',
-                'stripe', 'Stripe · ViewHunt'
-            );
-            html += card(
-                'Active paid (all ViewHunt)',
-                s.activePaidNow == null ? '—' : fmt(s.activePaidNow),
-                'Started since partner: ' + fmt(s.activePaidSincePartnerStart),
-                'stripe', 'Stripe · ViewHunt'
-            );
-            html += card(
-                'Conversions (range)',
-                s.conversionsInRange == null ? '—' : fmt(s.conversionsInRange),
-                (s.conversionRate != null ? s.conversionRate + '% · ' : '') +
-                    fmt(s.trialsStartedInRange) + ' trials started · ' +
-                    (s.conversionRateNote || ''),
-                'stripe', 'Stripe · ViewHunt'
-            );
-            html += card(
-                'Partner MRR estimate',
-                money(s.mrrEstimate),
-                s.mrrNote || 'Active ViewHunt subs started on/after partner start',
-                'stripe', 'Stripe · ViewHunt'
-            );
-            html += card('Page views (range)', visitsVal, visitsSub, 'cloudflare', 'Cloudflare');
-            html += card(
-                'Product trials active',
-                p.productTrialsActive == null ? '—' : fmt(p.productTrialsActive),
-                'App free challenge (7d / 3 ranking) — not used for partner payout',
-                'mongo', 'Mongo'
+                'Challenge ended (all time)',
+                t.appTrialExhausted == null && t.appTrialExpired == null
+                    ? '—'
+                    : fmt((t.appTrialExhausted || 0) + (t.appTrialExpired || 0)),
+                fmt(t.appTrialExhausted) + ' videos/time exhausted · ' +
+                    fmt(t.appTrialExpired) + ' expired · ' +
+                    fmt(t.appTrialConverted) + ' converted to paid',
+                'mongo', 'ViewHunt users'
             );
             $('cards').innerHTML = html;
 
-            var bp = s.byPlan || {};
-            var order = [
-                ['starter', 'Starter'],
-                ['creator', 'Creator'],
-                ['studio', 'Studio plan'],
-                ['credits_200', 'Credits 200'],
-                ['credits_500', 'Credits 500'],
-                ['credits_1200', 'Credits 1200'],
-                ['other_viewhunt', 'Other ViewHunt']
+            var defs = [
+                ['Page views', 'Cloudflare page views for viewhunt.app in the selected range (best traffic trend).'],
+                ['App free challenge active', 'Users who can still cook free ranking videos (7 days or 3 videos).'],
+                ['Stripe card trials', 'Users with a card on file still in Stripe trialing (not billed yet).'],
+                ['Both', 'Has a Stripe card trial and still has free ranking allotment left.'],
+                ['Started in range', 'App trial.startedAt (or Stripe sub start) falls inside the selected dates.'],
+                ['Daily-uniques sum', 'Cloudflare daily uniques added up — return visitors are counted each day, so it is not a period unique.']
             ];
-            $('plan-rows').innerHTML = order.map(function(row) {
-                return '<tr><td>' + row[1] + '</td><td>' + money(bp[row[0]]) + '</td></tr>';
+            $('def-rows').innerHTML = defs.map(function(row) {
+                return '<tr><td>' + escapeHtml(row[0]) + '</td><td>' + escapeHtml(row[1]) + '</td></tr>';
             }).join('');
         }
 

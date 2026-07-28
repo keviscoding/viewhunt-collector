@@ -3563,7 +3563,7 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// Admin analytics dashboard data (Stripe + Cloudflare + Mongo product trials)
+// Admin analytics dashboard data (Cloudflare visits + Mongo trial context)
 app.get('/api/admin/analytics', authenticateToken, async (req, res) => {
     try {
         if (!isAdminUser(req.user)) {

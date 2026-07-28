@@ -166,30 +166,16 @@ Stripe checkout / `customer.subscription.created` converts app `trial.status` �
 
 URL: `https://viewhunt.app/admin/dashboard` (admin JWT only).
 
-**Partner-safe ViewHunt metrics** (excludes Channel Recipe):
+**Focus:** site visits + trial context only (no revenue on this page).
 
 ```
 ANALYTICS_PARTNER_START_DATE=2026-07-26
-STRIPE_SECRET_KEY=...   # existing
-# ViewHunt price/product IDs (see server/.env.fly.example for full list)
-STRIPE_PRICE_STARTER=price_1Szdm8GphjFbfwFXzPRyaWZh
-STRIPE_PRICE_CREATOR=price_1Szdo9GphjFbfwFXJgRiuK9J
-STRIPE_PRICE_CREDITS_200=...
-STRIPE_PRICE_CREDITS_500=...
-STRIPE_PRICE_CREDITS_1200=...
-```
-
-**Payout figure:** `netSales` = ViewHunt invoice `amount_paid` − `amount_refunded` in the
-selected range (clamped so it never starts before `ANALYTICS_PARTNER_START_DATE`).
-$0 trial invoices are ignored. Cancellations are shown separately and do **not**
-reduce already-collected cash.
-
-For visits:
-
-```
 CLOUDFLARE_API_TOKEN=<token with Zone Analytics Read>
 CLOUDFLARE_ZONE_ID=<zone id for viewhunt.app>
 ```
+
+- **Visits** — Cloudflare page views / requests for `viewhunt.app` (range clamped to partner start).
+- **Trials** — Mongo users: app free challenge active (7d / 3 ranking), Stripe `subscription.status=trialing`, started-in-range counts.
 
 Responses are cached 5 minutes. Use **Refresh** for `?refresh=1`. Never called from niche/studio browsing.
 
