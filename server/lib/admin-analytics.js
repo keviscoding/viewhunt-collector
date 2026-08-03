@@ -189,7 +189,9 @@ async function fetchFunnelMetrics(db, rangeInfo) {
 
     function rate(num, den) {
         if (!den) return null;
-        return Math.round((num / den) * 1000) / 10;
+        // Cap at 100% — visit beacons can undercount vs signups (ad blockers, /app deep links)
+        var pct = Math.round((num / den) * 1000) / 10;
+        return Math.min(100, pct);
     }
 
     const bySourceList = Object.keys(bySource)

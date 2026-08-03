@@ -194,9 +194,10 @@
                             <th>Target</th>
                             <th>Status</th>
                             <th>Action</th>
+                            <th>What this means</th>
                         </tr>
                     </thead>
-                    <tbody id="decision-rows"><tr><td colspan="5">—</td></tr></tbody>
+                    <tbody id="decision-rows"><tr><td colspan="6">—</td></tr></tbody>
                 </table>
                 <div class="sub" style="margin-top:0.75rem;">
                     Targets are ViewHunt floors for cold Meta traffic. A step is only scored once it has enough base volume.
@@ -226,7 +227,8 @@
                 denomKey: 'visitsUnique',
                 actionBad: 'Fix landing / offer / trust',
                 actionMid: 'Landing acceptable — improve headline/creatives',
-                actionGood: 'Landing converting — can push traffic'
+                actionGood: 'Landing converting — can push traffic',
+                meaning: 'Of people who hit the landing page, how many create an account. Measures ad → landing fit and offer clarity — not product quality yet.'
             },
             signupToTrial: {
                 label: 'Signup → Card trial',
@@ -237,7 +239,8 @@
                 denomKey: 'signups',
                 actionBad: 'Fix checkout / card friction / paywall copy',
                 actionMid: 'Checkout OK — tighten timing/offer',
-                actionGood: 'Card collect healthy'
+                actionGood: 'Card collect healthy',
+                meaning: 'Of people who signed up, how many put a card on file for the Stripe trial. Measures checkout trust and paywall friction — your primary Meta conversion.'
             },
             trialToFirstCook: {
                 label: 'Trial → First cook',
@@ -248,7 +251,8 @@
                 denomKey: 'trialsStarted',
                 actionBad: 'Fix ranking product — do not scale ads',
                 actionMid: 'Activation OK — polish onboarding',
-                actionGood: 'Activation healthy — OK to scale if paid not red'
+                actionGood: 'Activation healthy — OK to scale if paid not red',
+                meaning: 'Of card-trial users, how many successfully assemble a ranking video. Measures product activation — if this is red, ads are buying users who never experience the product.'
             },
             trialToPaid: {
                 label: 'Trial → Paid',
@@ -259,7 +263,8 @@
                 denomKey: 'trialsStarted',
                 actionBad: 'Fix end-trial / upgrade path / reminders',
                 actionMid: 'Paid conversion OK — test offers',
-                actionGood: 'Monetization healthy — scale volume'
+                actionGood: 'Monetization healthy — scale volume',
+                meaning: 'Of card-trial users, how many become paying customers. Measures monetization / upgrade path — only scale hard when this is not red and Trial→Cook is green.'
             }
         };
 
@@ -390,6 +395,7 @@
                     '<td>' + escapeHtml(tg.targetLabel) + '</td>' +
                     '<td><span class="status-pill ' + s.cls + '">' + escapeHtml(s.label) + '</span></td>' +
                     '<td>' + escapeHtml(s.action) + '</td>' +
+                    '<td class="sub">' + escapeHtml(tg.meaning) + '</td>' +
                     '</tr>';
             }).join('');
 
