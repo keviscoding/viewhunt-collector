@@ -162,22 +162,28 @@ Other Studio formats still use the credit wallet.
 Starter / Creator / Studio Stripe checkout uses a 7-day `trial_period_days`.
 Stripe checkout / `customer.subscription.created` converts app `trial.status` → `converted`.
 
-## Admin analytics dashboard
+## Admin funnel + ads telemetry
 
 URL: `https://viewhunt.app/admin/dashboard` (admin JWT only).
 
-**Focus:** site visits + trial context only (no revenue on this page).
+See [TELEMETRY.md](TELEMETRY.md) for the full setup checklist (PostHog, Meta CAPI, Google Ads).
 
 ```
 ANALYTICS_PARTNER_START_DATE=2026-07-26
-CLOUDFLARE_API_TOKEN=<token with Zone Analytics Read>
-CLOUDFLARE_ZONE_ID=<zone id for viewhunt.app>
+POSTHOG_KEY=...
+POSTHOG_HOST=https://us.i.posthog.com
+META_PIXEL_ID=...
+META_CAPI_TOKEN=...
+META_CAPI_TEST_CODE=          # remove after validation
+GOOGLE_ADS_ID=AW-...
+GOOGLE_ADS_LABEL_TRIAL=...
+GOOGLE_ADS_LABEL_PAID=...
 ```
 
-- **Visits** — Cloudflare page views / requests for `viewhunt.app` (range clamped to partner start).
-- **Trials** — Mongo users: app free challenge active (7d / 3 ranking), Stripe `subscription.status=trialing`, started-in-range counts.
+Funnel KPIs (Mongo `analytics_events` + users): visits → signup → card trial → first cook → paid.
+Primary ad conversion = `trial_started`. Secondary = `subscription_activated`.
 
-Responses are cached 5 minutes. Use **Refresh** for `?refresh=1`. Never called from niche/studio browsing.
+Responses are cached 5 minutes. Use **Refresh** for `?refresh=1`.
 
 ## Admin triggers
 

@@ -20,6 +20,7 @@ const trialHelper = require('./studio/trial');
 const { scheduleDailyCollection, runDailyCollection } = require('./auto-collector');
 const nicheScheduler = require('./workers/niche-scheduler');
 const adminAnalytics = require('./lib/admin-analytics');
+const telemetry = require('./lib/telemetry');
 
 // Initialize Stripe only if secret key is available
 let stripe;
@@ -323,6 +324,41 @@ app.get('/subscription-success', async (req, res) => {
                     { _id: user._id },
                     { $set: setFields }
                 );
+
+                try {
+                    var freshUser = await db.collection('users').findOne({ _id: user._id });
+                    var attr = (freshUser && freshUser.attribution &&
+                        (freshUser.attribution.lastTouch || freshUser.attribution.firstTouch)) || null;
+                    if (subStatus === 'trialing' && !(freshUser.telemetry && freshUser.telemetry.trialStartedAt)) {
+                        await db.collection('users').updateOne(
+                            { _id: user._id },
+                            { $set: { 'telemetry.trialStartedAt': new Date() } }
+                        );
+                        await telemetry.track(db, {
+                            event: 'trial_started',
+                            userId: user._id,
+                            email: user.email,
+                            attribution: attr,
+                            properties: { plan: planFromMeta, source: 'subscription_success' }
+                        });
+                    } else if (subStatus === 'active' && !(freshUser.telemetry && freshUser.telemetry.paidActivatedAt)) {
+                        await db.collection('users').updateOne(
+                            { _id: user._id },
+                            { $set: { 'telemetry.paidActivatedAt': new Date() } }
+                        );
+                        await telemetry.track(db, {
+                            event: 'subscription_activated',
+                            userId: user._id,
+                            email: user.email,
+                            attribution: attr,
+                            properties: { plan: planFromMeta, source: 'subscription_success' },
+                            value: (session.amount_total != null ? session.amount_total / 100 : undefined),
+                            currency: session.currency || 'usd'
+                        });
+                    }
+                } catch (telErr) {
+                    console.warn('Subscription success telemetry:', telErr.message);
+                }
                 
                 console.log('Subscription updated successfully for:', user.email, subStatus);
                 var returnTo = (session.metadata && session.metadata.returnTo) || '/studio/ranking';
@@ -1048,6 +1084,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         const verificationCode = generateVerificationCode();
 
         // Create user — free tier or invite tier (new free users get ranking trial)
+        const regAttr = telemetry.normalizeAttribution(req.body && req.body.attribution);
         const newUser = {
             email: reqEmail.toLowerCase(),
             password: hashedPassword,
@@ -1067,8 +1104,32 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
             }
         };
         if (!newUser.trial) delete newUser.trial;
+        if (regAttr) {
+            newUser.attribution = {
+                firstTouch: Object.assign({}, regAttr, { capturedAt: new Date() }),
+                lastTouch: regAttr,
+                updatedAt: new Date()
+            };
+        }
 
         const result = await db.collection('users').insertOne(newUser);
+
+        var signupEventId = null;
+        try {
+            signupEventId = await telemetry.track(db, {
+                event: 'signup_completed',
+                userId: result.insertedId,
+                email: reqEmail.toLowerCase(),
+                attribution: regAttr,
+                properties: { method: 'email', invite: !!invite_code },
+                clientIp: telemetry.clientIpFromReq(req),
+                userAgent: req.headers['user-agent'],
+                eventSourceUrl: process.env.APP_URL || 'https://viewhunt.app'
+            });
+            await telemetry.posthogIdentify(result.insertedId, { email: reqEmail.toLowerCase() });
+        } catch (telErr) {
+            console.warn('Signup telemetry:', telErr.message);
+        }
 
         // Update invite code usage if applicable
         if (invite_code && inviteCodeDoc) {
@@ -1111,7 +1172,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
                 display_name: reqDisplayName,
                 emailVerified: false,
                 stats: newUser.stats
-            }
+            },
+            telemetry: { signupEventId: signupEventId }
         });
 
     } catch (error) {
@@ -1495,6 +1557,7 @@ async function processGoogleUser(googleUser) {
         }
 
         // Step 3: If still not found, create new user
+        var isNewGoogleUser = false;
         if (!user) {
             console.log('Creating new Google user');
             const newUser = {
@@ -1517,9 +1580,24 @@ async function processGoogleUser(googleUser) {
             const result = await db.collection('users').insertOne(newUser);
             user = { ...newUser, _id: result.insertedId };
             userSource = 'NEW_V2';
+            isNewGoogleUser = true;
         }
 
         console.log(`Google login successful for: ${email} (${userSource})`);
+
+        if (isNewGoogleUser) {
+            try {
+                await telemetry.track(db, {
+                    event: 'signup_completed',
+                    userId: user._id,
+                    email: user.email,
+                    properties: { method: 'google' }
+                });
+                await telemetry.posthogIdentify(user._id, { email: user.email });
+            } catch (telErr) {
+                console.warn('Google signup telemetry:', telErr.message);
+            }
+        }
 
         // Generate JWT token
         const token = jwt.sign(
@@ -1541,7 +1619,8 @@ async function processGoogleUser(googleUser) {
                 display_name: user.display_name,
                 profilePicture: user.profilePicture,
                 stats: user.stats || { channels_approved: 0, channels_rejected: 0, total_reviews: 0 }
-            }
+            },
+            isNewUser: isNewGoogleUser
         };
 
     } catch (error) {
@@ -1592,6 +1671,7 @@ app.post('/api/auth/google', async (req, res) => {
         }
 
         // Step 3: If still not found, create new user
+        var isNewApiGoogleUser = false;
         if (!user) {
             console.log('Creating new Google user');
             const newUser = {
@@ -1610,13 +1690,40 @@ app.post('/api/auth/google', async (req, res) => {
                     total_reviews: 0
                 }
             };
+            const apiAttr = telemetry.normalizeAttribution(req.body && req.body.attribution);
+            if (apiAttr) {
+                newUser.attribution = {
+                    firstTouch: Object.assign({}, apiAttr, { capturedAt: new Date() }),
+                    lastTouch: apiAttr,
+                    updatedAt: new Date()
+                };
+            }
 
             const result = await db.collection('users').insertOne(newUser);
             user = { ...newUser, _id: result.insertedId };
             userSource = 'NEW_V2';
+            isNewApiGoogleUser = true;
+            try {
+                await telemetry.track(db, {
+                    event: 'signup_completed',
+                    userId: user._id,
+                    email: user.email,
+                    attribution: apiAttr,
+                    properties: { method: 'google_api' },
+                    clientIp: telemetry.clientIpFromReq(req),
+                    userAgent: req.headers['user-agent']
+                });
+            } catch (telErr) {
+                console.warn('Google API signup telemetry:', telErr.message);
+            }
+        } else if (req.body && req.body.attribution) {
+            try {
+                await telemetry.persistAttribution(db, user._id, req.body.attribution);
+            } catch (e) {}
         }
 
         console.log(`Google login successful for: ${email.toLowerCase()} (${userSource})`);
+        void isNewApiGoogleUser;
 
         // Generate JWT token
         const token = jwt.sign(
@@ -3563,7 +3670,61 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// Admin analytics dashboard data (Cloudflare visits + Mongo trial context)
+// Public telemetry config (pixel IDs / PostHog project key — no secrets)
+app.get('/api/telemetry/config', function(req, res) {
+    res.json(telemetry.getPublicConfig());
+});
+
+// Persist UTM / click ids on the logged-in user (first + last touch)
+app.post('/api/telemetry/attribution', authenticateToken, async (req, res) => {
+    try {
+        const attr = await telemetry.persistAttribution(db, req.user.userId, req.body || {});
+        res.json({ success: true, attribution: attr });
+    } catch (err) {
+        console.error('Attribution save error:', err);
+        res.status(500).json({ error: 'Failed to save attribution' });
+    }
+});
+
+// Client beacon for events that only happen in-browser (landing_viewed, signup_started, etc.)
+app.post('/api/telemetry/event', async (req, res) => {
+    try {
+        const event = req.body && req.body.event;
+        const allowed = {
+            landing_viewed: 1,
+            signup_started: 1,
+            ranking_opened: 1,
+            checkout_started: 1
+        };
+        if (!event || !allowed[event]) {
+            return res.status(400).json({ error: 'Unsupported event' });
+        }
+        var userId = null;
+        try {
+            const auth = req.headers.authorization || '';
+            if (auth.indexOf('Bearer ') === 0) {
+                const decoded = jwt.verify(auth.slice(7), process.env.JWT_SECRET);
+                userId = decoded.userId;
+            }
+        } catch (e) {}
+        const attr = telemetry.normalizeAttribution(req.body.attribution);
+        await telemetry.track(db, {
+            event: event,
+            userId: userId,
+            distinctId: req.body.distinctId || userId || null,
+            attribution: attr,
+            properties: req.body.properties || {},
+            clientIp: telemetry.clientIpFromReq(req),
+            userAgent: req.headers['user-agent']
+        });
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Telemetry event error:', err);
+        res.status(500).json({ error: 'Failed to record event' });
+    }
+});
+
+// Admin analytics dashboard data (funnel KPIs)
 app.get('/api/admin/analytics', authenticateToken, async (req, res) => {
     try {
         if (!isAdminUser(req.user)) {
@@ -4155,6 +4316,21 @@ app.post('/api/subscription/create-plan-checkout', authenticateToken, async (req
             { $set: { 'subscription.plan': plan, updated_at: new Date() } }
         );
 
+        try {
+            var chkAttr = user.attribution && (user.attribution.lastTouch || user.attribution.firstTouch);
+            await telemetry.track(db, {
+                event: 'checkout_started',
+                userId: user._id,
+                email: user.email,
+                attribution: chkAttr,
+                properties: { plan: plan, billingNow: !!billNow },
+                clientIp: telemetry.clientIpFromReq(req),
+                userAgent: req.headers['user-agent']
+            });
+        } catch (telErr) {
+            console.warn('Checkout telemetry:', telErr.message);
+        }
+
         res.json({
             success: true,
             url: session.url,
@@ -4282,6 +4458,28 @@ app.post('/api/subscription/end-trial-early', authenticateToken, async (req, res
             }
         );
         try { await trialHelper.convertTrial(db, user._id); } catch (e) {}
+
+        try {
+            var endAttr = user.attribution && (user.attribution.lastTouch || user.attribution.firstTouch);
+            if (!(user.telemetry && user.telemetry.paidActivatedAt)) {
+                await db.collection('users').updateOne(
+                    { _id: user._id },
+                    { $set: { 'telemetry.paidActivatedAt': new Date() } }
+                );
+                await telemetry.track(db, {
+                    event: 'subscription_activated',
+                    userId: user._id,
+                    email: user.email,
+                    attribution: endAttr,
+                    properties: {
+                        plan: (user.subscription && user.subscription.plan) || 'unknown',
+                        source: 'end_trial_early'
+                    }
+                });
+            }
+        } catch (telErr) {
+            console.warn('End-trial telemetry:', telErr.message);
+        }
 
         res.json({
             success: true,
@@ -4494,6 +4692,53 @@ app.post('/api/subscription/webhook', async (req, res) => {
             if (subMeta.userId && subscription.status === 'active') {
                 await trialHelper.convertTrial(db, subMeta.userId);
             }
+
+            try {
+                var telUser = await db.collection('users').findOne(subFilter, {
+                    projection: { email: 1, attribution: 1, telemetry: 1, subscription: 1 }
+                });
+                if (telUser) {
+                    var telAttr = telUser.attribution &&
+                        (telUser.attribution.lastTouch || telUser.attribution.firstTouch);
+                    var planName = subMeta.plan || (telUser.subscription && telUser.subscription.plan) || 'unknown';
+                    if (subscription.status === 'trialing' && !(telUser.telemetry && telUser.telemetry.trialStartedAt)) {
+                        await db.collection('users').updateOne(
+                            { _id: telUser._id },
+                            { $set: { 'telemetry.trialStartedAt': new Date() } }
+                        );
+                        await telemetry.track(db, {
+                            event: 'trial_started',
+                            userId: telUser._id,
+                            email: telUser.email,
+                            attribution: telAttr,
+                            properties: { plan: planName, source: 'stripe_webhook', hook: event.type }
+                        });
+                    } else if (subscription.status === 'active' && !(telUser.telemetry && telUser.telemetry.paidActivatedAt)) {
+                        await db.collection('users').updateOne(
+                            { _id: telUser._id },
+                            { $set: { 'telemetry.paidActivatedAt': new Date() } }
+                        );
+                        await telemetry.track(db, {
+                            event: 'subscription_activated',
+                            userId: telUser._id,
+                            email: telUser.email,
+                            attribution: telAttr,
+                            properties: { plan: planName, source: 'stripe_webhook', hook: event.type }
+                        });
+                    } else if (subscription.status === 'canceled' || event.type === 'customer.subscription.deleted') {
+                        await telemetry.track(db, {
+                            event: 'subscription_canceled',
+                            userId: telUser._id,
+                            email: telUser.email,
+                            attribution: telAttr,
+                            properties: { plan: planName, source: 'stripe_webhook', hook: event.type }
+                        });
+                    }
+                }
+            } catch (telHookErr) {
+                console.warn('Webhook telemetry:', telHookErr.message);
+            }
+
             console.log('Webhook:', event.type, 'status=' + subscription.status, 'customer=' + subscription.customer);
             break;
         }

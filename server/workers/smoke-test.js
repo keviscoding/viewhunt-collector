@@ -89,8 +89,30 @@ function testStorageExports() {
     console.log('✓ storage exports (unconfigured)');
 }
 
+function testTelemetry() {
+    const tel = require('../lib/telemetry');
+    assert.strictEqual(typeof tel.track, 'function');
+    assert.strictEqual(typeof tel.getPublicConfig, 'function');
+    const attr = tel.normalizeAttribution({
+        utm_source: 'meta',
+        utm_campaign: 'spring',
+        gclid: 'g123',
+        junk: 'nope'
+    });
+    assert.strictEqual(attr.utm_source, 'meta');
+    assert.strictEqual(attr.utm_campaign, 'spring');
+    assert.strictEqual(attr.gclid, 'g123');
+    assert.strictEqual(attr.junk, undefined);
+    assert.ok(tel.sha256Email('Test@ViewHunt.app'));
+    assert.strictEqual(tel.sha256Email('Test@ViewHunt.app'), tel.sha256Email('test@viewhunt.app'));
+    const cfg = tel.getPublicConfig();
+    assert.ok('posthogKey' in cfg && 'metaPixelId' in cfg && 'googleAdsId' in cfg);
+    console.log('✓ telemetry (attribution + config)');
+}
+
 testTrial();
 testNicheExports();
 testFlyMachinesExports();
 testStorageExports();
+testTelemetry();
 console.log('\nAll smoke tests passed.');

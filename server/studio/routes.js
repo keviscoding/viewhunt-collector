@@ -16,6 +16,7 @@ const assemblyQueue = require('./editor/job-queue');
 const { saveSfx, listSfx, loadAllSfx } = require('./editor/sfx-store');
 const credits = require('./credits');
 const trialHelper = require('./trial');
+const telemetry = require('../lib/telemetry');
 const taskManager = require('./task-manager');
 const TimelapseGenerator = require('./formats/timelapse/generator');
 const rateLimit = require('express-rate-limit');
@@ -2041,7 +2042,38 @@ async function runLocalRankingAssembly(opts) {
         }
 
         if (usingTrial) {
-            await trialHelper.recordRankingVideoComplete(db, userId);
+            var trialAfter = await trialHelper.recordRankingVideoComplete(db, userId);
+            try {
+                await telemetry.track(db, {
+                    event: 'ranking_assemble_succeeded',
+                    userId: userId,
+                    properties: {
+                        usingTrial: true,
+                        jobId: String(jobId),
+                        rankingVideosUsed: trialAfter && trialAfter.rankingVideosUsed,
+                        rankingVideosLeft: trialAfter && trialAfter.rankingVideosLeft
+                    }
+                });
+                if (trialAfter && !trialAfter.active) {
+                    await telemetry.track(db, {
+                        event: 'trial_exhausted',
+                        userId: userId,
+                        properties: { reason: trialAfter.reason || 'exhausted' }
+                    });
+                }
+            } catch (telOkErr) {
+                console.warn('Assemble success telemetry:', telOkErr.message);
+            }
+        } else {
+            try {
+                await telemetry.track(db, {
+                    event: 'ranking_assemble_succeeded',
+                    userId: userId,
+                    properties: { usingTrial: false, jobId: String(jobId) }
+                });
+            } catch (telOkErr2) {
+                console.warn('Assemble success telemetry:', telOkErr2.message);
+            }
         }
     } catch (error) {
         console.error('Ranking assembly error:', error.message);
@@ -2289,6 +2321,24 @@ router.post('/ranking/assemble', requireAuth, studioAssemblyLimiter, async (req,
             usingTrial: usingTrial,
             trial: trialHelper.getTrialStatus(user)
         });
+
+        try {
+            var asmAttr = user.attribution && (user.attribution.lastTouch || user.attribution.firstTouch);
+            await telemetry.track(db, {
+                event: 'ranking_assemble_started',
+                userId: userId,
+                email: user.email,
+                attribution: asmAttr,
+                properties: {
+                    usingTrial: usingTrial,
+                    clipCount: clipList.length,
+                    commentary: !!enableCommentary,
+                    jobId: String(jobId)
+                }
+            });
+        } catch (telAsmErr) {
+            console.warn('Assemble start telemetry:', telAsmErr.message);
+        }
 
         // Fly Machines for trim/commentary/FFmpeg (default ON). Set FLY_ASSEMBLY_ENABLED=0 to force DO-only.
         // Root cause of prior crashes: requiring @google/genai at boot crashed the Fly image (exit 14).

@@ -1686,6 +1686,14 @@ class ViewHuntApp {
         if (inviteWrap) inviteWrap.style.display = 'none';
         var toggleInvite = document.getElementById('toggle-invite-code');
         if (toggleInvite) toggleInvite.textContent = 'Have an invite?';
+        try {
+            if (window.ViewHuntTelemetry) {
+                window.ViewHuntTelemetry.track('signup_started', { source: 'app' });
+                if (window.ViewHuntTelemetry.beaconServer) {
+                    window.ViewHuntTelemetry.beaconServer('signup_started', { source: 'app' });
+                }
+            }
+        } catch (e) {}
     }
 
     toggleInviteCode() {
@@ -1735,6 +1743,12 @@ class ViewHuntApp {
         this.authToken = data.token;
         this.user = data.user || this.user;
         localStorage.setItem('viewhunt_token', this.token);
+        try {
+            if (window.ViewHuntTelemetry && this.user && this.user.id) {
+                window.ViewHuntTelemetry.identify(this.user.id, { email: this.user.email });
+                window.ViewHuntTelemetry.syncAttributionToServer(this.token);
+            }
+        } catch (e) {}
         this.closeAuth();
         this.showToast(welcomeMsg);
         await this.checkAuthStatus();
@@ -1963,13 +1977,20 @@ class ViewHuntApp {
         submitBtn.textContent = 'Creating Account...';
 
         try {
+            var attribution = null;
+            try {
+                if (window.ViewHuntTelemetry) {
+                    attribution = window.ViewHuntTelemetry.attributionForApi();
+                }
+            } catch (e) {}
             const response = await fetch(`${this.apiBase}/auth/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     invite_code: inviteCode || undefined,
                     email,
-                    password
+                    password,
+                    attribution: attribution || undefined
                 })
             });
 
@@ -1977,6 +1998,17 @@ class ViewHuntApp {
 
             if (response.ok && data.token) {
                 this._pendingVerifyEmail = data.email || email;
+                try {
+                    if (window.ViewHuntTelemetry && data.user && data.user.id) {
+                        window.ViewHuntTelemetry.identify(data.user.id, { email: data.email || email });
+                        window.ViewHuntTelemetry.track('signup_completed', {
+                            method: 'email',
+                            event_id: (data.telemetry && data.telemetry.signupEventId) ||
+                                ('signup_' + data.user.id)
+                        });
+                        window.ViewHuntTelemetry.syncAttributionToServer(data.token);
+                    }
+                } catch (e) {}
                 await this.finishAuthSession(
                     data,
                     'Welcome to ViewHunt! Your 3 free ranking videos are ready 🎉'

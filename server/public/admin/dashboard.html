@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ViewHunt Admin Analytics</title>
+    <title>ViewHunt Funnel Analytics</title>
     <style>
         :root {
             --bg: #0b0b10;
@@ -53,7 +53,7 @@
         .range-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
         .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
         .btn:disabled { opacity: 0.5; cursor: wait; }
-        main { padding: 1.25rem 1.5rem 3rem; max-width: 960px; margin: 0 auto; }
+        main { padding: 1.25rem 1.5rem 3rem; max-width: 1100px; margin: 0 auto; }
         .callout {
             background: rgba(124,92,252,0.12);
             border: 1px solid rgba(124,92,252,0.35);
@@ -67,7 +67,7 @@
         .callout strong { color: #fff; }
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
             gap: 1rem;
         }
         .card {
@@ -75,37 +75,27 @@
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 1.1rem 1.15rem;
-            min-height: 120px;
+            min-height: 110px;
         }
-        .card.primary { border-color: rgba(52,211,153,0.55); box-shadow: 0 0 0 1px rgba(52,211,153,0.15); }
+        .card.primary { border-color: rgba(52,211,153,0.55); }
         .card h2 {
             margin: 0 0 0.35rem;
-            font-size: 0.72rem;
+            font-size: 0.7rem;
             text-transform: uppercase;
             letter-spacing: 0.04em;
             color: var(--dim);
             font-weight: 600;
         }
         .value {
-            font-size: 1.85rem;
+            font-size: 1.75rem;
             font-weight: 750;
             line-height: 1.15;
             margin: 0.35rem 0;
         }
         .sub { font-size: 0.78rem; color: var(--dim); line-height: 1.45; }
-        .source {
-            display: inline-block;
-            margin-top: 0.65rem;
-            font-size: 0.68rem;
-            padding: 0.15rem 0.45rem;
-            border-radius: 999px;
-            border: 1px solid var(--border);
-            color: var(--dim);
-        }
-        .source.cloudflare { border-color: rgba(251,191,36,0.45); color: #fcd34d; }
-        .source.mongo { border-color: rgba(52,211,153,0.45); color: #6ee7b7; }
         .warn { color: var(--amber); font-size: 0.8rem; }
         .err { color: var(--red); font-size: 0.8rem; }
+        .ok { color: var(--green); font-size: 0.8rem; }
         .section { margin-top: 1.75rem; }
         .section h3 { font-size: 0.95rem; margin: 0 0 0.75rem; }
         table {
@@ -122,19 +112,22 @@
         tr:last-child td { border-bottom: none; }
         #gate, #loading { padding: 3rem 1.5rem; text-align: center; color: var(--dim); }
         a.link { color: var(--accent); }
-        .spark {
+        .funnel-row {
             display: flex;
-            align-items: flex-end;
-            gap: 2px;
-            height: 48px;
-            margin-top: 0.75rem;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+            margin: 0.75rem 0 1.25rem;
+            font-size: 0.85rem;
         }
-        .spark i {
-            flex: 1;
-            background: rgba(124,92,252,0.55);
-            border-radius: 2px 2px 0 0;
-            min-width: 2px;
+        .funnel-step {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.45rem 0.7rem;
         }
+        .funnel-step b { color: var(--green); }
+        .arrow { color: var(--dim); }
     </style>
 </head>
 <body>
@@ -146,7 +139,7 @@
     <div id="app" style="display:none;">
         <header>
             <div>
-                <h1>ViewHunt <span>Analytics</span></h1>
+                <h1>ViewHunt <span>Funnel</span></h1>
                 <div class="meta" id="meta-line">Loading…</div>
             </div>
             <div class="controls">
@@ -161,14 +154,26 @@
         <main>
             <div class="callout" id="partner-callout"></div>
             <div id="banner"></div>
+            <div class="funnel-row" id="funnel-rates"></div>
             <div class="grid" id="cards"></div>
 
             <div class="section">
-                <h3>What these numbers mean</h3>
+                <h3>By utm_source (range)</h3>
                 <table>
-                    <thead><tr><th>Metric</th><th>Definition</th></tr></thead>
-                    <tbody id="def-rows"><tr><td colspan="2">—</td></tr></tbody>
+                    <thead><tr><th>Source</th><th>Signups</th><th>Trials</th><th>Paid</th></tr></thead>
+                    <tbody id="source-rows"><tr><td colspan="4">—</td></tr></tbody>
                 </table>
+            </div>
+
+            <div class="section">
+                <h3>How to decide</h3>
+                <div class="sub">
+                    <p><strong>Low visit→signup:</strong> fix landing / offer.</p>
+                    <p><strong>Low signup→trial:</strong> fix checkout / card friction.</p>
+                    <p><strong>Low trial→first cook:</strong> fix ranking product before more ad spend.</p>
+                    <p><strong>Low cook→paid:</strong> fix end-trial / upgrade path.</p>
+                    <p><strong>Healthy cook→paid + low volume:</strong> scale ads.</p>
+                </div>
             </div>
         </main>
     </div>
@@ -185,6 +190,10 @@
         function fmt(n) {
             if (n == null || n !== n) return '—';
             return Number(n).toLocaleString();
+        }
+        function pct(n) {
+            if (n == null || n !== n) return '—';
+            return n + '%';
         }
         function escapeHtml(str) {
             return String(str == null ? '' : str)
@@ -220,39 +229,32 @@
             }
         }
 
-        function card(title, value, sub, sourceClass, sourceLabel, primary) {
+        function card(title, value, sub, primary) {
             return '<div class="card' + (primary ? ' primary' : '') + '">' +
                 '<h2>' + title + '</h2>' +
                 '<div class="value">' + value + '</div>' +
                 (sub ? '<div class="sub">' + sub + '</div>' : '') +
-                '<span class="source ' + sourceClass + '">Source: ' + sourceLabel + '</span>' +
                 '</div>';
         }
 
-        function spark(series) {
-            if (!series || !series.length) return '';
-            var max = 1;
-            series.forEach(function(p) { if ((p.pageViews || 0) > max) max = p.pageViews; });
-            return '<div class="spark" title="Daily page views">' +
-                series.map(function(p) {
-                    var h = Math.max(2, Math.round(((p.pageViews || 0) / max) * 48));
-                    var tip = (p.date || '') + ': ' + (p.pageViews || 0) + ' views';
-                    return '<i style="height:' + h + 'px" title="' + tip + '"></i>';
-                }).join('') + '</div>';
-        }
-
         function render(data) {
-            var v = data.visits || {};
-            var t = data.trials || {};
+            var f = data.funnel || {};
+            var t = data.telemetry || {};
+            var r = f.rates || {};
 
             $('partner-callout').innerHTML =
-                '<strong>Visits + trials only</strong><br>' +
-                'Window from ' + new Date(data.partnerStart).toLocaleDateString() +
-                ' · No revenue numbers on this page. Use page views for traffic trend, and the trial cards for free-challenge / card-trial status.';
+                '<strong>Funnel KPIs only</strong> — visits → signup → card trial → first cook → paid. ' +
+                'Primary ad conversion = <strong>trial started</strong>. Secondary = <strong>first payment</strong>. ' +
+                'Window from ' + new Date(data.partnerStart).toLocaleDateString() + '.';
 
             var banner = '';
-            if (v.error) banner += '<p class="warn">Visits: ' + escapeHtml(v.error) + '</p>';
-            if (t.error) banner += '<p class="err">Trials: ' + escapeHtml(t.error) + '</p>';
+            if (f.error) banner += '<p class="err">Funnel: ' + escapeHtml(f.error) + '</p>';
+            banner += '<p class="' + (t.posthogConfigured ? 'ok' : 'warn') + '">PostHog: ' +
+                (t.posthogConfigured ? 'configured' : 'set POSTHOG_KEY') + '</p>';
+            banner += '<p class="' + (t.metaConfigured ? 'ok' : 'warn') + '">Meta Pixel+CAPI: ' +
+                (t.metaConfigured ? 'configured' : 'set META_PIXEL_ID + META_CAPI_TOKEN') + '</p>';
+            banner += '<p class="' + (t.googleConfigured ? 'ok' : 'warn') + '">Google Ads: ' +
+                (t.googleConfigured ? 'configured' : 'set GOOGLE_ADS_ID + GOOGLE_ADS_LABEL_TRIAL') + '</p>';
             $('banner').innerHTML = banner;
 
             $('meta-line').textContent =
@@ -263,68 +265,39 @@
                 ' · Updated ' + new Date(data.asOf).toLocaleString() +
                 (data.cached ? ' (cached)' : ' (fresh)');
 
-            var visitsVal = v.configured === false || v.pageViews == null ? '—' : fmt(v.pageViews);
-            var visitsSub = v.configured === false
-                ? 'Add CLOUDFLARE_API_TOKEN + CLOUDFLARE_ZONE_ID on DigitalOcean'
-                : (fmt(v.requests) + ' requests · daily-uniques sum ' + fmt(v.uniqueVisitorsSum) +
-                    ' (not period-unique)') +
-                  spark(v.series);
-
-            var buckets = t.rankingVideosLeftAmongActive || {};
-            var bucketSub = 'Among active: ' +
-                fmt(buckets['3']) + ' with 3 left · ' +
-                fmt(buckets['2']) + ' with 2 · ' +
-                fmt(buckets['1']) + ' with 1 · ' +
-                fmt(buckets['0']) + ' with 0';
+            $('funnel-rates').innerHTML =
+                '<span class="funnel-step">Visit→Signup <b>' + pct(r.visitToSignup) + '</b></span>' +
+                '<span class="arrow">→</span>' +
+                '<span class="funnel-step">Signup→Trial <b>' + pct(r.signupToTrial) + '</b></span>' +
+                '<span class="arrow">→</span>' +
+                '<span class="funnel-step">Trial→Cook <b>' + pct(r.trialToFirstCook) + '</b></span>' +
+                '<span class="arrow">→</span>' +
+                '<span class="funnel-step">Trial→Paid <b>' + pct(r.trialToPaid) + '</b></span>';
 
             var html = '';
-            html += card(
-                'Page views (range)',
-                visitsVal,
-                visitsSub,
-                'cloudflare', 'Cloudflare', true
-            );
-            html += card(
-                'App free challenge active now',
-                t.appTrialActiveNow == null ? '—' : fmt(t.appTrialActiveNow),
-                bucketSub,
-                'mongo', 'ViewHunt users'
-            );
-            html += card(
-                'Stripe card trials now',
-                t.stripeCardTrialNow == null ? '—' : fmt(t.stripeCardTrialNow),
-                fmt(t.bothNow) + ' also still have free ranking left',
-                'mongo', 'ViewHunt users'
-            );
-            html += card(
-                'App trials started (range)',
-                t.appTrialsStartedInRange == null ? '—' : fmt(t.appTrialsStartedInRange),
-                'Card trials started in range: ' + fmt(t.stripeCardTrialsStartedInRange),
-                'mongo', 'ViewHunt users'
-            );
-            html += card(
-                'Challenge ended (all time)',
-                t.appTrialExhausted == null && t.appTrialExpired == null
-                    ? '—'
-                    : fmt((t.appTrialExhausted || 0) + (t.appTrialExpired || 0)),
-                fmt(t.appTrialExhausted) + ' videos/time exhausted · ' +
-                    fmt(t.appTrialExpired) + ' expired · ' +
-                    fmt(t.appTrialConverted) + ' converted to paid',
-                'mongo', 'ViewHunt users'
-            );
+            html += card('Unique visits', fmt(f.visitsUnique), fmt(f.landingViews) + ' landing page views', true);
+            html += card('Signups', fmt(f.signups), 'Accounts created in range');
+            html += card('Checkout started', fmt(f.checkoutStarted), 'Plan checkout sessions opened');
+            html += card('Card trials started', fmt(f.trialsStarted), 'Primary ad conversion', true);
+            html += card('Assemble started', fmt(f.assembleStarted), 'Jobs accepted');
+            html += card('First cook users', fmt(f.firstCookUsers), 'Unique successful assembles');
+            html += card('2+ cooks (now)', fmt(f.cooks2PlusNow), 'Lifetime snapshot');
+            html += card('Paid conversions', fmt(f.paidConversions), 'Secondary ad conversion', true);
+            html += card('Cancels', fmt(f.cancels), 'Subscription canceled events');
+            html += card('App trials active now', fmt(f.appTrialActiveNow),
+                fmt(f.stripeCardTrialNow) + ' Stripe card trials now');
             $('cards').innerHTML = html;
 
-            var defs = [
-                ['Page views', 'Cloudflare page views for viewhunt.app in the selected range (best traffic trend).'],
-                ['App free challenge active', 'Users who can still cook free ranking videos (7 days or 3 videos).'],
-                ['Stripe card trials', 'Users with a card on file still in Stripe trialing (not billed yet).'],
-                ['Both', 'Has a Stripe card trial and still has free ranking allotment left.'],
-                ['Started in range', 'App trial.startedAt (or Stripe sub start) falls inside the selected dates.'],
-                ['Daily-uniques sum', 'Cloudflare daily uniques added up — return visitors are counted each day, so it is not a period unique.']
-            ];
-            $('def-rows').innerHTML = defs.map(function(row) {
-                return '<tr><td>' + escapeHtml(row[0]) + '</td><td>' + escapeHtml(row[1]) + '</td></tr>';
-            }).join('');
+            var rows = f.bySource || [];
+            if (!rows.length) {
+                $('source-rows').innerHTML = '<tr><td colspan="4">No attributed signups/trials yet — add UTMs to ad URLs</td></tr>';
+            } else {
+                $('source-rows').innerHTML = rows.map(function(row) {
+                    return '<tr><td>' + escapeHtml(row.source) + '</td><td>' +
+                        fmt(row.signups) + '</td><td>' + fmt(row.trials) + '</td><td>' +
+                        fmt(row.paid) + '</td></tr>';
+                }).join('');
+            }
         }
 
         async function load(refresh) {

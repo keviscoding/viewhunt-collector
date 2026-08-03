@@ -465,8 +465,9 @@ async function main() {
         await updateJob(db, { commentaryRefundNeeded: true });
     }
 
+    var trialAfter = null;
     if (usingTrial && userId && db) {
-        await trialHelper.recordRankingVideoComplete(db, userId);
+        trialAfter = await trialHelper.recordRankingVideoComplete(db, userId);
     }
 
     if (userId && db) {
@@ -474,6 +475,36 @@ async function main() {
             await db.collection('ranking_drafts').deleteOne({ userId: String(userId) });
         } catch (e) {
             console.warn('Draft clear after Fly complete:', e.message);
+        }
+        try {
+            await db.collection('analytics_events').insertOne({
+                event: 'ranking_assemble_succeeded',
+                userId: String(userId),
+                distinctId: String(userId),
+                properties: {
+                    usingTrial: !!usingTrial,
+                    jobId: String(JOB_ID),
+                    worker: 'fly',
+                    rankingVideosUsed: trialAfter && trialAfter.rankingVideosUsed,
+                    rankingVideosLeft: trialAfter && trialAfter.rankingVideosLeft
+                },
+                attribution: null,
+                eventId: 'ranking_assemble_succeeded_fly_' + JOB_ID,
+                createdAt: new Date()
+            });
+            if (trialAfter && !trialAfter.active) {
+                await db.collection('analytics_events').insertOne({
+                    event: 'trial_exhausted',
+                    userId: String(userId),
+                    distinctId: String(userId),
+                    properties: { reason: trialAfter.reason || 'exhausted', worker: 'fly' },
+                    attribution: null,
+                    eventId: 'trial_exhausted_fly_' + JOB_ID,
+                    createdAt: new Date()
+                });
+            }
+        } catch (telFlyErr) {
+            console.warn('Fly assemble telemetry:', telFlyErr.message);
         }
     }
 

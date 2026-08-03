@@ -1,11 +1,7 @@
 /**
- * Admin analytics — site visits + trial context only.
- *
- * Sources:
- * - Cloudflare GraphQL Analytics (page views / requests for viewhunt.app)
- * - Mongo users (app free challenge + Stripe subscription.status=trialing)
- *
- * No revenue / invoice / MRR metrics. Cached 5 minutes.
+ * Admin analytics — funnel KPIs for ads/product decisions.
+ * Sources: Mongo analytics_events + users (attribution, trials, cooks).
+ * No revenue soup. Cached 5 minutes.
  */
 const trialHelper = require('../studio/trial');
 
@@ -27,7 +23,6 @@ function parseRange(range) {
     const end = new Date();
     let start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
     const partnerStart = getPartnerStartDate();
-    // Visits + trial "started in range" never include pre-partnership history
     if (start < partnerStart) start = new Date(partnerStart.getTime());
     if (start > end) start = new Date(end.getTime());
     return {
@@ -40,219 +35,198 @@ function parseRange(range) {
     };
 }
 
-async function fetchCloudflareVisits(rangeInfo) {
-    const token = process.env.CLOUDFLARE_API_TOKEN;
-    const zoneId = process.env.CLOUDFLARE_ZONE_ID;
-    if (!token || !zoneId) {
-        return {
-            source: 'Cloudflare',
-            configured: false,
-            error: 'Configure CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID on DigitalOcean',
-            pageViews: null,
-            requests: null,
-            uniqueVisitorsSum: null,
-            series: []
-        };
-    }
-
-    function ymd(d) {
-        return d.toISOString().slice(0, 10);
-    }
-    const startDate = ymd(rangeInfo.start);
-    // Cloudflare date_lt is exclusive — include today
-    const endDate = ymd(new Date(rangeInfo.end.getTime() + 24 * 60 * 60 * 1000));
-
-    const query = `
-      query ($zoneTag: string!, $start: Date!, $end: Date!) {
-        viewer {
-          zones(filter: { zoneTag: $zoneTag }) {
-            httpRequests1dGroups(
-              limit: 100
-              filter: { date_geq: $start, date_lt: $end }
-              orderBy: [date_ASC]
-            ) {
-              dimensions { date }
-              sum { requests pageViews }
-              uniq { uniques }
-            }
-          }
-        }
-      }
-    `;
-
-    const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
-        method: 'POST',
-        headers: {
-            Authorization: 'Bearer ' + token,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            query: query,
-            variables: { zoneTag: zoneId, start: startDate, end: endDate }
-        })
+async function countEvents(db, event, rangeInfo) {
+    return db.collection('analytics_events').countDocuments({
+        event: event,
+        createdAt: { $gte: rangeInfo.start, $lte: rangeInfo.end }
     });
-
-    const body = await res.json().catch(function() { return {}; });
-    if (!res.ok || (body.errors && body.errors.length)) {
-        const msg = (body.errors && body.errors[0] && body.errors[0].message) ||
-            ('Cloudflare HTTP ' + res.status);
-        return {
-            source: 'Cloudflare',
-            configured: true,
-            error: msg,
-            pageViews: null,
-            requests: null,
-            uniqueVisitorsSum: null,
-            series: []
-        };
-    }
-
-    const groups = ((((body.data || {}).viewer || {}).zones || [])[0] || {}).httpRequests1dGroups || [];
-    let pageViews = 0;
-    let requests = 0;
-    let uniqueVisitorsSum = 0;
-    const series = groups.map(function(g) {
-        const pv = (g.sum && g.sum.pageViews) || 0;
-        const req = (g.sum && g.sum.requests) || 0;
-        const u = (g.uniq && g.uniq.uniques) || 0;
-        pageViews += pv;
-        requests += req;
-        uniqueVisitorsSum += u;
-        return {
-            date: g.dimensions && g.dimensions.date,
-            pageViews: pv,
-            requests: req,
-            uniqueVisitors: u
-        };
-    });
-
-    return {
-        source: 'Cloudflare',
-        configured: true,
-        error: null,
-        pageViews: pageViews,
-        requests: requests,
-        // Cloudflare only exposes daily uniques — summing days double-counts return visitors
-        uniqueVisitorsSum: uniqueVisitorsSum,
-        uniqueVisitorsNote: 'Sum of daily Cloudflare uniques (return visitors counted each day). Use page views for trend.',
-        series: series,
-        zoneId: zoneId
-    };
 }
 
-/**
- * Trial context from ViewHunt users collection.
- * - App free challenge: trial.active (7 days OR 3 ranking videos)
- * - Stripe card trial: subscription.status === trialing
- */
-async function fetchTrialMetrics(db, rangeInfo) {
+async function uniqueEventUsers(db, event, rangeInfo) {
+    const rows = await db.collection('analytics_events').aggregate([
+        {
+            $match: {
+                event: event,
+                createdAt: { $gte: rangeInfo.start, $lte: rangeInfo.end },
+                userId: { $ne: null }
+            }
+        },
+        { $group: { _id: '$userId' } },
+        { $count: 'n' }
+    ]).toArray();
+    return (rows[0] && rows[0].n) || 0;
+}
+
+async function uniqueVisitors(db, rangeInfo) {
+    const rows = await db.collection('analytics_events').aggregate([
+        {
+            $match: {
+                event: 'landing_viewed',
+                createdAt: { $gte: rangeInfo.start, $lte: rangeInfo.end }
+            }
+        },
+        {
+            $group: {
+                _id: {
+                    $ifNull: ['$distinctId', '$userId']
+                }
+            }
+        },
+        { $count: 'n' }
+    ]).toArray();
+    return (rows[0] && rows[0].n) || 0;
+}
+
+async function fetchFunnelMetrics(db, rangeInfo) {
     if (!db) {
-        return {
-            source: 'Mongo',
-            configured: false,
-            error: 'Database unavailable'
-        };
+        return { configured: false, error: 'Database unavailable' };
     }
 
+    const [
+        landingViews,
+        visitsUnique,
+        signups,
+        checkoutStarted,
+        trialsStarted,
+        assembleStarted,
+        assembleSucceededUsers,
+        paidConversions,
+        cancels
+    ] = await Promise.all([
+        countEvents(db, 'landing_viewed', rangeInfo),
+        uniqueVisitors(db, rangeInfo),
+        countEvents(db, 'signup_completed', rangeInfo),
+        countEvents(db, 'checkout_started', rangeInfo),
+        countEvents(db, 'trial_started', rangeInfo),
+        countEvents(db, 'ranking_assemble_started', rangeInfo),
+        uniqueEventUsers(db, 'ranking_assemble_succeeded', rangeInfo),
+        countEvents(db, 'subscription_activated', rangeInfo),
+        countEvents(db, 'subscription_canceled', rangeInfo)
+    ]);
+
+    // Snapshot: currently active trials / cooks
     const cursor = db.collection('users').find(
         {
             $or: [
                 { trial: { $exists: true } },
-                { 'subscription.status': 'trialing' }
+                { 'subscription.status': 'trialing' },
+                { attribution: { $exists: true } }
             ]
         },
         {
             projection: {
                 trial: 1,
                 subscription: 1,
-                email: 1,
+                attribution: 1,
                 created_at: 1
             }
         }
     ).limit(50000);
 
-    let appTrialActive = 0;
-    let stripeTrialing = 0;
-    let bothActive = 0;
-    let appStartedInRange = 0;
-    let stripeTrialStartedInRange = 0;
-    let converted = 0;
-    let exhausted = 0;
-    let expired = 0;
-    let rankingVideosLeftBuckets = { '3': 0, '2': 0, '1': 0, '0': 0 };
-    let usersScanned = 0;
+    let appTrialActiveNow = 0;
+    let stripeCardTrialNow = 0;
+    let cooks2PlusNow = 0;
+    let signupsFromUsersInRange = 0;
+    const bySource = {};
 
     const rangeStartMs = rangeInfo.start.getTime();
     const rangeEndMs = rangeInfo.end.getTime();
 
     while (await cursor.hasNext()) {
         const user = await cursor.next();
-        usersScanned += 1;
-
-        const subStatus = user.subscription && user.subscription.status;
-        const isStripeTrialing = subStatus === 'trialing';
-        if (isStripeTrialing) {
-            stripeTrialing += 1;
-            const trialEnd = user.subscription && user.subscription.trialEnd
-                ? new Date(user.subscription.trialEnd).getTime()
-                : null;
-            const startDate = user.subscription && user.subscription.startDate
-                ? new Date(user.subscription.startDate).getTime()
-                : (user.trial && user.trial.startedAt ? new Date(user.trial.startedAt).getTime() : null);
-            // Approximate "started Stripe trial in range" from subscription.startDate
-            if (startDate != null && startDate >= rangeStartMs && startDate <= rangeEndMs) {
-                stripeTrialStartedInRange += 1;
-            }
-            void trialEnd;
+        const createdMs = user.created_at ? new Date(user.created_at).getTime() : 0;
+        if (createdMs >= rangeStartMs && createdMs <= rangeEndMs) {
+            signupsFromUsersInRange += 1;
         }
 
-        const status = trialHelper.getTrialStatus(user);
-        if (status) {
-            if (user.trial && user.trial.startedAt) {
-                const startedMs = new Date(user.trial.startedAt).getTime();
-                if (startedMs >= rangeStartMs && startedMs <= rangeEndMs) {
-                    appStartedInRange += 1;
-                }
-            }
+        const isStripeTrialing = user.subscription && user.subscription.status === 'trialing';
+        if (isStripeTrialing) stripeCardTrialNow += 1;
 
-            if (status.active) {
-                appTrialActive += 1;
-                if (isStripeTrialing) bothActive += 1;
-                const left = String(Math.min(3, Math.max(0, status.rankingVideosLeft || 0)));
-                if (rankingVideosLeftBuckets[left] != null) rankingVideosLeftBuckets[left] += 1;
-            } else if (status.reason === 'converted' || status.status === 'converted') {
-                converted += 1;
-            } else if (status.reason === 'videos_exhausted' || status.reason === 'exhausted') {
-                exhausted += 1;
-            } else if (status.reason === 'expired') {
-                expired += 1;
+        const status = trialHelper.getTrialStatus(user);
+        if (status && status.active) appTrialActiveNow += 1;
+
+        const used = (user.trial && user.trial.rankingVideosUsed) || 0;
+        if (used >= 2) cooks2PlusNow += 1;
+
+        const src = (user.attribution &&
+            ((user.attribution.firstTouch && user.attribution.firstTouch.utm_source) ||
+                (user.attribution.lastTouch && user.attribution.lastTouch.utm_source))) || 'direct/unknown';
+        if (createdMs >= rangeStartMs && createdMs <= rangeEndMs) {
+            if (!bySource[src]) {
+                bySource[src] = { source: src, signups: 0, trials: 0, paid: 0 };
             }
+            bySource[src].signups += 1;
         }
     }
 
+    // Attribution breakdown for trial/paid events in range
+    const attrAgg = await db.collection('analytics_events').aggregate([
+        {
+            $match: {
+                event: { $in: ['trial_started', 'subscription_activated'] },
+                createdAt: { $gte: rangeInfo.start, $lte: rangeInfo.end }
+            }
+        },
+        {
+            $group: {
+                _id: {
+                    source: { $ifNull: ['$attribution.utm_source', '$properties.utm_source'] },
+                    event: '$event'
+                },
+                n: { $sum: 1 }
+            }
+        }
+    ]).toArray();
+
+    attrAgg.forEach(function(row) {
+        const src = (row._id && row._id.source) || 'direct/unknown';
+        if (!bySource[src]) bySource[src] = { source: src, signups: 0, trials: 0, paid: 0 };
+        if (row._id.event === 'trial_started') bySource[src].trials += row.n;
+        if (row._id.event === 'subscription_activated') bySource[src].paid += row.n;
+    });
+
+    const signupCount = Math.max(signups, signupsFromUsersInRange);
+
+    function rate(num, den) {
+        if (!den) return null;
+        return Math.round((num / den) * 1000) / 10;
+    }
+
+    const bySourceList = Object.keys(bySource)
+        .map(function(k) { return bySource[k]; })
+        .sort(function(a, b) {
+            return (b.signups + b.trials + b.paid) - (a.signups + a.trials + a.paid);
+        })
+        .slice(0, 20);
+
     return {
-        source: 'Mongo',
         configured: true,
         error: null,
-        usersScanned: usersScanned,
-        // Snapshot (right now)
-        appTrialActiveNow: appTrialActive,
-        stripeCardTrialNow: stripeTrialing,
-        bothNow: bothActive,
-        rankingVideosLeftAmongActive: rankingVideosLeftBuckets,
-        // Ended states (lifetime on user docs)
-        appTrialConverted: converted,
-        appTrialExhausted: exhausted,
-        appTrialExpired: expired,
-        // In selected range
-        appTrialsStartedInRange: appStartedInRange,
-        stripeCardTrialsStartedInRange: stripeTrialStartedInRange,
+        landingViews: landingViews,
+        visitsUnique: visitsUnique,
+        signups: signupCount,
+        checkoutStarted: checkoutStarted,
+        trialsStarted: trialsStarted,
+        assembleStarted: assembleStarted,
+        firstCookUsers: assembleSucceededUsers,
+        cooks2PlusNow: cooks2PlusNow,
+        paidConversions: paidConversions,
+        cancels: cancels,
+        appTrialActiveNow: appTrialActiveNow,
+        stripeCardTrialNow: stripeCardTrialNow,
+        rates: {
+            visitToSignup: rate(signupCount, visitsUnique || landingViews),
+            signupToTrial: rate(trialsStarted, signupCount),
+            trialToFirstCook: rate(assembleSucceededUsers, trialsStarted),
+            trialToPaid: rate(paidConversions, trialsStarted),
+            firstCookToPaid: rate(paidConversions, assembleSucceededUsers)
+        },
+        bySource: bySourceList,
         definitions: {
-            appTrialActiveNow: 'Users who can still cook free ranking videos (7 days OR 3 videos left)',
-            stripeCardTrialNow: 'Users with Stripe subscription.status = trialing (card on file, not billed yet)',
-            bothNow: 'Has Stripe card trial AND still has free ranking allotment',
-            appTrialsStartedInRange: 'Users whose app trial.startedAt falls in the selected range',
-            pageViews: 'Cloudflare page views for viewhunt.app in range'
+            visitsUnique: 'Unique distinct_ids that fired landing_viewed in range (PostHog/Mongo)',
+            trialsStarted: 'Stripe card trial started (primary ad conversion)',
+            paidConversions: 'First paid / subscription activated (secondary ad conversion)',
+            firstCookUsers: 'Unique users with a successful ranking assemble in range'
         }
     };
 }
@@ -260,7 +234,6 @@ async function fetchTrialMetrics(db, rangeInfo) {
 async function readCache(db, key) {
     const mem = memoryCache.get(key);
     if (mem && mem.expiresAt > Date.now()) return mem.payload;
-
     if (db) {
         try {
             const doc = await db.collection('admin_analytics_cache').findOne({ _id: key });
@@ -293,39 +266,18 @@ async function writeCache(db, key, payload) {
 
 async function getAdminAnalytics(opts) {
     const rangeInfo = parseRange(opts.range);
-    // v2 cache key — do not reuse old revenue payloads
-    const cacheKey = 'analytics:v2:visits-trials:' + rangeInfo.range + ':' +
+    const cacheKey = 'analytics:v3:funnel:' + rangeInfo.range + ':' +
         rangeInfo.partnerStart.toISOString().slice(0, 10);
 
     if (!opts.refresh) {
         const cached = await readCache(opts.db, cacheKey);
-        if (cached) {
-            return Object.assign({}, cached, { cached: true });
-        }
+        if (cached) return Object.assign({}, cached, { cached: true });
     }
 
-    const [visits, trials] = await Promise.all([
-        fetchCloudflareVisits(rangeInfo).catch(function(err) {
-            console.error('Cloudflare analytics error:', err);
-            return {
-                source: 'Cloudflare',
-                configured: !!(process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ZONE_ID),
-                error: err.message || String(err),
-                pageViews: null,
-                requests: null,
-                uniqueVisitorsSum: null,
-                series: []
-            };
-        }),
-        fetchTrialMetrics(opts.db, rangeInfo).catch(function(err) {
-            console.error('Trial analytics error:', err);
-            return {
-                source: 'Mongo',
-                configured: true,
-                error: err.message || String(err)
-            };
-        })
-    ]);
+    const funnel = await fetchFunnelMetrics(opts.db, rangeInfo).catch(function(err) {
+        console.error('Funnel analytics error:', err);
+        return { configured: true, error: err.message || String(err) };
+    });
 
     const payload = {
         asOf: new Date().toISOString(),
@@ -336,9 +288,13 @@ async function getAdminAnalytics(opts) {
         clampedToPartnerStart: rangeInfo.clampedToPartnerStart,
         cached: false,
         cacheTtlSeconds: Math.floor(CACHE_TTL_MS / 1000),
-        focus: 'visits_and_trials',
-        visits: visits,
-        trials: trials
+        focus: 'funnel_kpis',
+        funnel: funnel,
+        telemetry: {
+            posthogConfigured: !!process.env.POSTHOG_KEY,
+            metaConfigured: !!(process.env.META_PIXEL_ID && process.env.META_CAPI_TOKEN),
+            googleConfigured: !!(process.env.GOOGLE_ADS_ID && process.env.GOOGLE_ADS_LABEL_TRIAL)
+        }
     };
 
     await writeCache(opts.db, cacheKey, payload);

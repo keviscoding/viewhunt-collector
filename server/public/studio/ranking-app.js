@@ -622,6 +622,14 @@
                 return;
             }
             if (data.url) {
+                try {
+                    if (window.ViewHuntTelemetry) {
+                        window.ViewHuntTelemetry.track('checkout_started', {
+                            plan: plan,
+                            billingNow: billingNow
+                        });
+                    }
+                } catch (telE) {}
                 window.location.href = data.url;
                 return;
             }
