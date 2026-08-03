@@ -107,7 +107,7 @@
             border-radius: 12px;
             overflow: hidden;
         }
-        th, td { text-align: left; padding: 0.65rem 0.85rem; border-bottom: 1px solid var(--border); }
+        th, td { text-align: left; padding: 0.65rem 0.85rem; border-bottom: 1px solid var(--border); vertical-align: top; }
         th { color: var(--dim); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; }
         tr:last-child td { border-bottom: none; }
         #gate, #loading { padding: 3rem 1.5rem; text-align: center; color: var(--dim); }
@@ -127,7 +127,26 @@
             padding: 0.45rem 0.7rem;
         }
         .funnel-step b { color: var(--green); }
+        .funnel-step.bad { border-color: rgba(248,113,113,0.55); }
+        .funnel-step.mid { border-color: rgba(251,191,36,0.45); }
+        .funnel-step.good { border-color: rgba(52,211,153,0.55); }
+        .funnel-step.bad b { color: var(--red); }
+        .funnel-step.mid b { color: var(--amber); }
+        .funnel-step.good b { color: var(--green); }
+        .funnel-step.na b { color: var(--dim); }
         .arrow { color: var(--dim); }
+        .status-pill {
+            display: inline-block;
+            padding: 0.12rem 0.45rem;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .status-pill.bad { background: rgba(248,113,113,0.15); color: var(--red); }
+        .status-pill.mid { background: rgba(251,191,36,0.15); color: var(--amber); }
+        .status-pill.good { background: rgba(52,211,153,0.15); color: var(--green); }
+        .status-pill.na { background: rgba(154,154,175,0.15); color: var(--dim); }
     </style>
 </head>
 <body>
@@ -166,13 +185,22 @@
             </div>
 
             <div class="section">
-                <h3>How to decide</h3>
-                <div class="sub">
-                    <p><strong>Low visit→signup:</strong> fix landing / offer.</p>
-                    <p><strong>Low signup→trial:</strong> fix checkout / card friction.</p>
-                    <p><strong>Low trial→first cook:</strong> fix ranking product before more ad spend.</p>
-                    <p><strong>Low cook→paid:</strong> fix end-trial / upgrade path.</p>
-                    <p><strong>Healthy cook→paid + low volume:</strong> scale ads.</p>
+                <h3>Decision board (your % vs fixed targets)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Step</th>
+                            <th>Your rate</th>
+                            <th>Target</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="decision-rows"><tr><td colspan="5">—</td></tr></tbody>
+                </table>
+                <div class="sub" style="margin-top:0.75rem;">
+                    Targets are ViewHunt floors for cold Meta traffic. A step is only scored once it has enough base volume.
+                    Scale ads only when <strong>Trial→First cook</strong> is green (and preferably Trial→Paid is not red).
                 </div>
             </div>
         </main>
@@ -185,6 +213,55 @@
         var token = localStorage.getItem('viewhunt_token') || localStorage.getItem('token');
         var range = '30d';
         var ADMINS = ['nwalikelv@gmail.com', 'kevis@viewhunt.com', 'kevis@keviscoding.com'];
+
+        // Fixed thresholds — not vibes.
+        // bad < fixBelow | mid < goodAt | good >= goodAt
+        var TARGETS = {
+            visitToSignup: {
+                label: 'Visit → Signup',
+                fixBelow: 3,
+                goodAt: 7,
+                targetLabel: '≥7% strong · 3–6.9% mid · <3% fix',
+                minDenom: 50,
+                denomKey: 'visitsUnique',
+                actionBad: 'Fix landing / offer / trust',
+                actionMid: 'Landing acceptable — improve headline/creatives',
+                actionGood: 'Landing converting — can push traffic'
+            },
+            signupToTrial: {
+                label: 'Signup → Card trial',
+                fixBelow: 25,
+                goodAt: 45,
+                targetLabel: '≥45% strong · 25–44.9% mid · <25% fix',
+                minDenom: 20,
+                denomKey: 'signups',
+                actionBad: 'Fix checkout / card friction / paywall copy',
+                actionMid: 'Checkout OK — tighten timing/offer',
+                actionGood: 'Card collect healthy'
+            },
+            trialToFirstCook: {
+                label: 'Trial → First cook',
+                fixBelow: 40,
+                goodAt: 60,
+                targetLabel: '≥60% strong · 40–59.9% mid · <40% fix (do not scale)',
+                minDenom: 15,
+                denomKey: 'trialsStarted',
+                actionBad: 'Fix ranking product — do not scale ads',
+                actionMid: 'Activation OK — polish onboarding',
+                actionGood: 'Activation healthy — OK to scale if paid not red'
+            },
+            trialToPaid: {
+                label: 'Trial → Paid',
+                fixBelow: 8,
+                goodAt: 20,
+                targetLabel: '≥20% strong · 8–19.9% mid · <8% fix',
+                minDenom: 20,
+                denomKey: 'trialsStarted',
+                actionBad: 'Fix end-trial / upgrade path / reminders',
+                actionMid: 'Paid conversion OK — test offers',
+                actionGood: 'Monetization healthy — scale volume'
+            }
+        };
 
         function $(id) { return document.getElementById(id); }
         function fmt(n) {
@@ -199,6 +276,34 @@
             return String(str == null ? '' : str)
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function scoreRate(rate, target, denom) {
+            if (rate == null || rate !== rate) {
+                return { cls: 'na', label: 'No data', action: 'Wait for events' };
+            }
+            if ((denom || 0) < target.minDenom) {
+                return {
+                    cls: 'na',
+                    label: 'Too early (need ' + target.minDenom + '+)',
+                    action: 'Need more volume before judging'
+                };
+            }
+            if (rate < target.fixBelow) {
+                return { cls: 'bad', label: 'Below ' + target.fixBelow + '%', action: target.actionBad };
+            }
+            if (rate < target.goodAt) {
+                return { cls: 'mid', label: 'Mid (' + target.fixBelow + '–' + (target.goodAt - 0.1) + '%)', action: target.actionMid };
+            }
+            return { cls: 'good', label: 'On target (≥' + target.goodAt + '%)', action: target.actionGood };
+        }
+
+        function rateStep(label, rate, key, funnel) {
+            var t = TARGETS[key];
+            var denom = funnel[t.denomKey] || 0;
+            var s = scoreRate(rate, t, denom);
+            return '<span class="funnel-step ' + s.cls + '">' + label +
+                ' <b>' + pct(rate) + '</b></span>';
         }
 
         function showGate() {
@@ -243,7 +348,7 @@
             var r = f.rates || {};
 
             $('partner-callout').innerHTML =
-                '<strong>Funnel KPIs only</strong> — visits → signup → card trial → first cook → paid. ' +
+                '<strong>Funnel KPIs</strong> — visits → signup → card trial → first cook → paid. ' +
                 'Primary ad conversion = <strong>trial started</strong>. Secondary = <strong>first payment</strong>. ' +
                 'Window from ' + new Date(data.partnerStart).toLocaleDateString() + '.';
 
@@ -253,8 +358,6 @@
                 (t.posthogConfigured ? 'configured' : 'set POSTHOG_KEY') + '</p>';
             banner += '<p class="' + (t.metaConfigured ? 'ok' : 'warn') + '">Meta Pixel+CAPI: ' +
                 (t.metaConfigured ? 'configured' : 'set META_PIXEL_ID + META_CAPI_TOKEN') + '</p>';
-            banner += '<p class="' + (t.googleConfigured ? 'ok' : 'warn') + '">Google Ads: ' +
-                (t.googleConfigured ? 'configured' : 'set GOOGLE_ADS_ID + GOOGLE_ADS_LABEL_TRIAL') + '</p>';
             $('banner').innerHTML = banner;
 
             $('meta-line').textContent =
@@ -266,13 +369,29 @@
                 (data.cached ? ' (cached)' : ' (fresh)');
 
             $('funnel-rates').innerHTML =
-                '<span class="funnel-step">Visit→Signup <b>' + pct(r.visitToSignup) + '</b></span>' +
+                rateStep('Visit→Signup', r.visitToSignup, 'visitToSignup', f) +
                 '<span class="arrow">→</span>' +
-                '<span class="funnel-step">Signup→Trial <b>' + pct(r.signupToTrial) + '</b></span>' +
+                rateStep('Signup→Trial', r.signupToTrial, 'signupToTrial', f) +
                 '<span class="arrow">→</span>' +
-                '<span class="funnel-step">Trial→Cook <b>' + pct(r.trialToFirstCook) + '</b></span>' +
+                rateStep('Trial→Cook', r.trialToFirstCook, 'trialToFirstCook', f) +
                 '<span class="arrow">→</span>' +
-                '<span class="funnel-step">Trial→Paid <b>' + pct(r.trialToPaid) + '</b></span>';
+                rateStep('Trial→Paid', r.trialToPaid, 'trialToPaid', f);
+
+            var decisionKeys = ['visitToSignup', 'signupToTrial', 'trialToFirstCook', 'trialToPaid'];
+            $('decision-rows').innerHTML = decisionKeys.map(function(key) {
+                var tg = TARGETS[key];
+                var rate = r[key];
+                var denom = f[tg.denomKey] || 0;
+                var s = scoreRate(rate, tg, denom);
+                return '<tr>' +
+                    '<td>' + escapeHtml(tg.label) + '</td>' +
+                    '<td><strong>' + pct(rate) + '</strong><div class="sub">' +
+                        fmt(denom) + ' in base · need ' + tg.minDenom + '+ to score</div></td>' +
+                    '<td>' + escapeHtml(tg.targetLabel) + '</td>' +
+                    '<td><span class="status-pill ' + s.cls + '">' + escapeHtml(s.label) + '</span></td>' +
+                    '<td>' + escapeHtml(s.action) + '</td>' +
+                    '</tr>';
+            }).join('');
 
             var html = '';
             html += card('Unique visits', fmt(f.visitsUnique), fmt(f.landingViews) + ' landing page views', true);
